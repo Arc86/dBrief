@@ -9,11 +9,14 @@ enum StatusItemMenuEntry: Equatable {
     case stopRecording
     case openLibrary
     case importFile(enabled: Bool)
+    case stopProcessing
+    case processQueue(count: Int)
     case settings
     case quit
     case separator
 
-    static func entries(isRecording: Bool, isPaused: Bool, isIdle: Bool, canImport: Bool) -> [StatusItemMenuEntry] {
+    static func entries(isRecording: Bool, isPaused: Bool, isIdle: Bool, canImport: Bool,
+                        isProcessing: Bool = false, queuedCount: Int = 0) -> [StatusItemMenuEntry] {
         var capture: [StatusItemMenuEntry]
         if isRecording {
             capture = [.pauseRecording, .stopRecording]
@@ -22,7 +25,11 @@ enum StatusItemMenuEntry: Equatable {
         } else {
             capture = [.startRecording(enabled: isIdle)]
         }
-        return capture + [.separator, .openLibrary, .importFile(enabled: canImport), .separator, .settings, .quit]
+        var work: [StatusItemMenuEntry] = []
+        if isProcessing { work.append(.stopProcessing) }
+        if queuedCount > 0 { work.append(.processQueue(count: queuedCount)) }
+        return capture + (work.isEmpty ? [] : [.separator] + work)
+            + [.separator, .openLibrary, .importFile(enabled: canImport), .separator, .settings, .quit]
     }
 }
 
@@ -71,28 +78,29 @@ final class StatusItemControls {
         menu.autoenablesItems = false
         let entries = StatusItemMenuEntry.entries(
             isRecording: state.isRecording, isPaused: state.isPaused, isIdle: state.isIdle,
-            canImport: manager.canImportAudio)
+            canImport: manager.canImportAudio, isProcessing: state.isProcessing, queuedCount: state.queuedCount)
         for entry in entries {
             switch entry {
             case .separator:
                 menu.addItem(.separator())
             case .startRecording(let enabled):
                 menu.addItem(ActionMenuItem("Record meeting", enabled: enabled) {
-                    state.lastError = nil
-                    Task {
-                        do { try await manager.startRecording() } catch { state.lastError = error.localizedDescription }
-                    }
+                    Task { await manager.requestRecording() }
                 })
             case .pauseRecording:
                 menu.addItem(ActionMenuItem("Pause recording") { manager.pauseRecording() })
             case .resumeRecording:
-                menu.addItem(ActionMenuItem("Resume recording") { try? manager.resumeRecording() })
+                menu.addItem(ActionMenuItem("Resume recording") { manager.requestResume() })
             case .stopRecording:
                 menu.addItem(ActionMenuItem("Stop recording") { Task { await manager.stopRecording() } })
             case .openLibrary:
                 menu.addItem(ActionMenuItem("Recording library") { [weak self] in self?.open("transcript") })
             case .importFile(let enabled):
-                menu.addItem(ActionMenuItem("Transcribe audio file…", enabled: enabled) { manager.pickFileForTranscription() })
+                menu.addItem(ActionMenuItem("Import Audio File…", enabled: enabled) { manager.pickFileForTranscription() })
+            case .stopProcessing:
+                menu.addItem(ActionMenuItem("Stop Processing") { Task { await manager.cancelProcessing() } })
+            case .processQueue(let count):
+                menu.addItem(ActionMenuItem("Process Queue (\(count))") { Task { await manager.startProcessingQueue() } })
             case .settings:
                 menu.addItem(ActionMenuItem("Settings…", key: ",") { [weak self] in self?.open("settings") })
             case .quit:
@@ -102,7 +110,10 @@ final class StatusItemControls {
         return menu
     }
 
-    private func open(_ id: String) {
+    private func open(_ id: String) { openWindow(id) }
+
+    /// Opens a scene window from AppKit code (e.g. a clicked notification).
+    func openWindow(_ id: String) {
         guard let openWindow else { return }
         MenuBarPanel.open(id, with: openWindow)
     }

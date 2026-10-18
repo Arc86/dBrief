@@ -10,10 +10,12 @@ enum PermissionAttention {
     /// calendar only when the calendar source is iCal.
     static func count(microphone: PermissionAuthorizationState, screenRecording: PermissionAuthorizationState,
                       speech: PermissionAuthorizationState, calendar: PermissionAuthorizationState,
-                      needsSpeech: Bool, needsCalendar: Bool) -> Int {
+                      reminders: PermissionAuthorizationState = .granted,
+                      needsSpeech: Bool, needsCalendar: Bool, needsReminders: Bool = false) -> Int {
         var states = [microphone, screenRecording]
         if needsSpeech { states.append(speech) }
         if needsCalendar { states.append(calendar) }
+        if needsReminders { states.append(reminders) }
         return states.filter { $0 != .granted }.count
     }
 }
@@ -28,6 +30,7 @@ final class SettingsPermissionStatus {
     var screenRecording: PermissionAuthorizationState = .notDetermined
     var speech: PermissionAuthorizationState = .notDetermined
     var calendar: PermissionAuthorizationState = .notDetermined
+    var reminders: PermissionAuthorizationState = .notDetermined
 
     func refresh() {
         microphone = Self.state(AVCaptureDevice.authorizationStatus(for: .audio))
@@ -35,13 +38,16 @@ final class SettingsPermissionStatus {
         screenRecording = CGPreflightScreenCaptureAccess() ? .granted : (didRequestScreenCapture ? .denied : .notDetermined)
         speech = Self.state(SFSpeechRecognizer.authorizationStatus())
         calendar = Self.state(EKEventStore.authorizationStatus(for: .event))
+        reminders = Self.state(EKEventStore.authorizationStatus(for: .reminder))
     }
 
     func attentionCount(settings: AppSettings) -> Int {
         PermissionAttention.count(
             microphone: microphone, screenRecording: screenRecording, speech: speech, calendar: calendar,
+            reminders: reminders,
             needsSpeech: settings.effectiveTranscriptionEngine == .appleSpeech || settings.liveTranscriptionEnabled,
-            needsCalendar: settings.effectiveCalendarSource == .iCal)
+            needsCalendar: settings.effectiveCalendarSource == .iCal,
+            needsReminders: settings.integrations.appleReminders.enabled)
     }
 
     static func state(_ status: AVAuthorizationStatus) -> PermissionAuthorizationState {

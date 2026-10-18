@@ -80,4 +80,15 @@ struct AccessibilityAnnouncerTests {
         state.lastError = "   "
         #expect(spy.spoken.count == 1)
     }
+
+    @Test func errorNoticesFromAnySourceAreSpokenButWarningsAndInfoAreNot() {
+        let spy = Spy()
+        let state = AppState()
+        state.announcer = spy.announcer()
+
+        state.post(.warning, "Calendar unavailable", source: .capture)
+        state.post(.info, "Copied", source: .library)
+        state.post(.error, "Notion delivery failed", source: .integrations)
+        #expect(spy.spoken.map(\.0) == ["Error: Notion delivery failed"])
+    }
 }

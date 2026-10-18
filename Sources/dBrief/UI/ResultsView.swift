@@ -216,7 +216,7 @@ struct ResultsView: View {
                 Button {
                     copyNotes(recording: recording)
                 } label: {
-                    Label(copied ? "Copied" : "Copy notes", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copied ? "Copied" : "Copy Notes", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
                 .disabled(recording.transcription == nil && recording.summary == nil)
 
@@ -261,27 +261,53 @@ struct ResultsView: View {
         }
     }
 
+    /// Each failed step with its reason, then the fix that matches what failed.
     private var failureRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             MenuPanelHairline()
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(status.warning.color)
-                Text("Didn’t finish: " + failedSteps.map(\.name).joined(separator: " · "))
-                    .uiFont(.system(size: 11))
-                    .foregroundStyle(palette.text.color)
+            ForEach(failedSteps) { step in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "xmark.circle")
+                        .foregroundStyle(status.danger.color)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(step.name) didn’t finish")
+                            .uiFont(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(palette.text.color)
+                        if case .failed(let reason) = step.status, !reason.isEmpty {
+                            Text(UserFacingError.text(reason))
+                                .uiFont(.system(size: 11))
+                                .foregroundStyle(palette.secondary.color)
+                                .lineLimit(3)
+                                .textSelection(.enabled)
+                        }
+                    }
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 4)
-                if aiStepFailed, appSettings.effectiveDefaultAIEndpoint != nil {
-                    Button("Retry AI") {
-                        Task {
-                            guard let recording = appState.processingRecording else { return }
-                            appState.preflightWarning = nil
-                            await recordingManager.retryAIAnalysis(for: recording)
+                    Spacer(minLength: 4)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            if let recording = appState.processingRecording, let audio = recording.finalizedAudioURL {
+                let fixes = BriefRecovery.actions(for: appState.processingSteps)
+                if !fixes.isEmpty {
+                    HStack(spacing: 8) {
+                        if fixes.contains(.reanalyze) {
+                            Button("Re-run AI Analysis…") {
+                                appState.preflightWarning = nil
+                                RecordingActionWindowController.shared.showReprocessing(recording: recording, operation: .analysis)
+                            }
+                            .recordingBlock(recordingManager.eligibility(for: audio, .reprocess),
+                                            help: "Run AI analysis again, with any engine or endpoint")
+                        }
+                        if fixes.contains(.integrations) {
+                            Button("Integrations…") {
+                                Task { await recordingManager.reviewIntegrationDeliveries(for: audio) }
+                            }
+                            .disabled(appState.processingJob != nil || recordingManager.reviewingIntegrationDeliveries)
+                            .help("Review delivery status and retry an individual integration")
                         }
                     }
                     .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
-                    .help("Retry AI analysis with the remote endpoint")
                 }
             }
         }
@@ -309,24 +335,9 @@ struct ResultsView: View {
 
     // MARK: - Helpers
 
-    private var aiStepFailed: Bool {
-        appState.processingSteps.contains { step in
-            guard case .failed = step.status else { return false }
-            let name = step.name.lowercased()
-            return name.contains("summar") || name.contains("action") || name.contains("tag") || name.contains("qwen") || name.contains("ai")
-        }
-    }
-
     private func copyNotes(recording: Recording) {
-        var parts: [String] = []
-        if let summary = recording.summary { parts.append("## Summary\n\(summary)") }
-        if let items = recording.actionItems, !items.isEmpty {
-            parts.append("## Action Items\n" + items.map { "- \($0)" }.joined(separator: "\n"))
-        }
-        if let transcript = recording.transcription?.text, parts.isEmpty {
-            parts.append(transcript)
-        }
-        let text = parts.joined(separator: "\n\n")
+        let text = RecordingNotesText.compose(summary: recording.summary, actionItems: recording.actionItems,
+                                              transcript: recording.transcription?.text) ?? ""
         Task {
             copied = await RecordingClipboard.copy(text, for: recording)
             try? await Task.sleep(for: .seconds(2))

@@ -60,7 +60,7 @@ struct ModelPickerListTests {
 
     @Test func downloadTextNeverClaimsBeforeTheCheckAnswers() {
         #expect(ModelPickerQuickPick.downloadText(downloaded: nil, downloadMB: 632) == "Checking…")
-        #expect(ModelPickerQuickPick.downloadText(downloaded: true, downloadMB: 632) == "✓ Downloaded")
+        #expect(ModelPickerQuickPick.downloadText(downloaded: true, downloadMB: 632) == "Downloaded")
         #expect(ModelPickerQuickPick.downloadText(downloaded: false, downloadMB: 632) == "Not downloaded · 632 MB")
         #expect(ModelPickerQuickPick.downloadText(downloaded: false, downloadMB: nil) == "Not downloaded")
     }

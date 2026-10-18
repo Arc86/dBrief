@@ -87,7 +87,8 @@ struct RecoveryLifecycle: Sendable {
         return protected
     }
 
-    private static func base(_ url: URL) -> String {
+    /// The retention key for a recording: its resolved folder plus file stem.
+    static func base(_ url: URL) -> String {
         // Resolve the existing parent, not the extensionless (usually absent)
         // stem: Foundation does not reliably resolve aliases of missing files.
         url.deletingLastPathComponent().resolvingSymlinksInPath()

@@ -31,6 +31,8 @@ struct SettingsPermissionsTab: View {
                     state: permissions.speech, action: requestSpeechRecognition)
                 row("Calendar", caption: "Pre-fills meeting titles and attendees.", icon: "calendar",
                     state: permissions.calendar, action: requestCalendar)
+                row("Reminders", caption: "Only for the Apple Reminders integration.", icon: "checklist",
+                    state: permissions.reminders, action: requestReminders)
             }
         }
         .onAppear { permissions.refresh() }
@@ -97,6 +99,20 @@ struct SettingsPermissionsTab: View {
             }
         case .openSystemSettings:
             openSystemSettingsPane("Privacy_SpeechRecognition")
+        case .explainRestriction, .none:
+            break
+        }
+    }
+
+    private func requestReminders() {
+        switch PermissionRecoveryPolicy.action(for: permissions.reminders) {
+        case .requestAccess:
+            Task {
+                _ = try? await EKEventStore().requestFullAccessToReminders()
+                permissions.refresh()
+            }
+        case .openSystemSettings:
+            openSystemSettingsPane("Privacy_Reminders")
         case .explainRestriction, .none:
             break
         }

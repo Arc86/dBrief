@@ -58,7 +58,7 @@ struct ViewerNoTranscriptState: View {
     }
 
     private var message: String {
-        if isPending { return "Manage the pending attempt in Queue & Recovery." }
+        if isPending { return "The new transcript appears here when reprocessing finishes. Manage it in the menu bar's Queue & Recovery." }
         return canRebuild
             ? "The transcript text is saved. Rebuild the view from it."
             : "Transcribe this recording to see its transcript, summary and actions."

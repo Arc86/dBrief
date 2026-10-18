@@ -96,6 +96,17 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The profile overrides an integration's detail page edits.
+    static func profileFields(for destination: IntegrationDestination) -> [SettingsProfileScope.Field] {
+        switch destination {
+        case .obsidian: [.obsidianVault, .obsidianFolder]
+        case .todoist: [.todoistProject]
+        case .notion: [.notionDestination]
+        case .tickTick: [.tickTickList]
+        default: []
+        }
+    }
+
     var profileFields: [SettingsProfileScope.Field] {
         switch self {
         case .storage: [.recordingFolder, .transcriptFolder]
@@ -103,7 +114,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         case .vocabulary: [.vocabulary]
         case .meetings: [.calendarEffort]
         case .ai: [.aiEnabled, .aiEngine, .aiProvider, .analysisEffort, .summaryPrompt, .actionsPrompt, .tagsPrompt]
-        case .afterRecording: [.transcriptionTask, .summaryTask, .actionsTask, .tagsTask]
+        case .afterRecording: [.transcriptionTask, .summaryTask, .actionsTask, .tagsTask, .calendarParticipantsTask]
         case .integrations: [.obsidianVault, .obsidianFolder, .todoistProject, .notionDestination]
             + (IntegrationDestination.available.contains(.tickTick) ? [.tickTickList] : [])
         default: []

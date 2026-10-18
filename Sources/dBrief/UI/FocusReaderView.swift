@@ -180,7 +180,7 @@ struct FocusReaderView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             ForEach(content.turns, id: \.turn.id) { model in
-                TranscriptTurnRow(model: model, onSeek: { _ in }) {
+                TranscriptTurnRow(model: model, onSeek: nil) {
                     Text(model.displayName)
                         .uiFont(.system(size: 12, weight: .semibold))
                         .foregroundStyle(model.color)

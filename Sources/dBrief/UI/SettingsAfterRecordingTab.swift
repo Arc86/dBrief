@@ -17,15 +17,15 @@ struct SettingsAfterRecordingTab: View {
                 }
                 SettingsRow("Write a summary", caption: "Needs AI analysis.") {
                     Toggle("Write a summary", isOn: $settings.autoSummary)
-                        .disabled(!appSettings.effectiveAIProcessingEnabled)
+                        .disabled(!appSettings.aiProcessingEnabled)
                 }
                 SettingsRow("Extract action items", caption: "Needs AI analysis.") {
                     Toggle("Extract action items", isOn: $settings.autoActionItems)
-                        .disabled(!appSettings.effectiveAIProcessingEnabled)
+                        .disabled(!appSettings.aiProcessingEnabled)
                 }
                 SettingsRow("Tags and sentiment", caption: "Needs AI analysis.") {
                     Toggle("Tags and sentiment", isOn: $settings.autoTags)
-                        .disabled(!appSettings.effectiveAIProcessingEnabled)
+                        .disabled(!appSettings.aiProcessingEnabled)
                 }
                 SettingsRow("Load calendar attendees", caption: "Works even when transcription and AI analysis are off.") {
                     Toggle("Load calendar attendees", isOn: $settings.autoLoadCalendarParticipants)
@@ -35,7 +35,7 @@ struct SettingsAfterRecordingTab: View {
             SettingsCard("Active profile", description: "Profiles can override each task",
                          section: .afterRecordingAutomation) {
                 SettingsRow(verbatim: scope.profile.name,
-                            caption: "\(scope.profile.postRecordingPolicy.title) · \(scope.isAutomatic ? "chosen automatically" : "saved profile")",
+                            caption: "\(scope.profile.postRecordingPolicy.title) · \(scope.isAutomatic ? "chosen automatically" : "default profile")",
                             systemImage: "person.3") {
                     Button("Edit in Profiles") { editProfile(scope.profile.id) }
                         .buttonStyle(.settingsSecondary)

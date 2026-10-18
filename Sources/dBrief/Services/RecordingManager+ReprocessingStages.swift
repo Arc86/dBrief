@@ -175,7 +175,9 @@ extension RecordingManager {
                     message: error.localizedDescription)
                 guard !Task.isCancelled, !self.processingCancellationInProgress,
                       self.appState.processingJob === job else { return }
-                self.appState.lastError = error.localizedDescription
+                self.appState.post(.error, "Reprocessing didn't finish: \(error.localizedDescription) Current results were kept.",
+                                   source: .reprocessing, recordingURL: job.recording.finalizedAudioURL, actions: [.openQueue])
+                self.notify(.reprocessFailed, about: job.recording)
                 await self.endReprocessing(job)
             }
         }

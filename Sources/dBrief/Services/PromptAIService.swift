@@ -12,19 +12,19 @@ enum PromptAIError: Error, LocalizedError {
     case providerFailure(Int), unavailable(String)
     var errorDescription: String? {
         switch self {
-        case .missingEndpoint: "Configure an AI endpoint in Settings → AI before trying again."
-        case .invalidEndpoint: "Choose an OpenAI-compatible or Anthropic endpoint with a valid URL and model in Settings → AI."
-        case .emptyCommand: "Configure a Local CLI command in Settings → AI before trying again."
+        case .missingEndpoint: "Configure an AI endpoint in Settings → AI analysis before trying again."
+        case .invalidEndpoint: "Choose an OpenAI-compatible or Anthropic endpoint with a valid URL and model in Settings → AI analysis."
+        case .emptyCommand: "Configure a Local CLI command in Settings → AI analysis before trying again."
         case .profileMissing: "This profile was deleted. Copy your draft before closing the editor."
         case .unsupportedScope: "This prompt only supports app defaults."
         case .appleUnavailable: "Apple Intelligence is unavailable. Check macOS support and enable Apple Intelligence in System Settings."
-        case .localUnavailable: "The local AI helper is unavailable. Install or enable the local AI component in Settings → AI."
+        case .localUnavailable: "The local AI helper is unavailable. Install or enable the local AI component in Settings → AI analysis."
         case .emptyOutput: "The AI returned no text. Try again or check the configured model."
         case .incompleteOutput: "The AI response was incomplete, too long, or repetitive. Ask for a shorter response and try again."
         case .contextLimit: "The request exceeds the model’s context size. Shorten the prompt or sample and try again."
         case .providerFailure(let status):
             switch status {
-            case 401, 403: "The provider rejected access. Check the API key and account permissions in Settings → AI."
+            case 401, 403: "The provider rejected access. Check the API key and account permissions in Settings → AI analysis."
             case 429: "The provider limited this request. Wait and try again, or check your account quota."
             default: "The provider returned HTTP \(status). Check its configuration and service status, then try again."
             }
@@ -124,10 +124,10 @@ actor PromptAIService: PromptTextCompleting {
                 case .emptyCommand: throw PromptAIError.emptyCommand
                 case .emptyOutput: throw PromptAIError.emptyOutput
                 case .outputTooLong: throw PromptAIError.incompleteOutput
-                case .unsupportedEffort: throw PromptAIError.unavailable("This CLI does not support the selected effort. Update Claude CLI or choose CLI default in Settings → AI.")
+                case .unsupportedEffort: throw PromptAIError.unavailable("This CLI does not support the selected effort. Update Claude CLI or choose CLI default in Settings → AI analysis.")
                 case .timeout(let seconds): throw PromptAIError.unavailable("The Local CLI command timed out after \(seconds) seconds. Allow more time or try a shorter request.")
-                case .nonZeroExit(let code, _): throw PromptAIError.unavailable("The Local CLI command exited with code \(code). Check its command and authentication in Settings → AI.")
-                case .launchFailed: throw PromptAIError.unavailable("The Local CLI command could not be launched. Check its executable path and permissions in Settings → AI.")
+                case .nonZeroExit(let code, _): throw PromptAIError.unavailable("The Local CLI command exited with code \(code). Check its command and authentication in Settings → AI analysis.")
+                case .launchFailed: throw PromptAIError.unavailable("The Local CLI command could not be launched. Check its executable path and permissions in Settings → AI analysis.")
                 case .invalidJSON: throw PromptAIError.unavailable("The Local CLI command returned an invalid response. Check that it supports the requested output format.")
                 }
             }

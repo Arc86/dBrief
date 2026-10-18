@@ -280,7 +280,7 @@ struct SummaryView: View {
                 .font(.system(size: 25, weight: .regular))
                 .foregroundStyle(palette.secondary.color)
 
-            Text(isReadOnly ? "Summary unavailable during reprocessing" : (hasOtherAnalysis ? "No summary text" : "No analysis yet"))
+            Text(isReadOnly ? "Reprocessing pending" : (hasOtherAnalysis ? "No summary text" : "No analysis yet"))
                 .uiFont(.system(size: 17, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
                 .multilineTextAlignment(.center)
@@ -306,7 +306,10 @@ struct SummaryView: View {
 
     private var unavailableDescription: String {
         if isReadOnly {
-            return "The current results remain available in other tabs while reprocessing is pending."
+            // One message for the lock, whether or not results exist yet.
+            return hasOtherAnalysis
+                ? "Current results stay readable in the other tabs until the new ones are ready."
+                : "The new results appear here when reprocessing finishes."
         }
         if hasOtherAnalysis {
             return "This recording has other analysis, but no summary text was saved."

@@ -105,7 +105,9 @@ struct TranscriptDetailView: View, Equatable {
     @State private var copied = false
     @State private var showDeleteConfirm = false
     @State private var showPrivacyReceipt = false
-    @State private var isGenerating = false
+    /// AI analysis is being regenerated for this recording (a pending reprocess
+    /// that will produce new analysis while none is saved yet).
+    private var isGenerating: Bool { isReprocessing && insights == nil }
 
     // Transcript search (finished-recording transcript only)
     @State private var searchQuery = ""
@@ -175,6 +177,10 @@ struct TranscriptDetailView: View, Equatable {
     /// background (progressive transcript arriving on the job).
     private var isReprocessing: Bool {
         context.recordingManager.isReprocessing(recording.finalizedAudioURL ?? recording.fileURL)
+    }
+
+    private func eligibility(_ action: RecordingAction) -> RecordingBlock? {
+        context.recordingManager.eligibility(for: recording.finalizedAudioURL ?? recording.fileURL, action)
     }
 
     private var isProcessingLive: Bool {
@@ -280,9 +286,19 @@ struct TranscriptDetailView: View, Equatable {
                 ViewerDocumentLayout {
                     documentHeader
                     if isReprocessing {
-                        Label("Reprocessing pending — current results are read-only. Manage the attempt in Queue & Recovery.", systemImage: "clock")
-                            .uiFont(.callout).foregroundStyle(palette.secondary.color).padding(12)
+                        HStack(spacing: 10) {
+                            Label("Reprocessing pending — current results are read-only.", systemImage: "clock")
+                                .uiFont(.callout).foregroundStyle(palette.secondary.color)
+                            if case .pendingReprocess(let id) = eligibility(.edit) {
+                                Button("Show in Queue & Recovery") { context.appState.showInQueue(id) }
+                                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
+                            }
+                        }
+                        .padding(12)
                     } else if offerReanalysis { reanalysisBanner }
+                    // Failures about this recording show where it is open, not only in the menu panel.
+                    NoticeStack(notices: context.appState.notices.items(for: recording.finalizedAudioURL ?? recording.fileURL), limit: 2)
+                        .frame(maxWidth: 920, alignment: .leading)
                     if mode != .transcript, insights?.basedOnPreviousTranscript == true {
                         Label("Based on the previous transcript", systemImage: "exclamationmark.circle")
                             .uiFont(.callout)
@@ -293,7 +309,8 @@ struct TranscriptDetailView: View, Equatable {
                     bodyContent
                 } playback: {
                     if ViewerPresentationPolicy.showsPlayback(mode: mode,
-                        hasFinalizedAudio: recording.finalizedAudioURL != nil, isLive: isLive) {
+                        hasFinalizedAudio: recording.finalizedAudioURL != nil, isLive: isLive,
+                        isPlaying: recording.finalizedAudioURL != nil && audioPlayer.currentFileURL == recording.finalizedAudioURL) {
                         playerBar.transition(documentModeTransition)
                     }
                 } assistant: {
@@ -406,12 +423,12 @@ struct TranscriptDetailView: View, Equatable {
             )
             .modifier(ViewerAppearanceScope(settings: context.appSettings))
         }
-        .confirmationDialog("Delete this recording?",
+        .confirmationDialog("Delete “\(recording.generatedTitle ?? recording.meetingTitleDraft)”?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { deleteRecording() }
+            Button("Delete Recording", role: .destructive) { deleteRecording() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("“\(recording.generatedTitle ?? recording.meetingTitleDraft)”, its audio, local sidecars, queued work, and saved recovery content will be permanently removed. Separately exported Markdown and content already sent to integrations are kept.")
+            Text(RecordingDeletion.message)
         }
         .sheet(isPresented: Binding(get: { reprocessingOperation != nil }, set: { if !$0 { reprocessingOperation = nil } })) {
             if let operation = reprocessingOperation {
@@ -428,10 +445,22 @@ struct TranscriptDetailView: View, Equatable {
 
     /// The Recording/View menu commands and Space for this recording; `nil` while live.
     private var viewerActions: RecordingViewerActions? {
-        guard !isLive else { return nil }
+        if isLive {
+            // What the live header offers, the menu bar offers too.
+            let live = recording, appState = context.appState
+            return RecordingViewerActions(
+                mode: mode, availableModes: [], selectMode: { _ in },
+                copy: {
+                    let text = Self.liveTranscriptText(appState: appState, recordingID: live.id)
+                    Task { _ = await RecordingClipboard.copy(text, for: live) }
+                },
+                isPlaying: false, togglePlayback: nil,
+                assistantOpen: showLiveChat, toggleAssistant: { toggleLiveChat() },
+                reprocess: nil, hasTranscript: false, revealInFinder: nil, delete: nil)
+        }
         let hasTranscript = richTranscript != nil
         let audioURL = recording.finalizedAudioURL
-        let canReprocess = !isReprocessing && context.recordingManager.reprocessingRecoveryReady
+        let canReprocess = eligibility(.reprocess) == nil
         return RecordingViewerActions(
             mode: mode,
             availableModes: hasTranscript ? ViewerDocumentMode.allCases : [],
@@ -448,8 +477,13 @@ struct TranscriptDetailView: View, Equatable {
             hasTranscript: hasTranscript,
             revealInFinder: audioURL.map { url in { NSWorkspace.shared.activateFileViewerSelecting([url]) } },
             // Not while editing the summary: ⌘⌫ belongs to the editor then.
-            delete: audioURL != nil && summaryEdit == nil ? { showDeleteConfirm = true } : nil,
-            focusReader: { openFocusReader() }
+            delete: audioURL != nil && summaryEdit == nil && eligibility(.delete) == nil ? { showDeleteConfirm = true } : nil,
+            focusReader: { openFocusReader() },
+            // View ▸ Larger/Smaller Text (⌘+/⌘−) now also works in the viewer itself.
+            changeTextSize: { step in context.appSettings.viewerAppearance.fontSize += step },
+            reviewIntegrations: audioURL != nil && context.appState.processingJob == nil
+                && !context.recordingManager.reviewingIntegrationDeliveries
+                ? { if let audioURL { Task { await context.recordingManager.reviewIntegrationDeliveries(for: audioURL) } } } : nil
         )
     }
 
@@ -514,6 +548,7 @@ struct TranscriptDetailView: View, Equatable {
             onToggleAssistant: onToggleAssistant,
             onPrivacyReceipt: { showPrivacyReceipt = true },
             onDelete: canDelete ? { showDeleteConfirm = true } : nil,
+            deleteBlock: eligibility(.delete),
             onFocusReader: canFocus ? { openFocusReader() } : nil,
             commands: commands
         )
@@ -550,12 +585,13 @@ struct TranscriptDetailView: View, Equatable {
                     analysisEditorPresented = true
                 }
             } label: { Label("Edit", systemImage: "pencil") }
-                .disabled(isReprocessing || insights == nil || (mode == .summary && summaryEdit != nil))
+                .disabled(insights == nil || (mode == .summary && summaryEdit != nil))
+                .recordingBlock(eligibility(.edit), help: "Edit")
         }
     }
 
     @ViewBuilder private var processingCommands: some View {
-        ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil, label: "Re-process")
+        ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil, label: "Reprocess")
             .environment(context.appSettings)
             .environment(context.recordingManager)
             .environment(context.appState)
@@ -566,7 +602,8 @@ struct TranscriptDetailView: View, Equatable {
                 }
                 Button(hasSpokenSummary ? "Regenerate Spoken Summary" : "Generate Spoken Summary") { startSpokenSummary() }
             } label: { Label("Spoken Summary", systemImage: "waveform") }
-                .disabled(isReprocessing || insights?.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false)
+                .disabled(insights?.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false)
+                .recordingBlock(eligibility(.edit), help: "Spoken Summary")
         }
     }
 
@@ -1322,6 +1359,8 @@ struct TranscriptDetailView: View, Equatable {
         setTranscript(transcript)
         saveTranscript(transcript)
         recomputeSearch()
+        // Who said what changed, so the name-aware analysis may be stale (as after a rename).
+        if hasSummary { offerReanalysis = true }
     }
 
     // MARK: - Actions
@@ -1445,6 +1484,7 @@ struct TranscriptDetailView: View, Equatable {
         transcript.meSpeakerId = id
         setTranscript(transcript)
         saveTranscript(transcript)
+        if hasSummary { offerReanalysis = true }
     }
 
     /// Every analysis request uses the same durable reprocessing path.
@@ -1454,8 +1494,12 @@ struct TranscriptDetailView: View, Equatable {
     }
 
     private func copyTranscript() {
-        guard let transcript = richTranscript else { return }
-        let text = transcript.segments.map { $0.text }.joined(separator: "\n")
+        guard richTranscript != nil else { return }
+        // Same shape the assistant and exports use: who said it, and when.
+        let text = displayedTurns.map { turn in
+            let name = turn.speakerId.map { displayName(for: $0) }
+            return "[\(turn.startTime.formattedDuration)] " + (name.map { "\($0): " } ?? "") + turn.text
+        }.joined(separator: "\n")
         Task {
             copied = await RecordingClipboard.copy(text, for: recording)
             try? await Task.sleep(for: .seconds(2))
@@ -1575,7 +1619,9 @@ struct TranscriptDetailView: View, Equatable {
             } catch {
                 let alert = NSAlert()
                 alert.messageText = "Couldn't delete the recording"
-                alert.informativeText = "Deletion could not finish. Some files may remain; wait for processing to finish and check storage before retrying."
+                // A blocked delete touched nothing; only a failed one may leave files.
+                alert.informativeText = (error as? RecordingBlockedError)?.localizedDescription
+                    ?? "Deletion could not finish. Some files may remain; check storage before retrying."
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
             }

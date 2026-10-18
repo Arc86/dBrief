@@ -1,3 +1,4 @@
+import EventKit
 import SwiftUI
 
 struct SettingsIntegrationsTab: View {
@@ -23,9 +24,10 @@ struct SettingsIntegrationsTab: View {
         SettingsPageScaffold(page: .integrations, notice: {
             VStack(spacing: 10) {
                 credentialStorageNotice
-                if openDestination == nil {
-                    SettingsProfileScopeView(fields: SettingsPage.integrations.profileFields, editProfile: editProfile)
-                }
+                // Detail pages keep the notice, for the fields that page edits.
+                SettingsProfileScopeView(fields: openDestination.map(SettingsPage.profileFields(for:))
+                                            ?? SettingsPage.integrations.profileFields,
+                                         editProfile: editProfile)
             }
         }) {
             if let destination = openDestination {
@@ -107,7 +109,9 @@ struct SettingsIntegrationsTab: View {
     private func needsSetup(_ destination: IntegrationDestination) -> Bool {
         switch destination {
         case .obsidian: appSettings.obsidianVaultURL == nil
-        case .appleNotes, .appleReminders: false
+        case .appleNotes: false
+        // Reminders needs its own access; without it nothing is created.
+        case .appleReminders: EKEventStore.authorizationStatus(for: .reminder) != .fullAccess
         case .tickTick: !tickTickAuth.isSignedIn
         case .todoist: appSettings.todoistToken.isEmpty
         case .notion: appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty
@@ -400,7 +404,7 @@ struct SettingsIntegrationsTab: View {
         if notion.enabled {
             SettingsCard("Include in the page") {
                 ForEach([DeliveryField.summary, .actionItems, .tags, .sentiment, .meetingInfo, .transcript]) { field in
-                    SettingsRow(verbatim: field == .meetingInfo ? "Participants" : field.displayName,
+                    SettingsRow(verbatim: field == .meetingInfo ? "Attendees" : field.displayName,
                                 caption: field == .transcript ? "The full transcript at the end of the page. Long meetings make long pages." : nil) {
                         Toggle(field.displayName, isOn: $settings.integrations.notion.fields[contains: field])
                     }
@@ -477,7 +481,7 @@ struct SettingsIntegrationsTab: View {
         @Bindable var settings = appSettings
         Group {
             SettingsCard("Webhook",
-                         description: "Each delivery has an Idempotency-Key; retry unconfirmed sends from History") {
+                         description: "Each delivery has an Idempotency-Key; retry unconfirmed sends with Integrations… on the recording") {
                 enableRow("Send to a webhook", $settings.integrations.webhook.enabled)
                 if appSettings.integrations.webhook.enabled {
                     textRow("URL", secure: true, $settings.integrations.webhook.url)

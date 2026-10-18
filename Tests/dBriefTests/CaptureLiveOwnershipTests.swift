@@ -68,7 +68,7 @@ struct CaptureLiveOwnershipTests {
                     case .status: self.events.append("live-status")
                     }
                 case .meter: self.events.append("meter")
-                case .status(_, let text): self.events.append(text ?? "cleared")
+                case .status(_, let text, let problem): self.events.append(text.map { problem ? "problem:\($0)" : $0 } ?? "cleared")
                 case .stopped: self.events.append("stopped")
                 default: break
                 }
@@ -207,6 +207,24 @@ struct CaptureLiveOwnershipTests {
         h.clocks[2].resume()
         try await wait { h.events.last == "cleared" }
         #expect(!h.calls.contains("prepare") && !h.events.contains("live-began"))
+        await owner.stop()
+    }
+
+    /// "Microphone isn't delivering audio" used to vanish after 4 seconds like any note,
+    /// so a silent mic could go unnoticed. Problems stay until a newer note replaces them.
+    @Test func problemNotesStayUntilReplaced() async throws {
+        let h = Harness(), owner = h.coordinator()
+        try await owner.start(request(live: false))
+        h.sinks[0](.status("Switched to MacBook Microphone"))
+        try await wait { h.clocks.count == 1 }
+        h.sinks[0](.status("Microphone isn't delivering audio", problem: true))
+        try await wait { h.events.last == "problem:Microphone isn't delivering audio" }
+        h.clocks[0].resume()
+        await Task.yield()
+        #expect(h.clocks.count == 1)
+        #expect(h.events.last == "problem:Microphone isn't delivering audio")
+        h.sinks[0](.status("Recording from AirPods"))
+        try await wait { h.events.last == "Recording from AirPods" }
         await owner.stop()
     }
 }

@@ -73,8 +73,11 @@ struct TranscriptionProgressView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text(isComplete ? "Processing complete" : "Processing recording")
+                Text(MenuPanelProgress.processingHeading(
+                        title: appState.processingRecording.map { $0.generatedTitle ?? RecordingFinalizer.readableMeetingTitle($0.meetingTitleDraft) },
+                        complete: isComplete))
                     .uiFont(.system(size: 14, weight: .semibold))
+                    .lineLimit(2)
                     .foregroundStyle(palette.heading.color)
                 Spacer()
                 if let done = MenuPanelProgress.doneLabel(appState.processingSteps) {
@@ -120,7 +123,7 @@ struct TranscriptionProgressView: View {
 
                 if let title = appState.processingJob?.transcriptButtonTitle {
                     Button {
-                        appState.pendingLiveTranscriptSelection = true
+                        appState.pendingLiveTranscriptSelection = .processing
                         MenuBarPanel.open("transcript", with: openWindow)
                     } label: {
                         Label(title, systemImage: "text.viewfinder")
@@ -142,36 +145,22 @@ struct TranscriptionProgressView: View {
             if isComplete, let recording = appState.processingRecording, recording.transcription != nil {
                 MenuPanelHairline()
                 HStack(spacing: 8) {
-                    Button(copied ? "Copied" : "Copy notes") {
-                        if
-                            let transcript = recording.transcription?.text,
-                            let summary = recording.summary
-                        {
-                            let insights = LocalInsightsResult(
-                                summary: summary,
-                                actionItems: recording.actionItems ?? [],
-                                tags: recording.tags ?? [],
-                                sentiment: recording.sentiment ?? "Neutral"
-                            )
-                            let markdown = ObsidianFormatter.format(transcript: transcript, insights: insights)
-                            Task {
-                                copied = await RecordingClipboard.copy(markdown, for: recording)
-                                try? await Task.sleep(for: .seconds(2))
-                                copied = false
-                            }
-                        } else if let text = recording.transcription?.text {
-                            Task {
-                                copied = await RecordingClipboard.copy(text, for: recording)
-                                try? await Task.sleep(for: .seconds(2))
-                                copied = false
-                            }
+                    Button(copied ? "Copied" : "Copy Notes") {
+                        // Same notes as every other Copy Notes: summary, then action items.
+                        guard let text = RecordingNotesText.compose(summary: recording.summary,
+                            actionItems: recording.actionItems, transcript: recording.transcription?.text) else { return }
+                        Task {
+                            copied = await RecordingClipboard.copy(text, for: recording)
+                            try? await Task.sleep(for: .seconds(2))
+                            copied = false
                         }
                     }
                     .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
 
-                    Button("Close") {
+                    Button("Done") {
                         appState.processingSteps.removeAll()
                     }
+                    .help("Clear this brief from the menu; the recording stays in your library")
                     .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
                 }
             }
@@ -232,8 +221,8 @@ struct TranscriptionProgressView: View {
 
     private func stepMessage(_ stepStatus: ProcessingStep.Status) -> (String, Color)? {
         switch stepStatus {
-        case .warning(let message): (message, status.warning.color)
-        case .failed(let message): (message, status.danger.color)
+        case .warning(let message): (UserFacingError.text(message), status.warning.color)
+        case .failed(let message): (UserFacingError.text(message), status.danger.color)
         case .pending, .inProgress, .completed: nil
         }
     }

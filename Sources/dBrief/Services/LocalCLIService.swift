@@ -189,7 +189,7 @@ enum LocalCLIServiceError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyCommand:
-            "No Local CLI command configured. Set one in Settings → AI."
+            "No Local CLI command configured. Set one in Settings → AI analysis."
         case .launchFailed:
             "Failed to launch Local CLI command: check the command and executable permissions."
         case .nonZeroExit(let code, _):

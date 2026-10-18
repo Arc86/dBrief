@@ -50,7 +50,8 @@ struct ProcessingQueueView: View {
                                                 tint: palette.primary.color)
                         }
                         Spacer(minLength: 0)
-                        RecordingListAction(title: "Stop", systemImage: "stop") {
+                        RecordingListAction(title: MenuPanelProgress.stopProcessingTitle(isCapturing: !appState.isIdle),
+                                            systemImage: "stop") {
                             Task { await manager.cancelProcessing() }
                         }
                         .disabled(editing)
@@ -82,6 +83,18 @@ struct ProcessingQueueView: View {
                         .uiFont(.system(size: 11)).foregroundStyle(status.danger.color)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                ForEach(manager.unreadableRecordFolders, id: \.self) { folder in
+                    HStack(spacing: 8) {
+                        Text(folder.lastPathComponent)
+                            .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 4)
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+                        Button("Move Aside") { Task { await manager.moveUnreadableRecordAside(folder) } }
+                            .help("Move this record into an Unreadable folder next to it. Nothing is deleted.")
+                            .disabled(editing)
+                    }
+                }
                 if hasPendingWork {
                     Text("Removing keeps the recording. Deferred items wait for Process Queue; automatic items may run first.")
                         .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
@@ -91,7 +104,7 @@ struct ProcessingQueueView: View {
 
             if expanded || !manager.pendingQueueItems.isEmpty {
                 HStack(spacing: 8) {
-                    Button(manager.queuePaused ? "Resume automatic queue" : "Pause queue") {
+                    Button(manager.queuePaused ? "Resume Queue" : "Pause Queue") {
                         Task {
                             if await manager.setQueuePaused(!manager.queuePaused), !manager.queuePaused {
                                 await manager.drainQueueIfNeeded()
@@ -102,7 +115,7 @@ struct ProcessingQueueView: View {
                     .help("Pause prevents the next job from starting; the current job can finish. This setting survives a restart.")
                     Spacer(minLength: 4)
                     if !manager.pendingQueueItems.isEmpty || visibleReprocessing.contains(where: { $0.status == .queued }) {
-                        Button("Process queue") { Task { await manager.startProcessingQueue() } }
+                        Button("Process Queue") { Task { await manager.startProcessingQueue() } }
                             .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12, fillsWidth: false))
                             .disabled(manager.queueLoadError != nil)
                     }
@@ -157,7 +170,10 @@ struct ProcessingQueueView: View {
                         RecordingListAction(title: "Resume", systemImage: "play") {
                             Task { await manager.resumeReprocessing(attempt.id) }
                         }.disabled(appState.processingJob != nil || editing)
-                        RecordingListAction(title: "Discard attempt", systemImage: "minus.circle") {
+                        RecordingListAction(title: "Discard Attempt", systemImage: "minus.circle") {
+                            guard DestructiveConfirmation.confirm("Discard this reprocess?",
+                                message: "The recording's current results stay. The unfinished reprocess can't be resumed afterwards.",
+                                button: "Discard") else { return }
                             Task { await manager.discardReprocessing(attempt.id) }
                         }.disabled(editing)
                     }
@@ -181,7 +197,7 @@ struct ProcessingQueueView: View {
             }
         } actions: {
             FlowLayout(spacing: 6) {
-                RecordingListAction(title: "Process now", systemImage: "play") {
+                RecordingListAction(title: "Process Now", systemImage: "play") {
                     Task { await manager.drainQueueIfNeeded(preferredAudioURL: audioURL, expectedID: item.id) }
                 }
                 .disabled(!available || appState.processingJob != nil || manager.queueLoadError != nil)
@@ -231,10 +247,10 @@ struct ProcessingQueueView: View {
                             await manager.refreshWorkQueue()
                         }
                     }
-                    RecordingListAction(title: "Dismiss", systemImage: "minus.circle") {
+                    RecordingListAction(title: "Remove from List", systemImage: "minus.circle") {
                         Task { await manager.dismissRecoveryItem(entry.id) }
                     }
-                    .help("Hide this recovery run; keep its recording and saved progress")
+                    .help("Hides this run. The recording and its current results stay; the unfinished run can't be resumed afterwards.")
                 }
                 .disabled(editing || appState.processingJob != nil)
             }

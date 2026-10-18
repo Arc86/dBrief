@@ -80,11 +80,15 @@ extension ProcessingPipeline {
         if let deletionError { throw deletionError }
     }
 
+    /// `protectedBases` adds recordings owned by work outside the lifecycle records
+    /// (pending reprocess attempts), as `RecoveryLifecycle.base` keys.
     func cleanupRetention(category: RetentionCategory, days: Int, folders: [URL], lifecycle: RecoveryLifecycle,
+                          protectedBases: Set<String> = [],
                           store: PrivacyReceiptStore = .shared) async throws -> RetentionCleanupResult {
         let timestamp = now()
         let owners = try await lifecycle.privacyOwners()
         let protected = try await lifecycle.prepareRetention(category: category, days: days, folders: folders, now: timestamp)
+            .union(protectedBases)
         return await RetentionCleanup.cleanupWithPrivacy(category: category, olderThanDays: days, in: folders,
             store: store, now: timestamp, protectedBases: protected, extraRecordingIDs: owners)
     }

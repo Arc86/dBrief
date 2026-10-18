@@ -7,7 +7,7 @@ enum LibrarySmartView: String, Codable, CaseIterable, Sendable {
         switch self {
         case .all: "All Recordings"
         case .unfinishedActions: "Unfinished Actions"
-        case .failedJobs: "Failed Jobs"
+        case .failedJobs: "Needs Attention"
         case .queuedInterrupted: "Queued / Interrupted"
         case .recentlyProcessed: "Recently Processed"
         case .peopleThisMonth: "People I Met This Month"

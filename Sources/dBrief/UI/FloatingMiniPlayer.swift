@@ -116,9 +116,10 @@ private struct MiniPlayerView: View {
 
                     // Transient note when the input device / echo cancellation auto-switches.
                     if let note = appState.recordingStatusNote {
-                        Label(note, systemImage: "arrow.triangle.2.circlepath")
+                        Label(note, systemImage: appState.recordingStatusNoteIsProblem
+                              ? "exclamationmark.triangle.fill" : "arrow.triangle.2.circlepath")
                             .uiFont(.system(size: 11))
-                            .foregroundStyle(palette.secondary.color)
+                            .foregroundStyle(appState.recordingStatusNoteIsProblem ? status.warning.color : palette.secondary.color)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .transition(.opacity)
@@ -134,11 +135,7 @@ private struct MiniPlayerView: View {
                             .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
                         } else if appState.isPaused {
                             Button {
-                                do {
-                                    try recordingManager.resumeRecording()
-                                } catch {
-                                    Logger.recording.error("Failed to resume recording: \(error)")
-                                }
+                                recordingManager.requestResume()
                             } label: {
                                 Label("Resume", systemImage: "play")
                             }

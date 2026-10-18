@@ -2,8 +2,16 @@ import Testing
 @testable import dBrief
 
 @Suite struct MenuPanelStatusTests {
-    private func status(rec: Bool = false, paused: Bool = false, proc: Bool = false, post: Bool = false, results: Bool = false) -> MenuPanelStatus {
-        .resolve(isRecording: rec, isPaused: paused, isProcessing: proc, showsPostRecording: post, hasResults: results)
+    private func status(rec: Bool = false, paused: Bool = false, proc: Bool = false, post: Bool = false, results: Bool = false,
+                        issues: Bool = false) -> MenuPanelStatus {
+        .resolve(isRecording: rec, isPaused: paused, isProcessing: proc, showsPostRecording: post, hasResults: results,
+                 hasFailures: issues)
+    }
+
+    @Test func aBriefWithFailuresSaysSoInTheWarningTone() {
+        #expect(status(results: true, issues: true) == .finishedWithIssues)
+        #expect(MenuPanelStatus.finishedWithIssues.label == "Finished with issues")
+        #expect(MenuPanelStatus.finishedWithIssues.tone == .warning)
     }
 
     @Test func idleIsReady() { #expect(status() == .ready); #expect(status().label == "Ready") }
@@ -68,6 +76,13 @@ import Testing
     @Test func stopProcessingIsNamedApartFromStopRecording() {
         #expect(MenuPanelProgress.stopProcessingTitle(isCapturing: false) == "Stop")
         #expect(MenuPanelProgress.stopProcessingTitle(isCapturing: true) == "Stop processing")
+    }
+
+    /// The panel never said which recording was processing.
+    @Test func processingHeadingNamesTheRecording() {
+        #expect(MenuPanelProgress.processingHeading(title: "Weekly sync", complete: false) == "Processing “Weekly sync”")
+        #expect(MenuPanelProgress.processingHeading(title: nil, complete: false) == "Processing recording")
+        #expect(MenuPanelProgress.processingHeading(title: "Weekly sync", complete: true) == "Processed “Weekly sync”")
     }
 
     @Test func deferredProfileNoticeStaysOnTheSurface() {

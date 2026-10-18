@@ -48,7 +48,7 @@ extension IntegrationDispatchService {
                 }
             }
             if let first = failures.first {
-                throw IntegrationError.executionFailed("\(failures.count) task(s) weren't added to Todoist: \(first)")
+                throw IntegrationError.executionFailed("\(failures.count == 1 ? "1 task wasn't" : "\(failures.count) tasks weren't") added to Todoist: \(first)")
             }
             let remoteID = items.compactMap { created[$0.index] }.filter { !$0.isEmpty }.joined(separator: ",")
             Logger.integrations.info("Integration success: todoist (\(items.count, privacy: .public) items)")

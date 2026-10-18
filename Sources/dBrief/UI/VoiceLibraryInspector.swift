@@ -107,7 +107,9 @@ private struct PersonDetail: View {
                         .foregroundStyle(palette.heading.color)
                     Spacer()
                     Button {
-                        actions.removeVoiceprint(person, print.capturedAt)
+                        if DestructiveConfirmation.confirm("Forget this voiceprint?",
+                            message: "dBrief keeps recognising \(person.name) from their other voiceprints.",
+                            button: "Forget Voiceprint") { actions.removeVoiceprint(person, print.capturedAt) }
                     } label: {
                         Image(systemName: "trash").font(.system(size: 10.5))
                     }

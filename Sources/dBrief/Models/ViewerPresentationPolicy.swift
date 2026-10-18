@@ -36,11 +36,14 @@ enum ViewerPresentationPolicy {
         ViewerDocumentMode.allCases.filter { visited.contains($0) || $0 == current }
     }
 
+    /// The player lives on the Transcript tab, and follows to any tab while this
+    /// recording plays (Space works everywhere, so its controls must be in view).
     static func showsPlayback(
         mode: ViewerDocumentMode,
         hasFinalizedAudio: Bool,
-        isLive: Bool
+        isLive: Bool,
+        isPlaying: Bool = false
     ) -> Bool {
-        mode == .transcript && hasFinalizedAudio && !isLive
+        hasFinalizedAudio && !isLive && (mode == .transcript || isPlaying)
     }
 }

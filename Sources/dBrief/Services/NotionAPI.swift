@@ -13,7 +13,7 @@ enum NotionError: LocalizedError, Equatable, Sendable {
         switch self {
         case .missingToken: "Paste your Notion integration secret first."
         case .missingDestination: "Choose a Notion page or database to send notes to."
-        case .unauthorized: "Notion rejected the integration secret. Paste a new one in Settings."
+        case .unauthorized: "Notion rejected the integration secret. Paste a new one in Settings → Integrations → Notion."
         case .notShared: "Notion can't see that page or database. Connect it to your integration (••• → Connections)."
         case .rateLimited: "Notion is limiting requests right now. Try again in a minute."
         case .invalidResponse: "Notion returned a response dBrief couldn't read."
@@ -82,7 +82,7 @@ enum NotionAPI {
         formatter.timeStyle = .none
         var blocks = [block("paragraph", "\(formatter.string(from: bundle.createdAt)) · \(duration(bundle.durationSeconds)) — added by dBrief (ref \(reference))")]
         if fields.contains(.meetingInfo), let names = bundle.calendarEvent?.attendeeNames, !names.isEmpty {
-            blocks.append(block("paragraph", "Participants: \(names.joined(separator: ", "))"))
+            blocks.append(block("paragraph", "Attendees: \(names.joined(separator: ", "))"))
         }
         if fields.contains(.summary), let summary = nonEmpty(bundle.summary) {
             blocks.append(block("heading_2", "Summary"))

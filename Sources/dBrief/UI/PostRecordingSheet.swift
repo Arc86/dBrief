@@ -117,7 +117,7 @@ struct PostRecordingSheet: View {
 
                 if appSettings.diarizationEnabled {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(participantNames.isEmpty ? "Participants" : "Participants (\(participantNames.count))")
+                        Text(participantNames.isEmpty ? "Attendees" : "Attendees (\(participantNames.count))")
                             .uiFont(.system(size: 12, weight: .medium))
                             .foregroundStyle(palette.heading.color)
                         participantsField
@@ -419,7 +419,7 @@ struct PostRecordingSheet: View {
                         .foregroundStyle(status.warning.color)
                 }
             } else {
-                Text("AI processing is disabled in Settings.")
+                Text("AI analysis is off in Settings → AI analysis.")
                     .uiFont(.system(size: 11))
                     .foregroundStyle(palette.secondary.color)
             }
@@ -429,10 +429,8 @@ struct PostRecordingSheet: View {
                     title: "Obsidian output folder",
                     currentRelativePath: currentObsidianFolder(for: recording)
                 ) { relativePath in
+                    // This recording only; the default lives in Settings → Integrations.
                     recording.obsidianFolderRelativePath = relativePath
-                    if reviewProfile.isProtectedDefault {
-                        appSettings.obsidianDefaultFolderRelativePath = relativePath
-                    }
                 }
             }
 
@@ -503,10 +501,13 @@ struct PostRecordingSheet: View {
                     loadCalendarParticipants: acceptedCalendarParticipantLoad
                 )
             } label: {
-                Label("Process recording", systemImage: "play")
+                // While another recording processes, this one starts right after it.
+                Label(appState.processingJob == nil ? "Process recording" : "Process next", systemImage: "play")
             }
             .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 36, fontSize: 14))
             .disabled(processDisabled)
+            .help(appState.processingJob == nil ? "Process this recording now"
+                  : "Processes this recording as soon as the current one finishes")
 
             if appSettings.obsidianEnabled, let recording = appState.currentRecording {
                 Text("Output folder · \(appSettings.obsidianFolderDisplayName(relativePath: currentObsidianFolder(for: recording)))")
@@ -517,7 +518,7 @@ struct PostRecordingSheet: View {
             }
 
             if reviewNeedsTranscriptionEndpoint && transcribe {
-                Text("No transcription endpoint configured. Add one in Settings.")
+                Text("No transcription endpoint is set up. Add one in Settings → Transcription.")
                     .uiFont(.system(size: 11))
                     .foregroundStyle(status.danger.color)
             }
@@ -530,7 +531,7 @@ struct PostRecordingSheet: View {
                 .disabled(sanitizedMeetingTitle.isEmpty)
                 .help("Keep the audio and stop here")
 
-                Button("Queue") {
+                Button(appState.processingJob == nil ? "Queue" : "Queue for later") {
                     applyFieldsToRecording()
                     Task {
                         await recordingManager.queueForLater(
@@ -543,7 +544,7 @@ struct PostRecordingSheet: View {
                     }
                 }
                 .disabled(sanitizedMeetingTitle.isEmpty)
-                .help("Finalize audio and queue processing for later")
+                .help("Save the audio and wait in the queue until you choose Process Queue")
 
                 Button {
                     withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = true }
@@ -827,7 +828,7 @@ struct PostRecordingSheet: View {
             Label("Selected meeting changed or disappeared. Review your selection.", systemImage: "exclamationmark.triangle")
                 .uiFont(.system(size: 11)).foregroundStyle(status.warning.color)
         case .unconfigured:
-            Text("Add a mailbox in Calendar settings to load meetings.")
+            Text("Add a mailbox in Settings → Meetings to load meetings.")
                 .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
         case .complete, .none:
             if !calendarPickerRefreshing, calendarPickerLastRefresh != nil,
@@ -890,7 +891,7 @@ struct PostRecordingSheet: View {
             if !allowed {
                 Text(recording.calendarEvent == nil
                      ? "Choose a meeting to load its attendees."
-                     : "Attendee loading is set to Never in Calendar settings.")
+                     : "Attendee loading is set to Never in Settings → Meetings.")
                     .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
             }
             Group {

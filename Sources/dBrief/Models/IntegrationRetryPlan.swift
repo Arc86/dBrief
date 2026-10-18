@@ -35,9 +35,9 @@ struct IntegrationRetryPlan: Equatable, Sendable {
     var acceptConfigurationChange: Bool { !configurationChanged.isEmpty }
 
     static let processingAttentionMessage =
-        "Some integrations need attention. Open Integrations in History to review or retry individual sends."
+        "Some integrations need attention. Use Integrations… to review or retry individual sends."
     static let retryAttentionMessage =
-        "Some deliveries still need attention. Open Integrations in History to review them."
+        "Some deliveries still need attention. Use Integrations… to review them."
     static let attentionMessages = [processingAttentionMessage, retryAttentionMessage]
 
     /// Only these errors are cleared once every delivery has gone out; any

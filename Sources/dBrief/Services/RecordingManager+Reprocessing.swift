@@ -85,24 +85,18 @@ extension RecordingManager {
 
     func startReprocessing(for recording: Recording, options: ReprocessingOptions) async throws {
         guard let audio = recording.finalizedAudioURL else { throw ReprocessingError.missingAudio }
-        guard reprocessingRecoveryReady, !reprocessingAdmissionBusy, !queueMutationInProgress, !queueEnqueueInProgress, !queuePauseWriteInProgress, !recoveryMaintenanceInProgress,
-              !processingCancellationInProgress, appState.pendingSpeakerReview == nil else { throw ReprocessingError.busy }
-        if appState.processingJob?.recording.finalizedAudioURL?.resolvingSymlinksInPath() == audio.resolvingSymlinksInPath() {
-            throw ReprocessingError.busy
-        }
-        if appState.showPostRecordingSheet,
-           appState.currentRecording?.finalizedAudioURL?.resolvingSymlinksInPath() == audio.resolvingSymlinksInPath() {
-            throw ReprocessingError.busy
-        }
+        // Live state first (an attempt queues behind other recordings' work), then the
+        // saved work on disk while admission is held.
+        let live = RecordingEligibility.block(for: .reprocess, ownership: liveOwnership(for: audio, saved: .init()),
+                                              activity: appActivity)
+        if let live { throw RecordingBlockedError(block: live) }
         try options.validate()
         if options.requiresTranscription { _ = try options.transcriptionSettings(settings: appSettings) }
         if options.requiresAnalysis { _ = try options.analysisConfiguration(settings: appSettings) }
         reprocessingAdmissionBusy = true
         defer { reprocessingAdmissionBusy = false }
-        guard !(await queueScheduleStore.hasMarker(for: audio)) else { throw ReprocessingError.busy }
+        if let saved = await savedWorkBlock(for: audio, .reprocess) { throw RecordingBlockedError(block: saved) }
         let existingJobs = await processingJobStore.discover()
-        guard existingJobs.issues.isEmpty,
-              !(await unfinishedJobOwns(audio, jobs: existingJobs.jobs)) else { throw ReprocessingError.busy }
         try Task.checkCancellation()
         let metadata = try await RecordingMetadataStore.shared.load(audioURL: audio)
         let priorCalendar = existingJobs.jobs
@@ -143,12 +137,27 @@ extension RecordingManager {
                     message: "Interrupted reprocessing — current results have been kept.")
             }
             reprocessingRecoveryReady = true
+            clearReprocessingRecoveryError()
             reprocessingResultsRevision += 1
             await refreshReprocessingAttempts()
         } catch {
             reprocessingRecoveryReady = false
-            appState.lastError = "Reprocessing recovery needs attention: \(error.localizedDescription)"
+            reportReprocessingRecoveryError(error)
         }
+    }
+
+    /// Kept apart from other notices: the library blocks saved results on this alone.
+    func reportReprocessingRecoveryError(_ error: Error) {
+        let message = "Saved reprocessing results can't be opened yet: \(error.localizedDescription) Retry Recovery, or check storage."
+        reprocessingRecoveryError = message
+        appState.notices.clear(source: .recovery)
+        appState.post(.init(tone: .error, message: message, source: .recovery))
+    }
+
+    func clearReprocessingRecoveryError() {
+        guard reprocessingRecoveryError != nil else { return }
+        reprocessingRecoveryError = nil
+        appState.notices.clear(source: .recovery)
     }
 
     func refreshReprocessingAttempts() async {
@@ -156,7 +165,7 @@ extension RecordingManager {
             reprocessingAttempts = try await reprocessingStore.discover().filter { $0.status != .completed }
         } catch {
             reprocessingRecoveryReady = false
-            appState.lastError = error.localizedDescription
+            reportReprocessingRecoveryError(error)
         }
     }
 
@@ -187,7 +196,6 @@ extension RecordingManager {
             try Task.checkCancellation()
             reprocessingAdmissionBusy = false
             guard canLaunchProcessing(for: working, reprocessingAttemptID: id) else { throw ReprocessingError.busy }
-            appState.lastError = nil
             appState.processingSteps = []
             appState.preflightWarning = nil
             appState.liveInferenceText = nil
@@ -198,7 +206,8 @@ extension RecordingManager {
         } catch {
             try? await reprocessingStore.checkpoint(attemptID: id, status: Task.isCancelled ? .stopped : .failed,
                 message: error.localizedDescription)
-            appState.lastError = error.localizedDescription
+            appState.post(.error, "Reprocessing couldn't start: \(error.localizedDescription)", source: .reprocessing,
+                          actions: [.openQueue])
             await refreshReprocessingAttempts()
         }
     }
@@ -256,6 +265,7 @@ extension RecordingManager {
                     RecordingLibraryChange.notify()
                 }, validate: { @MainActor in try self.requireProcessingOwnership(job) })
             if result == .held { await refreshReprocessingAttempts(); return }
+            notify(.reprocessed, about: job.recording)
             await endReprocessing(job)
         } catch {
             // Once publication begins, reconcile its journal before exposing results.
@@ -264,15 +274,18 @@ extension RecordingManager {
                 do {
                     _ = try await store.recover()
                     reprocessingRecoveryReady = true
+                    clearReprocessingRecoveryError()
                     reprocessingResultsRevision += 1
                     RecordingLibraryChange.notify()
-                } catch { appState.lastError = "Reprocessing recovery needs attention: \(error.localizedDescription)" }
+                } catch { reportReprocessingRecoveryError(error) }
             }
             let stopped = Task.isCancelled
             try? await store.checkpoint(attemptID: job.id, status: stopped ? .stopped : .failed,
                 message: stopped ? "Stopped — current results have been kept." : error.localizedDescription)
             if !stopped, appState.processingJob === job {
-                appState.lastError = error.localizedDescription
+                appState.post(.error, "Reprocessing “\(job.recording.meetingTitleDraft)” didn't finish: \(error.localizedDescription) Current results were kept.",
+                              source: .reprocessing, recordingURL: job.recording.finalizedAudioURL, actions: [.openQueue])
+                notify(.reprocessFailed, about: job.recording)
                 appState.processingSteps.append(.init(name: "Reprocessing", status: .failed(error.localizedDescription)))
                 await endReprocessing(job)
             }
@@ -313,7 +326,7 @@ extension RecordingManager {
             reprocessingResultsRevision += 1
             await refreshWorkQueue()
         }
-        catch { appState.lastError = error.localizedDescription }
+        catch { appState.post(.error, "Couldn't discard the reprocess: \(error.localizedDescription)", source: .queue, actions: [.openQueue]) }
     }
 
     func restoreReprocessingResults(for recording: Recording) async throws {
@@ -329,8 +342,8 @@ extension RecordingManager {
             try await reprocessingStore.restore(audioURL: audio)
             reprocessingRecoveryReady = true
         } catch {
-            do { _ = try await reprocessingStore.recover(); reprocessingRecoveryReady = true }
-            catch { appState.lastError = "Reprocessing recovery needs attention: \(error.localizedDescription)" }
+            do { _ = try await reprocessingStore.recover(); reprocessingRecoveryReady = true; clearReprocessingRecoveryError() }
+            catch { reportReprocessingRecoveryError(error) }
             reprocessingResultsRevision += 1
             throw error
         }

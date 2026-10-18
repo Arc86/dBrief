@@ -123,7 +123,7 @@ struct ModelPickerQuickPick: View {
     nonisolated static func downloadText(downloaded: Bool?, downloadMB: Int?) -> String {
         switch downloaded {
         case nil: return "Checking…"
-        case true?: return "✓ Downloaded"
+        case true?: return "Downloaded"
         case false?: return "Not downloaded" + (downloadMB.map { " · \($0) MB" } ?? "")
         }
     }

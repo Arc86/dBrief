@@ -3,16 +3,17 @@ import Foundation
 /// What the menu panel header says. Capture always wins (a recording can start
 /// while an earlier job processes); the review form wins over background work.
 enum MenuPanelStatus: Equatable {
-    case ready, recording, paused, processing, recordingCompleted, briefReady
+    case ready, recording, paused, processing, recordingCompleted, briefReady, finishedWithIssues
 
     enum Tone: Equatable { case success, danger, warning, accent }
 
-    static func resolve(isRecording: Bool, isPaused: Bool, isProcessing: Bool, showsPostRecording: Bool, hasResults: Bool) -> MenuPanelStatus {
+    static func resolve(isRecording: Bool, isPaused: Bool, isProcessing: Bool, showsPostRecording: Bool, hasResults: Bool,
+                        hasFailures: Bool = false) -> MenuPanelStatus {
         if isRecording { return .recording }
         if isPaused { return .paused }
         if showsPostRecording { return .recordingCompleted }
         if isProcessing { return .processing }
-        if hasResults { return .briefReady }
+        if hasResults { return hasFailures ? .finishedWithIssues : .briefReady }
         return .ready
     }
 
@@ -24,6 +25,7 @@ enum MenuPanelStatus: Equatable {
         case .processing: "Processing"
         case .recordingCompleted: "Recording completed"
         case .briefReady: "Brief ready"
+        case .finishedWithIssues: "Finished with issues"
         }
     }
 
@@ -31,7 +33,7 @@ enum MenuPanelStatus: Equatable {
         switch self {
         case .ready, .recordingCompleted, .briefReady: .success
         case .recording: .danger
-        case .paused: .warning
+        case .paused, .finishedWithIssues: .warning
         case .processing: .accent
         }
     }
@@ -54,6 +56,13 @@ enum MenuPanelProgress {
         return lines > 4
     }
 
+    static func processingHeading(title: String?, complete: Bool) -> String {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+            return complete ? "Processing complete" : "Processing recording"
+        }
+        return complete ? "Processed “\(title)”" : "Processing “\(title)”"
+    }
+
     /// During record-while-processing two Stop buttons are on screen; name the job's one.
     static func stopProcessingTitle(isCapturing: Bool) -> String {
         isCapturing ? "Stop processing" : "Stop"
@@ -74,5 +83,19 @@ enum MenuPanelProgress {
         let parts = [(summary, "Summary"), (actions, "Actions"), (tags, "Tags"), (notes, "Notes")]
             .filter { $0.0 }.map { $0.1 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+/// The fixes a finished brief offers for its failed steps.
+enum BriefRecovery: Equatable {
+    case reanalyze, integrations
+
+    static func hasFailures(_ steps: [ProcessingStep]) -> Bool {
+        steps.contains { if case .failed = $0.status { true } else { false } }
+    }
+
+    static func actions(for steps: [ProcessingStep]) -> [BriefRecovery] {
+        let failed = steps.filter { if case .failed = $0.status { true } else { false } }.map(\.kind)
+        return (failed.contains(.analysis) ? [.reanalyze] : []) + (failed.contains(.delivery) ? [.integrations] : [])
     }
 }

@@ -40,4 +40,10 @@ import Testing
         #expect(TranscriptTurnRow<EmptyView>.rowMatchIndex(matches: [mine], current: 4) == -1)
         #expect(TranscriptTurnRow<EmptyView>.rowMatchIndex(matches: [], current: 3) == -1)
     }
+
+    /// Turn rows read "75:12" while the player read "1:15:12" for the same moment.
+    @Test func timecodesShowHoursPastAnHourLikeThePlayer() {
+        #expect(TranscriptTurnRow<EmptyView>.timecode(75) == "1:15")
+        #expect(TranscriptTurnRow<EmptyView>.timecode(4512) == "1:15:12")
+    }
 }

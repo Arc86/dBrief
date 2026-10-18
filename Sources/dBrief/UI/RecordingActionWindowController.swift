@@ -70,13 +70,14 @@ final class RecordingActionWindowController {
         self.recordingManager = recordingManager
     }
 
-    func showReprocessing(recording: Recording, operation: ReprocessingOperation) {
+    func showReprocessing(recording: Recording, operation: ReprocessingOperation, discardingRunID: UUID? = nil) {
         guard let appState, let appSettings, let recordingManager else { return }
         presenter.close()
         prepareForPresentation(appSettings: appSettings)
         let root = ReprocessingSheet(
             recording: recording,
             operation: operation,
+            discardingRunID: discardingRunID,
             dismissAction: { [weak self] in self?.close() }
         )
         .environment(appState)

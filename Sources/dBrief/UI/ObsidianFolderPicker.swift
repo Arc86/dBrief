@@ -32,7 +32,7 @@ struct ObsidianFolderPicker: View {
             }
 
             if appSettings.obsidianVaultURL == nil {
-                Text("Select an Obsidian vault in Settings > Integrations.")
+                Text("Select an Obsidian vault in Settings → Integrations.")
                     .uiFont(.system(size: 11))
                     .foregroundStyle(palette.secondary.color)
             }

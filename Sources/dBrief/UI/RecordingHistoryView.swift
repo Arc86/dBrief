@@ -9,13 +9,28 @@ enum RecordingStatus {
     case analyzed
     case transcribed
     case queued
+    case processing
+    case reprocessPending
+    case needsAttention
+
+    /// Running and saved work win over what the sidecar files say.
+    static func resolve(ownership: RecordingOwnership, saved: RecordingStatus) -> RecordingStatus {
+        if ownership.isActiveJob || ownership.isCaptureOrReview { return .processing }
+        if ownership.pendingAttemptID != nil { return .reprocessPending }
+        if ownership.queueMarkerID != nil { return .queued }
+        if ownership.unfinishedJobID != nil { return .needsAttention }
+        return saved
+    }
 
     var label: String {
         switch self {
-        case .recorded: "Recorded"
+        case .recorded: "Not processed"
         case .analyzed: "Analyzed"
         case .transcribed: "Transcribed"
         case .queued: "Queued"
+        case .processing: "Processing"
+        case .reprocessPending: "Reprocess pending"
+        case .needsAttention: "Needs attention"
         }
     }
 
@@ -25,6 +40,9 @@ enum RecordingStatus {
         switch self {
         case .analyzed: "checkmark.circle"
         case .queued: "clock"
+        case .processing: "waveform"
+        case .reprocessPending: "clock.arrow.circlepath"
+        case .needsAttention: "exclamationmark.triangle"
         case .recorded, .transcribed: nil
         }
     }
@@ -32,7 +50,8 @@ enum RecordingStatus {
     var tone: MenuPanelStatus.Tone? {
         switch self {
         case .analyzed: .success
-        case .queued: .warning
+        case .queued, .reprocessPending, .needsAttention: .warning
+        case .processing: .accent
         case .recorded, .transcribed: nil
         }
     }
@@ -53,6 +72,8 @@ struct RecordingHistoryView: View {
     @State private var loadTask: Task<Void, Never>?
     @State private var expandedItemId: URL?
     @State private var loadedSummaries: [URL: String] = [:]
+    /// The row whose notes were just copied, for the "Copied" confirmation.
+    @State private var copiedItem: URL?
 
     struct HistoryItem: Identifiable, Equatable, Sendable {
         /// Keyed by the audio file so a reload keeps each row's identity; a random
@@ -84,29 +105,8 @@ struct RecordingHistoryView: View {
             return .recorded
         }
 
-        var formattedDate: String {
-            let cal = Calendar.current
-            let now = Date.now
-            let timeFormatter = DateFormatter()
-            timeFormatter.dateFormat = "h:mm a"
-            let timeStr = timeFormatter.string(from: date)
-
-            if cal.isDateInToday(date) {
-                return "Today \(timeStr)"
-            } else if cal.isDateInYesterday(date) {
-                return "Yesterday \(timeStr)"
-            } else if let days = cal.dateComponents([.day], from: date, to: now).day, days < 7 {
-                let dayFormatter = DateFormatter()
-                dayFormatter.dateFormat = "EEE"
-                return "\(dayFormatter.string(from: date)) \(timeStr)"
-            } else {
-                let shortFormatter = DateFormatter()
-                let year = cal.component(.year, from: date)
-                let currentYear = cal.component(.year, from: now)
-                shortFormatter.dateFormat = year == currentYear ? "MMM d" : "MMM d, yyyy"
-                return shortFormatter.string(from: date)
-            }
-        }
+        /// Same text as the library sidebar, following the system's 12/24-hour setting.
+        var formattedDate: String { LibraryRowFormat.date(date) }
 
         var formattedDuration: String { RecordingListPresentation.duration(duration) }
 
@@ -198,31 +198,35 @@ struct RecordingHistoryView: View {
             HStack(spacing: 4) {
                 Text(item.formattedDate + (item.formattedDuration.isEmpty ? "" : " · \(item.formattedDuration)"))
                     .lineLimit(1)
+                let status = RecordingStatus.resolve(ownership: recordingManager.liveOwnership(for: item.url),
+                                                     saved: item.status)
                 RecordingListStatus(
-                    title: item.status.label, systemImage: item.status.systemImage,
-                    tint: item.status.tone?.color(palette: palette, status: panelStatus))
+                    title: status.label, systemImage: status.systemImage,
+                    tint: status.tone?.color(palette: palette, status: panelStatus))
             }
         } actions: {
             // Fixed 3 × 2 grid: unavailable actions stay in place, disabled, so the
             // grid never reflows between recordings.
             Grid(horizontalSpacing: 6, verticalSpacing: 6) {
                 GridRow {
-                    actionTile(title: item.hasInsights ? "Copy summary" : "Copy transcript", systemImage: "doc.on.doc") {
-                        let text = loadedSummaries[item.id] ?? ""
-                        Task { _ = await RecordingClipboard.copy(text, from: item.url) }
+                    actionTile(title: copiedItem == item.id ? "Copied" : (item.hasInsights ? "Copy Notes" : "Copy Transcript"),
+                               systemImage: copiedItem == item.id ? "checkmark" : "doc.on.doc") {
+                        Task {
+                            guard let text = await RecordingNotesText.load(for: item.url),
+                                  await RecordingClipboard.copy(text, from: item.url) else { return }
+                            copiedItem = item.id
+                            try? await Task.sleep(for: .seconds(2))
+                            if copiedItem == item.id { copiedItem = nil }
+                        }
                     }
                     .disabled(!item.hasTranscript)
-                    .help(loadedSummaries[item.id] != nil || item.hasInsights
-                        ? "Copy the summary" : "Copy the transcript (no summary yet)")
+                    .help(item.hasInsights ? "Copy the summary and action items" : "Copy the transcript (no summary yet)")
 
                     actionTile(title: "Show in Finder", systemImage: "folder") {
                         MenuBarPanel.reveal(item.url)
                     }
 
-                    ReprocessingMenu(recording: Recording(
-                        fileURL: item.url, fileSize: item.size,
-                        meetingTitleDraft: item.name, finalizedAudioURL: item.url
-                    ), hasTranscript: item.hasTranscript,
+                    ReprocessingMenu(recording: recordingModel(item), hasTranscript: item.hasTranscript,
                         presentationStyle: recordingActionPresentationStyle,
                         stacksLabel: true)
                     .menuStyle(.button)
@@ -230,24 +234,30 @@ struct RecordingHistoryView: View {
                     .buttonStyle(MenuPanelButtonStyle(kind: .tile, height: 42, fontSize: 11))
                 }
                 GridRow {
-                    actionTile(title: "Transcript", systemImage: "doc.text") {
-                        appState.pendingTranscriptSelectionURL = item.url
-                        MenuBarPanel.open("transcript", with: openWindow)
-                    }
-                    .disabled(!item.hasRichTranscript)
+                    // The viewer can also transcribe or rebuild a recording without a transcript.
+                    actionTile(title: "Open", systemImage: "doc.text") { openInLibrary(item) }
+                    .help("Open in the recording library")
 
                     actionTile(title: "Integrations", systemImage: "paperplane") {
                         Task { await recordingManager.reviewIntegrationDeliveries(for: item.url) }
                     }
                     .disabled(appState.processingJob != nil || recordingManager.reviewingIntegrationDeliveries)
-                    .help("Review delivery status and retry an individual integration")
+                    .help(appState.processingJob != nil
+                        ? "Wait for processing to finish to review integration deliveries"
+                        : "Review delivery status and retry an individual integration")
 
                     actionTile(title: "Delete", systemImage: "trash", destructive: true) {
                         deleteItem(item)
                     }
-                    .disabled(recordingManager.isReprocessing(item.url))
+                    .recordingBlock(recordingManager.eligibility(for: item.url, .delete), help: "Delete this recording")
                 }
             }
+        }
+        // The same actions as the library row, for right-click and keyboard users.
+        .contextMenu {
+            RecordingContextMenu(recording: recordingModel(item), hasTranscript: item.hasTranscript,
+                                 open: { openInLibrary(item) },
+                                 onDeleted: { removeDeleted(item) })
         }
     }
 
@@ -295,23 +305,28 @@ struct RecordingHistoryView: View {
     }
 
     private func deleteItem(_ item: HistoryItem) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Delete \(item.displayName)?"
-        alert.informativeText = "This permanently deletes the recording, its local sidecars, queued work, and saved recovery content. Separately exported Markdown and content already sent to integrations are kept."
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Delete Recording")
-        guard alert.runModal() == .alertSecondButtonReturn else { return }
         Task {
-            do {
-                try await recordingManager.deleteRecording(item.url)
-                recordings.removeAll { $0.id == item.id }
-                if expandedItemId == item.id { expandedItemId = nil }
-            } catch {
-                appState.lastError = "Deletion could not finish. Some files may remain; wait for processing to finish and check storage before retrying."
+            if await RecordingDeletion.confirmAndDelete(item.url, title: item.displayName,
+                                                        manager: recordingManager, appState: appState) {
+                removeDeleted(item)
+            } else {
                 loadRecordings()
             }
         }
+    }
+
+    private func removeDeleted(_ item: HistoryItem) {
+        recordings.removeAll { $0.id == item.id }
+        if expandedItemId == item.id { expandedItemId = nil }
+    }
+
+    private func recordingModel(_ item: HistoryItem) -> Recording {
+        Recording(fileURL: item.url, fileSize: item.size, meetingTitleDraft: item.name, finalizedAudioURL: item.url)
+    }
+
+    private func openInLibrary(_ item: HistoryItem) {
+        appState.pendingTranscriptSelectionURL = item.url
+        MenuBarPanel.open("transcript", with: openWindow)
     }
 
     private var miniPlayer: some View {

@@ -71,7 +71,7 @@ final class PowerStateMonitor {
         log.info("On AC power with \(count) queued recording(s), sending nudge notification")
 
         let content = UNMutableNotificationContent()
-        content.title = "Recordings Queued"
+        content.title = "Recordings queued"
         content.body = "You have \(count) recording\(count == 1 ? "" : "s") queued for processing. You're now on AC power."
         content.sound = .default
 

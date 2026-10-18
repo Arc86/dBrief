@@ -243,7 +243,7 @@ private struct MeetingParticipantsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            MeetingCardHeading(title: "Participants", symbol: "person.2")
+            MeetingCardHeading(title: "Attendees", symbol: "person.2")
             Text(names.joined(separator: ", "))
                 .font(ViewerFonts.font(for: reading, effectiveMode: mode))
                 .lineSpacing(ViewerFonts.additionalLineSpacing(for: reading, effectiveMode: mode))

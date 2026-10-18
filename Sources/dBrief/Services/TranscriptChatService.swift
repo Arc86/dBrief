@@ -641,7 +641,7 @@ final class TranscriptChatService {
         switch engine {
 
         case .localCLI:
-            return errorStream("Local CLI does not support chat. Choose a chat fallback engine in Settings → AI Analysis.")
+            return errorStream("Local CLI does not support chat. Choose a chat fallback engine in Settings → AI analysis.")
 
         case .qwenLocal:
             guard let plugin = localPlugin else {
@@ -655,7 +655,7 @@ final class TranscriptChatService {
 
         case .remoteEndpoint:
             guard let endpoint = appSettings.effectiveDefaultAIEndpoint else {
-                return errorStream("No AI endpoint configured. Add one in Settings → AI.")
+                return errorStream("No AI endpoint configured. Add one in Settings → AI analysis.")
             }
             return aiService.streamChat(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
         }

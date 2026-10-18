@@ -48,4 +48,22 @@ struct SettingsSearchTests {
             #expect(SettingsSearch.entries.contains { $0.destination.page == page })
         }
     }
+
+    /// Searches that found nothing, or the wrong page, before the audit fixes.
+    @Test(arguments: [("attendees", SettingsSectionID.afterRecordingTasks), ("hallucination", .transcriptionCleanup),
+                      ("voiceprint", .speakerLibrary), ("todoist", .integrations), ("ticktick", .integrations)])
+    func everydayWordsReachTheirSetting(query: String, section: SettingsSectionID) {
+        #expect(SettingsSearch.results(for: query).first?.destination.section == section)
+    }
+
+    @Test func everySectionCanBeFound() {
+        let reachable = Set(SettingsSearch.entries.compactMap(\.destination.section))
+        let missing = SettingsSectionID.allCases.filter { !reachable.contains($0) }
+        #expect(missing.isEmpty, "No search entry for \(missing)")
+    }
+
+    @Test func hiddenIntegrationsAreNotAdvertised() {
+        let integrations = SettingsSearch.entries.first { $0.id == "integrations" }
+        #expect(integrations?.keywords.contains("evernote") == false)
+    }
 }

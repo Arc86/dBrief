@@ -71,8 +71,24 @@ struct TranscriptBrowserView: View {
         return job.recording
     }
 
+    /// The finished capture open in the post-recording review form. Its recovery
+    /// manifest is still "recoverable" until it is saved, so without this it showed
+    /// in Queued / Interrupted as an interrupted recording.
+    private var reviewingRecording: Recording? {
+        appState.showPostRecordingSheet ? appState.currentRecording : nil
+    }
+
+    /// The index's work plus pending reprocess attempts, as the menu panel lists them.
+    private var visibleWork: [LibraryWorkItem] {
+        library.workMatches + LibraryWorkItem.reprocessing(
+            recordingManager.reprocessingAttempts.map {
+                .init(id: $0.id, audioURL: $0.audioURL, status: $0.status, message: $0.message, updatedAt: $0.updatedAt)
+            },
+            view: library.selectedView, activeAttemptID: appState.processingJob?.reprocessingAttemptID)
+    }
+
     private var activeWorkIDs: Set<UUID> {
-        Set([appState.processingJob?.id, processingRecording?.id, liveRecording?.id].compactMap { $0 })
+        Set([appState.processingJob?.id, processingRecording?.id, liveRecording?.id, reviewingRecording?.id].compactMap { $0 })
     }
 
     private var activeAudioURLs: Set<URL> {
@@ -130,7 +146,7 @@ struct TranscriptBrowserView: View {
         .onChange(of: activeAudioURLs) { _, _ in updateActiveWork() }
         .onChange(of: library.queryRevision) { _, _ in
             if let selectedWork, library.error == nil {
-                self.selectedWork = library.workMatches.first { $0.id == selectedWork.id }
+                self.selectedWork = visibleWork.first { $0.id == selectedWork.id }
             }
             selectNewestIfNeeded()
         }
@@ -203,11 +219,34 @@ struct TranscriptBrowserView: View {
 
     // MARK: - Shell panes
 
+    /// The same Remove actions the menu panel's Queue & Recovery offers.
+    private func removeAction(for work: LibraryWorkItem) -> (@MainActor () async -> Void)? {
+        switch work.target {
+        case .queue:
+            guard let audio = work.audioURL else { return nil }
+            return { await recordingManager.removeQueuedItem(audio); library.refresh() }
+        case .recovery, .delivery:
+            return { await recordingManager.dismissRecoveryItem(work.recoveryID); library.refresh() }
+        case .reprocess:
+            return {
+                guard DestructiveConfirmation.confirm("Discard this reprocess?",
+                    message: "The recording's current results stay. The unfinished reprocess can't be resumed afterwards.",
+                    button: "Discard") else { return }
+                await recordingManager.discardReprocessing(work.recoveryID); library.refresh()
+            }
+        case .capture:
+            return nil
+        }
+    }
+
     @ViewBuilder
     private var mainPane: some View {
         if let work = selectedWork {
             LibraryWorkDetailView(item: work,
-                disabled: !recordingManager.canPerformLibraryWork || library.isQuerying || library.error != nil) {
+                disabledReason: recordingManager.libraryWorkBlockMessage(work.target)
+                    ?? (library.isQuerying || library.error != nil ? "The library is updating. Try again in a moment." : nil),
+                remove: removeAction(for: work),
+                openRecording: work.audioURL.map { url in { appState.pendingTranscriptSelectionURL = url } }) {
                 try await recordingManager.performLibraryWork(work)
                 if recordingManager.reprocessingRecoveryReady { library.refresh() }
             }
@@ -255,8 +294,7 @@ struct TranscriptBrowserView: View {
             emptyMessage: sidebarEmptyMessage,
             isRecordEnabled: appState.isIdle,
             onRecord: {
-                appState.lastError = nil
-                Task { try? await recordingManager.startRecording() }
+                Task { await recordingManager.requestRecording() }
             },
             onRefresh: reload,
             onRebuildSearchIndex: { library.refresh(rebuild: true) },
@@ -304,7 +342,7 @@ struct TranscriptBrowserView: View {
     }
 
     private var sidebarEmptyMessage: String? {
-        guard !library.hasMatches,
+        guard !library.hasMatches, visibleWork.isEmpty,
               liveRecording == nil,
               processingRecording == nil,
               !library.showsInitialLoading,
@@ -347,10 +385,10 @@ struct TranscriptBrowserView: View {
         case .failedJobs, .queuedInterrupted:
             Group {
                 LibrarySectionHeader(
-                    title: library.selectedView == .failedJobs ? "Failed jobs" : "Queued / interrupted",
-                    count: library.workMatches.count
+                    title: library.selectedView.title,
+                    count: visibleWork.count
                 )
-                ForEach(library.workMatches) { item in
+                ForEach(visibleWork) { item in
                     LibraryWorkRow(item: item, isSelected: selectedWork?.id == item.id) {
                         selection = nil
                         detailRecording = nil
@@ -428,9 +466,9 @@ struct TranscriptBrowserView: View {
     private func moveSelection(by offset: Int) {
         switch library.selectedView {
         case .failedJobs, .queuedInterrupted:
-            let ids = library.workMatches.map(\.id)
+            let ids = visibleWork.map(\.id)
             guard let id = LibraryKeyboardNavigation.step(ids, from: selectedWork?.id, by: offset),
-                  let item = library.workMatches.first(where: { $0.id == id }) else { return }
+                  let item = visibleWork.first(where: { $0.id == id }) else { return }
             selection = nil
             detailRecording = nil
             selectedWork = item
@@ -447,7 +485,7 @@ struct TranscriptBrowserView: View {
         guard !didAutoSelect, library.queryRevision > 0 else { return }
         didAutoSelect = true
         guard selection == nil, selectedWork == nil, appState.pendingTranscriptSelectionURL == nil,
-              !appState.pendingLiveTranscriptSelection else { return }
+              appState.pendingLiveTranscriptSelection == nil else { return }
         let pinned = Set([liveRecording?.fileURL, processingRecording?.fileURL].compactMap { $0 })
         if let newest = visibleRecordingURLs.first(where: { !pinned.contains($0) }) {
             selection = newest
@@ -503,16 +541,16 @@ struct TranscriptBrowserView: View {
     }
 
     private func applyPendingLiveSelection() {
-        guard appState.pendingLiveTranscriptSelection else { return }
-        // Prefer the background processing job's row (the "Live Transcript" button in the
-        // processing progress view is the common source); fall back to the capture row.
-        if let proc = processingRecording { selection = proc.fileURL }
-        else if let live = liveRecording { selection = live.fileURL }
+        guard let target = appState.pendingLiveTranscriptSelection else { return }
+        // Each Live button opens its own recording, falling back to the other one.
+        if let url = target.url(capture: liveRecording?.fileURL, processing: processingRecording?.fileURL) {
+            selection = url
+        }
         // The URL may already be selected, so onChange(selection) need not fire.
         // Switch from the published recording to this job's staged object anyway.
         selectedWork = nil
         rebuildDetailRecording()
-        appState.pendingLiveTranscriptSelection = false
+        appState.pendingLiveTranscriptSelection = nil
     }
 
     private func handleDeleted(_ url: URL) {
@@ -542,7 +580,7 @@ struct TranscriptBrowserView: View {
     }
 }
 
-/// A library row plus its Reprocess context menu. Equatable over the row's data,
+/// A library row plus the shared recording context menu. Equatable over the row's data,
 /// so a selection change re-renders only the two rows whose `isSelected` flipped
 /// instead of every row and every context menu (each menu wraps a fresh
 /// `Recording` and a `ReprocessingMenu`, which `.contextMenu` builds eagerly).
@@ -559,8 +597,8 @@ private struct LibraryRecordingRow: View, Equatable {
     var body: some View {
         SidebarRecordingRow(item: item, isSelected: isSelected, onTap: onSelect)
             .contextMenu {
-                ReprocessingMenu(recording: TranscriptBrowserView.makeRecording(from: item),
-                                 hasTranscript: item.hasTranscript, presentationStyle: .window)
+                RecordingContextMenu(recording: TranscriptBrowserView.makeRecording(from: item),
+                                     hasTranscript: item.hasTranscript, open: onSelect)
             }
     }
 }
