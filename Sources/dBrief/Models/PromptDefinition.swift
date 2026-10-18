@@ -6,11 +6,11 @@ enum PromptKind: String, CaseIterable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .summary: "Summary"
-        case .actionItems: "Action Items"
-        case .tags: "Tags & Sentiment"
-        case .spokenSummary: "Spoken Summary"
-        case .voiceStyle: "Voice Style"
+        case .summary: String(localized: "Summary")
+        case .actionItems: String(localized: "Action Items")
+        case .tags: String(localized: "Tags & Sentiment")
+        case .spokenSummary: String(localized: "Spoken Summary")
+        case .voiceStyle: String(localized: "Voice Style")
         }
     }
     var outputContract: String {
@@ -24,11 +24,11 @@ enum PromptKind: String, CaseIterable, Hashable, Sendable {
     }
     var description: String {
         switch self {
-        case .summary: "Shape the summary of your recording."
-        case .actionItems: "Make commitments and follow-ups easy to find."
-        case .tags: "Choose useful topics and describe the conversation’s tone."
-        case .spokenSummary: "Write a summary that sounds natural aloud."
-        case .voiceStyle: "Guide the tone and pace of the spoken summary."
+        case .summary: String(localized: "Shape the summary of your recording.")
+        case .actionItems: String(localized: "Make commitments and follow-ups easy to find.")
+        case .tags: String(localized: "Choose useful topics and describe the conversation’s tone.")
+        case .spokenSummary: String(localized: "Write a summary that sounds natural aloud.")
+        case .voiceStyle: String(localized: "Guide the tone and pace of the spoken summary.")
         }
     }
     @MainActor var factoryText: String {
@@ -48,12 +48,12 @@ enum PromptKind: String, CaseIterable, Hashable, Sendable {
     var templates: [Template] {
         switch self {
         case .summary:
-            [.init(name: "Concise", text: "Summarize this meeting in up to five concise bullets. Prioritize decisions, commitments, and unresolved questions. Preserve names and dates. Do not infer missing details. Use the language of the source unless a language is explicitly requested."),
-             .init(name: "Detailed", text: "Write detailed meeting notes with sections for Context, Decisions, Next steps, and Open questions. Preserve names, dates, and commitments. Distinguish proposals from agreed decisions. Omit empty sections and small talk. Use the language of the source unless a language is explicitly requested.")]
+            [.init(name: String(localized: "Concise"), text: "Summarize this meeting in up to five concise bullets. Prioritize decisions, commitments, and unresolved questions. Preserve names and dates. Do not infer missing details. Use the language of the source unless a language is explicitly requested."),
+             .init(name: String(localized: "Detailed"), text: "Write detailed meeting notes with sections for Context, Decisions, Next steps, and Open questions. Preserve names, dates, and commitments. Distinguish proposals from agreed decisions. Omit empty sections and small talk. Use the language of the source unless a language is explicitly requested.")]
         case .actionItems:
-            [.init(name: "With owners and deadlines", text: "Extract confirmed action items as a bullet list. For each item include the task, owner, and deadline when stated. Mark missing owners or deadlines as not specified. Do not treat suggestions as commitments. Use the source language unless another language is requested.")]
+            [.init(name: String(localized: "With owners and deadlines"), text: "Extract confirmed action items as a bullet list. For each item include the task, owner, and deadline when stated. Mark missing owners or deadlines as not specified. Do not treat suggestions as commitments. Use the source language unless another language is requested.")]
         case .spokenSummary:
-            [.init(name: "Brief recap", text: "Write a short spoken recap from these meeting insights. Start with the main outcome, then cover decisions and next steps. Use short sentences and natural transitions. Preserve facts. Do not read headings or bullet markers aloud.")]
+            [.init(name: String(localized: "Brief recap"), text: "Write a short spoken recap from these meeting insights. Start with the main outcome, then cover decisions and next steps. Use short sentences and natural transitions. Preserve facts. Do not read headings or bullet markers aloud.")]
         case .tags, .voiceStyle: []
         }
     }

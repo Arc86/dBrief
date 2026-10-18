@@ -34,7 +34,7 @@ final class PromptEditorWindowController: NSObject, NSWindowDelegate {
             hosting.sizingOptions = []
             window.contentViewController = hosting
             window.contentMinSize = NSSize(width: 680, height: 500)
-            window.title = "\(identity.kind.title) Prompt"
+            window.title = String(localized: "\(identity.kind.title) Prompt")
             let toolbar = PromptEditorToolbar(session: session)
             toolbar.install(on: window)
             // Hosting-controller installation can reset the initial content size.
@@ -48,7 +48,7 @@ final class PromptEditorWindowController: NSObject, NSWindowDelegate {
             window.makeKeyAndOrderFront(nil)
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Cannot open prompt"
+            alert.messageText = String(localized: "Cannot open prompt")
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
@@ -85,11 +85,11 @@ final class PromptEditorWindowController: NSObject, NSWindowDelegate {
     private func resolveChanges(_ entry: Entry) async -> Bool {
         entry.window.makeKeyAndOrderFront(nil)
         let alert = NSAlert()
-        alert.messageText = "Save changes to \(entry.session.identity.kind.title)?"
-        alert.informativeText = "Your changes to \(entry.session.draft.baseline.scopeName) have not been saved."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Discard Changes")
+        alert.messageText = String(localized: "Save changes to \(entry.session.identity.kind.title)?")
+        alert.informativeText = String(localized: "Your changes to \(entry.session.draft.baseline.scopeName) have not been saved.")
+        alert.addButton(withTitle: String(localized: "Save"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.addButton(withTitle: String(localized: "Discard Changes"))
         alert.buttons[0].isEnabled = entry.session.draft.canSave
         switch await alert.beginSheetModal(for: entry.window) {
         case .alertFirstButtonReturn:

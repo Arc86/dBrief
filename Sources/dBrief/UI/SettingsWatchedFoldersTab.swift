@@ -82,7 +82,7 @@ struct SettingsWatchedFoldersTab: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        panel.message = "Choose a folder to watch for new audio files"
+        panel.message = String(localized: "Choose a folder to watch for new audio files")
 
         let response = panel.runModal()
 

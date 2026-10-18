@@ -59,10 +59,10 @@ struct SettingsRecordingTab: View {
 
             SettingsAdvancedCard(page: .recording, summary: "Audio quality", sections: [.audioQuality]) {
                 SettingsCard("Audio quality", section: .audioQuality) {
-                    qualityRow("Capture", "CAF/LPCM per track (system + mic separate)")
-                    qualityRow("Master output", "M4A/AAC 96 kbps · 48 kHz stereo")
+                    qualityRow("Capture", String(localized: "CAF/LPCM per track (system + mic separate)"))
+                    qualityRow("Master output", String(localized: "M4A/AAC 96 kbps · 48 kHz stereo"))
                     qualityRow("Post-processing",
-                               "Mic: 80Hz HPF, sidechain duck vs. system, -16 LUFS loudnorm\nSystem: 40Hz HPF, 12kHz LPF\nMix: amix normalize=0")
+                               String(localized: "Mic: 80Hz HPF, sidechain duck vs. system, -16 LUFS loudnorm\nSystem: 40Hz HPF, 12kHz LPF\nMix: amix normalize=0"))
                 }
             }
         }

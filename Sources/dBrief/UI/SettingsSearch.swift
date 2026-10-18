@@ -4,14 +4,17 @@ import Foundation
 struct SettingsSearchEntry: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
+    /// The untranslated title: English search terms work in every language.
+    let englishTitle: String
     let keywords: String
     let destination: SettingsDestination
     /// Whether the destination sits inside a collapsed Advanced card.
     var requiresAdvanced: Bool { destination.section?.isAdvanced ?? false }
 
-    init(_ id: String, _ title: String, _ keywords: String, section: SettingsSectionID) {
+    init(_ id: String, _ title: LocalizedStringResource, _ keywords: String, section: SettingsSectionID) {
         self.id = id
-        self.title = title
+        self.title = String(localized: title)
+        self.englishTitle = title.key
         self.keywords = keywords
         self.destination = SettingsDestination(section: section)
     }
@@ -19,6 +22,7 @@ struct SettingsSearchEntry: Identifiable, Equatable, Sendable {
     init(page: SettingsPage) {
         id = "page.\(page.rawValue)"
         title = page.title
+        englishTitle = page.englishTitle
         switch page {
         case .speakers: keywords = "Voice Library speaker library identify speakers diarization enroll voices"
         case .ai: keywords = "AI & Models artificial intelligence analysis"
@@ -94,7 +98,8 @@ enum SettingsSearch {
         let terms = query.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         return entries.compactMap { entry -> (SettingsSearchEntry, Int)? in
             let title = normalize(entry.title)
-            let text = normalize("\(entry.title) \(entry.keywords) \(entry.destination.page.title)")
+            let page = entry.destination.page
+            let text = normalize("\(entry.title) \(entry.englishTitle) \(entry.keywords) \(page.title) \(page.englishTitle)")
             guard terms.allSatisfy({ text.contains($0) }) else { return nil }
             let score = title == query ? 100 : title.hasPrefix(query) ? 80 : title.contains(query) ? 60 : 10
             return (entry, score)

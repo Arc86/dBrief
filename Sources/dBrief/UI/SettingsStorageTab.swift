@@ -19,10 +19,10 @@ struct SettingsStorageTab: View {
             SettingsProfileScopeView(fields: SettingsPage.storage.profileFields, editProfile: editProfile)
         }) {
             SettingsCard("Folders", section: .storageFolders) {
-                folderRow(title: "Recordings", url: appSettings.recordingFolderURL) { url in
+                folderRow(title: String(localized: "Recordings"), url: appSettings.recordingFolderURL) { url in
                     appSettings.recordingFolderURL = url
                 }
-                folderRow(title: "Transcripts", url: appSettings.transcriptionFolderURL) { url in
+                folderRow(title: String(localized: "Transcripts"), url: appSettings.transcriptionFolderURL) { url in
                     appSettings.transcriptionFolderURL = url
                 }
             }
@@ -30,27 +30,27 @@ struct SettingsStorageTab: View {
             SettingsCard("Auto-delete", description: "Runs at launch and then daily while dBrief is open, in these folders and every profile's folders",
                          section: .storageRetention) {
                 retentionRows(
-                    title: "Delete old recordings",
-                    help: "Audio dBrief recognises from its metadata. Transcripts, notes and unknown files are kept.",
+                    title: String(localized: "Delete old recordings"),
+                    help: String(localized: "Audio dBrief recognises from its metadata. Transcripts, notes and unknown files are kept."),
                     enabled: $settings.autoDeleteRecordingsEnabled,
                     days: $settings.autoDeleteRecordingsDays,
                     category: .recordings
                 )
                 retentionRows(
-                    title: "Delete old transcripts",
-                    help: "Transcripts and linked Markdown exports dBrief recognises. Audio and unknown files are kept.",
+                    title: String(localized: "Delete old transcripts"),
+                    help: String(localized: "Transcripts and linked Markdown exports dBrief recognises. Audio and unknown files are kept."),
                     enabled: $settings.autoDeleteTranscriptsEnabled,
                     days: $settings.autoDeleteTranscriptsDays,
                     category: .transcripts
                 )
                 if appSettings.autoDeleteRecordingsEnabled || appSettings.autoDeleteTranscriptsEnabled {
-                    SettingsRow(verbatim: "Last clean-up", caption: lastCleanupCaption)
+                    SettingsRow(verbatim: String(localized: "Last clean-up"), caption: lastCleanupCaption)
                 }
             }
         }
         .confirmationDialog(
             Text(verbatim: pendingCleanup.map {
-                "Delete \($0.displayName) older than \(retentionLabel(retentionDays(for: $0)))?"
+                String(localized: "Delete \($0.displayName) older than \(retentionLabel(retentionDays(for: $0)))?")
             } ?? ""),
             isPresented: Binding(
                 get: { pendingCleanup != nil },
@@ -62,14 +62,13 @@ struct SettingsStorageTab: View {
             Button("Cancel", role: .cancel) { pendingCleanup = nil }
         } message: { category in
             // Name the folders: profiles can save recordings outside the ones shown above.
-            Text(verbatim: "This permanently deletes matching files in "
-                 + ListFormatter.localizedString(byJoining: appSettings.retentionFolders(for: category).map(\.lastPathComponent))
-                 + ". This can't be undone.")
+            let folders = ListFormatter.localizedString(byJoining: appSettings.retentionFolders(for: category).map(\.lastPathComponent))
+            Text(verbatim: String(localized: "This permanently deletes matching files in \(folders). This can't be undone."))
         }
     }
 
     private var lastCleanupCaption: String {
-        guard let lastRun = appSettings.lastRetentionCleanupDate else { return "Not run yet." }
+        guard let lastRun = appSettings.lastRetentionCleanupDate else { return String(localized: "Not run yet.") }
         let date = lastRun.formatted(date: .abbreviated, time: .shortened)
         let summary = appSettings.lastRetentionCleanupSummary
         return summary.isEmpty ? date : "\(date) · \(summary)"
@@ -97,7 +96,7 @@ struct SettingsStorageTab: View {
             }
         }
         if enabled.wrappedValue {
-            SettingsRow(verbatim: "Clean up now", caption: cleanupMessage[category]) {
+            SettingsRow(verbatim: String(localized: "Clean up now"), caption: cleanupMessage[category]) {
                 HStack(spacing: 8) {
                     if runningCleanup == category { ProgressView().controlSize(.small) }
                     Button(category == .recordings ? "Delete old recordings…" : "Delete old transcripts…") {
@@ -130,11 +129,11 @@ struct SettingsStorageTab: View {
 
     private func retentionLabel(_ days: Int) -> String {
         switch days {
-        case 1: "1 day"
-        case 7: "1 week"
-        case 14: "2 weeks"
-        case 365: "1 year"
-        default: "\(days) days"
+        case 1: String(localized: "1 day")
+        case 7: String(localized: "1 week")
+        case 14: String(localized: "2 weeks")
+        case 365: String(localized: "1 year")
+        default: String(localized: "\(days) days")
         }
     }
 
@@ -157,7 +156,7 @@ struct SettingsStorageTab: View {
             } catch {
                 cleanupMessage[category] = recordingManager.hasUnreadableRecords
                     ? RecordingBlock.unreadableRecords.message
-                    : "Cleanup could not finish safely. Check storage before retrying."
+                    : String(localized: "Cleanup could not finish safely. Check storage before retrying.")
             }
             runningCleanup = nil
         }

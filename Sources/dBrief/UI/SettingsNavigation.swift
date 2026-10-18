@@ -10,7 +10,12 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     case benchmark, about
     var id: String { rawValue }
 
-    var title: String {
+    var title: String { String(localized: titleResource) }
+
+    /// The English title, so searching in English still finds a page in any language.
+    var englishTitle: String { titleResource.key }
+
+    private var titleResource: LocalizedStringResource {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
@@ -35,22 +40,22 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     /// One line under the page title.
     var subtitle: String {
         switch self {
-        case .general: "Startup, updates and the setup guide."
-        case .appearance: "Theme, accent colour and interface text."
-        case .permissions: "What dBrief can access on this Mac."
-        case .recording: "Microphone, shortcut and what you see while recording."
-        case .meetings: "Notice calls and match recordings to calendar events."
-        case .watchedFolders: "Process audio files dropped into watched folders."
-        case .transcription: "Turn audio into text."
-        case .speakers: "Tell voices apart and recognise people you've named."
-        case .vocabulary: "Names and terms dBrief should spell exactly."
-        case .ai: "Summaries, action items, tags and Ask dBrief AI."
-        case .spokenVoice: "Listen to a recording's summary."
-        case .afterRecording: "What happens when you stop recording."
-        case .profiles: "Different settings for different kinds of meetings."
-        case .integrations: "Send results to the apps you work in."
-        case .storage: "Where files go and how long they stay."
-        case .benchmark: "How fast each model runs on this Mac."
+        case .general: String(localized: "Startup, updates and the setup guide.")
+        case .appearance: String(localized: "Theme, accent colour and interface text.")
+        case .permissions: String(localized: "What dBrief can access on this Mac.")
+        case .recording: String(localized: "Microphone, shortcut and what you see while recording.")
+        case .meetings: String(localized: "Notice calls and match recordings to calendar events.")
+        case .watchedFolders: String(localized: "Process audio files dropped into watched folders.")
+        case .transcription: String(localized: "Turn audio into text.")
+        case .speakers: String(localized: "Tell voices apart and recognise people you've named.")
+        case .vocabulary: String(localized: "Names and terms dBrief should spell exactly.")
+        case .ai: String(localized: "Summaries, action items, tags and Ask dBrief AI.")
+        case .spokenVoice: String(localized: "Listen to a recording's summary.")
+        case .afterRecording: String(localized: "What happens when you stop recording.")
+        case .profiles: String(localized: "Different settings for different kinds of meetings.")
+        case .integrations: String(localized: "Send results to the apps you work in.")
+        case .storage: String(localized: "Where files go and how long they stay.")
+        case .benchmark: String(localized: "How fast each model runs on this Mac.")
         case .about: ""
         }
     }
@@ -150,9 +155,9 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .app: "dBrief"
-        case .capture: "Capture"
-        case .understand: "Understand"
-        case .deliver: "Deliver"
+        case .capture: String(localized: "Capture")
+        case .understand: String(localized: "Understand")
+        case .deliver: String(localized: "Deliver")
         case .footer: ""
         }
     }

@@ -2,6 +2,38 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>%@ · %lld attendees</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld attendee</string>
+			<key>other</key>
+			<string>%2$lld attendees</string>
+		</dict>
+	</dict>
+	<key>%@ · %lld fields</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld field</string>
+			<key>other</key>
+			<string>%2$lld fields</string>
+		</dict>
+	</dict>
 	<key>%lld attendees loaded</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -18,6 +50,38 @@
 			<string>%lld attendees loaded</string>
 		</dict>
 	</dict>
+	<key>%lld calendars</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld calendar</string>
+			<key>other</key>
+			<string>%lld calendars</string>
+		</dict>
+	</dict>
+	<key>%lld days</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld day</string>
+			<key>other</key>
+			<string>%lld days</string>
+		</dict>
+	</dict>
 	<key>%lld meeting participants</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -32,6 +96,38 @@
 			<string>%lld meeting participant</string>
 			<key>other</key>
 			<string>%lld meeting participants</string>
+		</dict>
+	</dict>
+	<key>%lld minutes</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld minute</string>
+			<key>other</key>
+			<string>%lld minutes</string>
+		</dict>
+	</dict>
+	<key>%lld models · nothing downloads until first use</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld model · nothing downloads until first use</string>
+			<key>other</key>
+			<string>%lld models · nothing downloads until first use</string>
 		</dict>
 	</dict>
 	<key>%lld need attention</key>
@@ -66,6 +162,70 @@
 			<string>%lld participants</string>
 		</dict>
 	</dict>
+	<key>%lld permissions need attention.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld permission needs attention.</string>
+			<key>other</key>
+			<string>%lld permissions need attention.</string>
+		</dict>
+	</dict>
+	<key>%lld seconds</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld second</string>
+			<key>other</key>
+			<string>%lld seconds</string>
+		</dict>
+	</dict>
+	<key>%lld selected calendars are unavailable and won’t provide meetings.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld selected calendar is unavailable and won’t provide meetings.</string>
+			<key>other</key>
+			<string>%lld selected calendars are unavailable and won’t provide meetings.</string>
+		</dict>
+	</dict>
+	<key>%lld sessions</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld session</string>
+			<key>other</key>
+			<string>%lld sessions</string>
+		</dict>
+	</dict>
 	<key>%lld words</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -80,6 +240,22 @@
 			<string>%lld word</string>
 			<key>other</key>
 			<string>%lld words</string>
+		</dict>
+	</dict>
+	<key>**%@** overrides %lld settings on this page.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>**%1$@** overrides %2$#@n@ on this page.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld setting</string>
+			<key>other</key>
+			<string>%2$lld settings</string>
 		</dict>
 	</dict>
 	<key>Add %lld Items</key>
@@ -114,6 +290,86 @@
 			<string>Added %lld action items.</string>
 		</dict>
 	</dict>
+	<key>Connected — the connector answered the test window (%lld events).</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Connected — the connector answered the test window (%lld event).</string>
+			<key>other</key>
+			<string>Connected — the connector answered the test window (%lld events).</string>
+		</dict>
+	</dict>
+	<key>Deleted %lld files (%@).</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Deleted %1$#@n@ (%2$@).</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%1$lld file</string>
+			<key>other</key>
+			<string>%1$lld files</string>
+		</dict>
+	</dict>
+	<key>Deleted %lld files. Some privacy evidence could not be removed; retry cleanup when storage is available.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Deleted %lld file. Some privacy evidence could not be removed; retry cleanup when storage is available.</string>
+			<key>other</key>
+			<string>Deleted %lld files. Some privacy evidence could not be removed; retry cleanup when storage is available.</string>
+		</dict>
+	</dict>
+	<key>Imported %lld profiles.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Imported %lld profile.</string>
+			<key>other</key>
+			<string>Imported %lld profiles.</string>
+		</dict>
+	</dict>
+	<key>Loaded %lld models from the server.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Loaded %lld model from the server.</string>
+			<key>other</key>
+			<string>Loaded %lld models from the server.</string>
+		</dict>
+	</dict>
 	<key>Name the %lld voices before the analysis continues.</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -128,6 +384,38 @@
 			<string>Name the voice before the analysis continues.</string>
 			<key>other</key>
 			<string>Name the %lld voices before the analysis continues.</string>
+		</dict>
+	</dict>
+	<key>Processing in %lld seconds</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Processing in %lld second</string>
+			<key>other</key>
+			<string>Processing in %lld seconds</string>
+		</dict>
+	</dict>
+	<key>Queueing in %lld seconds</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Queueing in %lld second</string>
+			<key>other</key>
+			<string>Queueing in %lld seconds</string>
 		</dict>
 	</dict>
 </dict>

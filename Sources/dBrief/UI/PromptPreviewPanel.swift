@@ -43,8 +43,8 @@ struct PromptPreviewPanel: View {
         let request = request
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PromptInspectorHeading(title: isVoice ? "Hear the difference" : "Try your prompt",
-                    subtitle: isVoice ? "Listen before you save." : "See how your instructions shape the result.", symbol: isVoice ? "waveform" : "play.rectangle")
+                PromptInspectorHeading(title: isVoice ? String(localized: "Hear the difference") : String(localized: "Try your prompt"),
+                    subtitle: isVoice ? String(localized: "Listen before you save.") : String(localized: "See how your instructions shape the result."), symbol: isVoice ? "waveform" : "play.rectangle")
                 if isVoice { voiceControls } else { textControls(request) }
             }.padding(.horizontal, 20).padding(.bottom, 20).padding(.top, 4).frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -90,7 +90,7 @@ struct PromptPreviewPanel: View {
         HStack {
             if preview.isRunning {
                 PromptGenerationStatus(progress: preview.progress ?? .generating,
-                    generationTitle: "Generating preview…", cancel: preview.cancel)
+                    generationTitle: String(localized: "Generating preview…"), cancel: preview.cancel)
             } else {
                 Button("Run test") {
                     if let request, request.sample.id == selectedID {
@@ -134,7 +134,7 @@ struct PromptPreviewPanel: View {
                     language: tts.language, instruction: session.draft.text, model: tts.model, plugin: context.recordingManager.localPlugin)
             }.modifier(PromptPrimaryAction()).disabled(!voiceSupported || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        if case .failed(let message) = preview.voice.state { SettingsErrorDetails(summary: "Voice preview failed", error: message) }
+        if case .failed(let message) = preview.voice.state { SettingsErrorDetails(summary: String(localized: "Voice preview failed"), error: message) }
         Text("Sample audio is temporary. Your saved voice style stays unchanged.").uiFont(.caption).foregroundStyle(palette.secondary.color)
     }
 
@@ -148,7 +148,7 @@ struct PromptPreviewPanel: View {
         let id = selectedID
         if let example = PromptPreviewSample.examples.first(where: { $0.id == id }) { sample = example; sampleError = nil; loading = false; return }
         guard let recording = context.appState.recentRecordings.first(where: { $0.id == id }) else {
-            sample = nil; sampleError = "This recording is no longer available. Choose the example."; return
+            sample = nil; sampleError = String(localized: "This recording is no longer available. Choose the example."); return
         }
         loading = true
         defer { loading = false }
@@ -179,7 +179,7 @@ struct PromptPreviewPanel: View {
         } catch {
             if id == selectedID && !Task.isCancelled {
                 sample = nil
-                sampleError = "Could not load this transcript. Choose another recording or the example."
+                sampleError = String(localized: "Could not load this transcript. Choose another recording or the example.")
             }
         }
     }

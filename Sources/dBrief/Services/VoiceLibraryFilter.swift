@@ -8,9 +8,9 @@ enum VoiceLibraryFilter {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .lastHeard: return "Last heard"
-            case .name: return "Name"
-            case .voiceprintCount: return "Voiceprints"
+            case .lastHeard: return String(localized: "Last heard")
+            case .name: return String(localized: "Name")
+            case .voiceprintCount: return String(localized: "Voiceprints")
             }
         }
     }
@@ -21,7 +21,7 @@ enum VoiceLibraryFilter {
         var people: [KnownPerson]
     }
 
-    static let noCompanyLabel = "No company"
+    static let noCompanyLabel = String(localized: "No company")
 
     /// Filter by search text (name OR company substring, case-insensitive) and by an
     /// optional set of company labels (empty = all), then sort.

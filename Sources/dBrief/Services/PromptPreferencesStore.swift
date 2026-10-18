@@ -23,7 +23,7 @@ final class PromptPreferencesStore {
         let name: String
         switch identity.scope {
         case .appDefaults:
-            value = .custom(shared); name = "App defaults"
+            value = .custom(shared); name = String(localized: "App defaults")
         case .profile(let id):
             guard let key = Self.overrideKey(identity.kind) else { throw PromptPreferencesError.unsupportedScope }
             guard let profile = settings.profiles.first(where: { $0.id == id }) else { throw PromptPreferencesError.profileMissing }

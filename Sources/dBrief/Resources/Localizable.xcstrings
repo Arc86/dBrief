@@ -4,12 +4,35 @@
     "" : {
 
     },
+    "%.0f percent" : {
+
+    },
     "%.1f / %.0f GB" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$.1f / %2$.0f GB"
+          }
+        }
+      }
+    },
+    "%.1f GB + %.1f GB speakers of %.0f GB" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$.1f GB + %2$.1f GB speakers of %3$.0f GB"
+          }
+        }
+      }
+    },
+    "%.1f GB of %.0f GB" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$.1f GB of %2$.0f GB"
           }
         }
       }
@@ -52,20 +75,51 @@
     "%@ Details" : {
 
     },
-    "%@ accent" : {
+    "%@ GB" : {
 
     },
-    "%@ and all %@ voiceprints will be removed. This cannot be undone." : {
+    "%@ GB RAM" : {
+
+    },
+    "%@ Profile setting: %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ and all %2$@ voiceprints will be removed. This cannot be undone."
+            "value" : "%1$@ Profile setting: %2$@"
           }
         }
       }
     },
+    "%@ Prompt" : {
+
+    },
+    "%@ accent" : {
+
+    },
+    "%@ and all its voiceprints will be removed. This cannot be undone." : {
+
+    },
+    "%@ and all their voiceprints will be removed. This cannot be undone." : {
+
+    },
+    "%@ audio" : {
+
+    },
     "%@ didn’t finish" : {
+
+    },
+    "%@ isn't available with %@, so English is used." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ isn't available with %2$@, so English is used."
+          }
+        }
+      }
+    },
+    "%@ mins" : {
 
     },
     "%@ of %@" : {
@@ -107,12 +161,25 @@
     "%@ theme mode" : {
 
     },
+    "%@ transcribed by dBrief" : {
+
+    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ · %@ audio" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@ audio"
           }
         }
       }
@@ -131,11 +198,139 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$lld attendees"
+            "state" : "translated",
+            "value" : "%1$@ · %#@n@"
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg attendee"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg attendees"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ · %#@n@"
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg genodigde"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg genodigden"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
+    },
+    "%@ · %lld fields" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %#@n@"
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg field"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg fields"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ · %#@n@"
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg veld"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg velden"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%@ · Advanced" : {
+
+    },
+    "%@ · Female" : {
+
+    },
+    "%@ · Male" : {
+
+    },
+    "%@ · Recommended" : {
+
+    },
+    "%@ · chosen automatically" : {
+
+    },
+    "%@ · default profile" : {
+
     },
     "%@ — %@" : {
       "localizations" : {
@@ -160,16 +355,6 @@
         }
       }
     },
-    "%@, %@ mode theme" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@, %2$@ mode theme"
-          }
-        }
-      }
-    },
     "%@, %lld out of 5, estimated" : {
       "localizations" : {
         "en" : {
@@ -179,6 +364,15 @@
           }
         }
       }
+    },
+    "%@, dark mode theme" : {
+
+    },
+    "%@, light mode theme" : {
+
+    },
+    "%@, unavailable" : {
+
     },
     "%@: %@" : {
       "localizations" : {
@@ -190,6 +384,9 @@
         }
       }
     },
+    "%@s" : {
+
+    },
     "%@×" : {
 
     },
@@ -199,15 +396,8 @@
     "%lld" : {
 
     },
-    "%lld %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld %2$@"
-          }
-        }
-      }
+    "%lld European languages" : {
+
     },
     "%lld MB" : {
 
@@ -252,8 +442,88 @@
         }
       }
     },
+    "%lld calendars" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld calendar"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld calendars"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld agenda"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld agenda’s"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld completed" : {
 
+    },
+    "%lld days" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld day"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld days"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld dag"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld dagen"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "%lld h %lld min" : {
       "localizations" : {
@@ -309,10 +579,84 @@
 
     },
     "%lld minutes" : {
-
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutes"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld minuut"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld minuten"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "%lld models · nothing downloads until first use" : {
-
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld model · nothing downloads until first use"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld models · nothing downloads until first use"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld model · er wordt pas iets gedownload bij het eerste gebruik"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld modellen · er wordt pas iets gedownload bij het eerste gebruik"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "%lld need attention" : {
       "localizations" : {
@@ -454,7 +798,44 @@
 
     },
     "%lld permissions need attention." : {
-
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld permission needs attention."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld permissions need attention."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld toestemming vraagt aandacht."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld toestemmingen vragen aandacht."
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "%lld points" : {
 
@@ -469,12 +850,132 @@
 
     },
     "%lld seconds" : {
-
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld second"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld seconds"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld seconde"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld seconden"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "%lld segments" : {
 
     },
     "%lld selected" : {
+
+    },
+    "%lld selected calendars are unavailable and won’t provide meetings." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld selected calendar is unavailable and won’t provide meetings."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld selected calendars are unavailable and won’t provide meetings."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld gekozen agenda is niet beschikbaar en levert geen vergaderingen."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld gekozen agenda’s zijn niet beschikbaar en leveren geen vergaderingen."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld sessions" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld session"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sessions"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld sessie"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld sessies"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld unavailable" : {
 
     },
     "%lld unfinished" : {
@@ -526,20 +1027,95 @@
     "%lld/5" : {
 
     },
-    "(untitled)" : {
-
-    },
-    "**%@** overrides %lld setting%@ on this page." : {
+    "%lldh %lldm" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "**%1$@** overrides %2$lld setting%3$@ on this page."
+            "value" : "%1$lldh %2$lldm"
           }
         }
       }
     },
-    "1 permission needs attention." : {
+    "%lldm" : {
+
+    },
+    "(untitled)" : {
+
+    },
+    "**%@** overrides %lld settings on this page." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "**%1$@** overrides %#@n@ on this page."
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg setting"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg settings"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "**%1$@** wijzigt %#@n@ op deze pagina."
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg instelling"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg instellingen"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    ", automatic selection" : {
+
+    },
+    ", saved selection" : {
+
+    },
+    "1 day" : {
+
+    },
+    "1 week" : {
+
+    },
+    "1 year" : {
 
     },
     "1.7B sounds most natural and follows the voice style. 0.6B uses less memory but ignores the style." : {
@@ -551,10 +1127,31 @@
     "15 seconds" : {
 
     },
+    "2 weeks" : {
+
+    },
+    "25 European languages" : {
+
+    },
     "30 seconds" : {
 
     },
+    "4-bit, on this Mac" : {
+
+    },
     "60 seconds" : {
+
+    },
+    "99 languages" : {
+
+    },
+    "A URL is required." : {
+
+    },
+    "A balance of accuracy, speed and memory use." : {
+
+    },
+    "A better prompt" : {
 
     },
     "A clear view of your meeting." : {
@@ -569,6 +1166,9 @@
     "A stale list refreshes when you open the meeting picker or start recording." : {
 
     },
+    "A token is required." : {
+
+    },
     "A transcript is needed before action items can be generated." : {
 
     },
@@ -578,7 +1178,16 @@
     "A voice is added when you name a speaker in a transcript, or with “Save voice to library” from the speaker menu." : {
 
     },
+    "AI CLI effort is saved but inactive until Claude Code is selected as its effort provider." : {
+
+    },
     "AI analysis" : {
+
+    },
+    "AI analysis CLI effort" : {
+
+    },
+    "AI analysis is off for this profile. You can configure its options for later use; transcription remains available." : {
 
     },
     "AI analysis is off in Settings → AI analysis." : {
@@ -590,16 +1199,58 @@
     "AI chat & summaries" : {
 
     },
+    "AI endpoint override not found; default endpoint will be used." : {
+
+    },
     "AI engine" : {
 
     },
     "AI output language" : {
 
     },
+    "AI processing" : {
+
+    },
+    "AI prompts" : {
+
+    },
+    "AI provider" : {
+
+    },
+    "AI provider API key (optional)" : {
+
+    },
+    "AI provider base URL" : {
+
+    },
+    "AI provider model" : {
+
+    },
+    "AI provider name" : {
+
+    },
+    "AI provider output token limit" : {
+
+    },
+    "AI providers" : {
+
+    },
+    "API base URL" : {
+
+    },
     "API key" : {
 
     },
+    "API token" : {
+
+    },
+    "About" : {
+
+    },
     "Accent" : {
+
+    },
+    "Accent color" : {
 
     },
     "Access" : {
@@ -608,19 +1259,40 @@
     "Access blocked — check the Claude login and connector permission, then retest." : {
 
     },
+    "Account name" : {
+
+    },
+    "Accuracy" : {
+
+    },
     "Accuracy 4/5 (5/5 for Ultra, which FluidAudio measures ahead of v3 on all 24 FLEURS languages and on LibriSpeech) and speed 5/5 (4/5 for Redux) are estimates. NVIDIA reports average English WER of 6.05% for v2 and 6.34% for v3; v3 results vary by language. FluidAudio reports multilingual (FLEURS) WER of 11.67% for Ultra and 13.06% for Redux versus 14.81% for v3, with Redux slightly worse on English. For English-only Phonon-2, FluidAudio reports LibriSpeech test-clean WER of 2.47% versus 2.27% for v3, with the fastest v3-family encoder on the Neural Engine. FluidAudio documents fast Apple Silicon inference. Core ML conversion, audio and hardware affect results." : {
 
     },
     "Accuracy 4/5 and speed 4/5 apply only to SpeechAnalyzer on macOS 26 with a supported locale. Older systems and unsupported-locale fallback remain unscored. RAM and language assets are managed by macOS; assets may download on first use." : {
 
     },
+    "Accuracy-first transcription with greater processing demand." : {
+
+    },
+    "Accuracy: %@" : {
+
+    },
     "Action" : {
+
+    },
+    "Action Items" : {
 
     },
     "Action items" : {
 
     },
     "Action items (%lld)" : {
+
+    },
+    "Action items prompt" : {
+
+    },
+    "Action items task" : {
 
     },
     "Action status could not be saved" : {
@@ -648,9 +1320,6 @@
 
     },
     "Add" : {
-
-    },
-    "Add %@" : {
 
     },
     "Add %lld Items" : {
@@ -693,7 +1362,13 @@
         }
       }
     },
+    "Add AI provider" : {
+
+    },
     "Add Conversation to Recording Note" : {
+
+    },
+    "Add a URL" : {
 
     },
     "Add a folder" : {
@@ -717,10 +1392,16 @@
     "Add a question you ask often" : {
 
     },
+    "Add a transcription service" : {
+
+    },
     "Add action" : {
 
     },
     "Add action items" : {
+
+    },
+    "Add an AI provider" : {
 
     },
     "Add as Action Items…" : {
@@ -760,6 +1441,9 @@
 
     },
     "Add to this recording" : {
+
+    },
+    "Add transcription service" : {
 
     },
     "Add your server URL and key in Settings before recording." : {
@@ -823,7 +1507,19 @@
     "After recording" : {
 
     },
+    "After-recording automation" : {
+
+    },
+    "After-recording task defaults" : {
+
+    },
+    "All (GPU + Neural Engine)" : {
+
+    },
     "All Recordings" : {
+
+    },
+    "All Time" : {
 
     },
     "All calendars" : {
@@ -861,6 +1557,18 @@
 
     },
     "Already recording" : {
+
+    },
+    "American · Female" : {
+
+    },
+    "American · Male" : {
+
+    },
+    "An API token is required." : {
+
+    },
+    "An integration secret is required." : {
 
     },
     "Analysis" : {
@@ -906,13 +1614,28 @@
     "Answers cite timestamps you can click to jump to that moment." : {
 
     },
+    "Anthropic Messages API (native). Enter your model name and API key." : {
+
+    },
+    "Any active recording" : {
+
+    },
     "Any status" : {
+
+    },
+    "App default — %@" : {
 
     },
     "App default: %@" : {
 
     },
+    "App defaults" : {
+
+    },
     "App, storage, recovery and recording-lifecycle events. Audio, transcripts, meeting titles, names, file paths and credentials are excluded." : {
+
+    },
+    "Appearance" : {
 
     },
     "Apple Intelligence" : {
@@ -937,7 +1660,13 @@
     "Apple Speech uses the system language when set to Auto." : {
 
     },
+    "Apple Speech · older or unsupported-locale fallback is not rated." : {
+
+    },
     "Apple SpeechAnalyzer" : {
+
+    },
+    "Apple SpeechAnalyzer · provisional research-based ratings." : {
 
     },
     "Application" : {
@@ -953,6 +1682,9 @@
 
     },
     "Apps to watch" : {
+
+    },
+    "Arabic" : {
 
     },
     "Argmax benchmark and methodology" : {
@@ -1009,6 +1741,9 @@
     "At least %lld attempts were omitted from the stored history." : {
 
     },
+    "Attendee email domain" : {
+
+    },
     "Attendee load failed — try again" : {
 
     },
@@ -1030,6 +1765,9 @@
     "Audio" : {
 
     },
+    "Audio dBrief recognises from its metadata. Transcripts, notes and unknown files are kept." : {
+
+    },
     "Audio export" : {
 
     },
@@ -1045,6 +1783,12 @@
     "Audio file…" : {
 
     },
+    "Audio input device" : {
+
+    },
+    "Audio language" : {
+
+    },
     "Audio position cannot be changed." : {
 
     },
@@ -1057,6 +1801,15 @@
     "Audio unavailable" : {
 
     },
+    "Auto action items" : {
+
+    },
+    "Auto summary" : {
+
+    },
+    "Auto tags" : {
+
+    },
     "Auto-delete" : {
 
     },
@@ -1066,7 +1819,13 @@
     "Auto-detect works best for mixed-language meetings." : {
 
     },
+    "Auto-label matched voices and keep processing." : {
+
+    },
     "Auto-send destinations" : {
+
+    },
+    "Automatic" : {
 
     },
     "Automatic (system language)" : {
@@ -1081,13 +1840,25 @@
     "Automatic detection" : {
 
     },
+    "Automatic file deletion" : {
+
+    },
+    "Automatic import" : {
+
+    },
     "Automatic loading is off. Press Refresh this date." : {
+
+    },
+    "Automatic profile selection" : {
 
     },
     "Automatic selection" : {
 
     },
     "Available even when AI analysis is off." : {
+
+    },
+    "Avg. analysis" : {
 
     },
     "Avg. audio" : {
@@ -1102,10 +1873,34 @@
     "Based on the previous transcript" : {
 
     },
+    "Basic" : {
+
+    },
     "Before you record" : {
 
     },
+    "Best all-rounder: any language, light on memory." : {
+
+    },
+    "Best all-rounder: any language, light on memory. Ready now." : {
+
+    },
+    "Best fit for %@ on this Mac." : {
+
+    },
+    "Best fit for your meetings on this Mac." : {
+
+    },
+    "Beta" : {
+
+    },
+    "Beta build" : {
+
+    },
     "Between 5 and 1440." : {
+
+    },
+    "Black" : {
 
     },
     "Blank is automatic (%@ tokens). Covers analysis and chat, including reasoning." : {
@@ -1114,16 +1909,46 @@
     "Blocked by a device management profile or Screen Time." : {
 
     },
+    "Blue" : {
+
+    },
     "Brief ready" : {
 
     },
+    "Brief recap" : {
+
+    },
+    "Bright, slightly edgy young female voice · Chinese" : {
+
+    },
+    "British · Female" : {
+
+    },
+    "British · Male" : {
+
+    },
+    "Build" : {
+
+    },
+    "Built in" : {
+
+    },
+    "CAF/LPCM per track (system + mic separate)" : {
+
+    },
     "CLI command" : {
+
+    },
+    "CLI default" : {
 
     },
     "Cached · refreshed %@" : {
 
     },
     "Calendar" : {
+
+    },
+    "Calendar CLI effort" : {
 
     },
     "Calendar access" : {
@@ -1144,16 +1969,28 @@
     "Calendar attendees are already included with the selected meeting." : {
 
     },
+    "Calendar connections and matching" : {
+
+    },
+    "Calendar effort is saved but not applicable to the selected Haiku model." : {
+
+    },
     "Calendar fetch" : {
 
     },
     "Calendar linked" : {
 
     },
+    "Calendar location" : {
+
+    },
     "Calendar meeting linked" : {
 
     },
     "Calendar name" : {
+
+    },
+    "Calendar notes" : {
 
     },
     "Calendar refresh failed. Saved meetings remain available." : {
@@ -1165,7 +2002,13 @@
     "Calendar requests use your Claude usage" : {
 
     },
+    "Calendar title" : {
+
+    },
     "Calendars" : {
+
+    },
+    "Call application" : {
 
     },
     "Call detection" : {
@@ -1178,6 +2021,9 @@
 
     },
     "Cancelled" : {
+
+    },
+    "Cannot open prompt" : {
 
     },
     "Capture" : {
@@ -1195,10 +2041,16 @@
     "Changes apply to this profile" : {
 
     },
+    "Channel" : {
+
+    },
     "Chat" : {
 
     },
     "Chat beside a transcript" : {
+
+    },
+    "Chat fallback" : {
 
     },
     "Chat paused" : {
@@ -1259,6 +2111,9 @@
     "Checking…" : {
 
     },
+    "Chinese" : {
+
+    },
     "Chip title" : {
 
     },
@@ -1271,6 +2126,12 @@
     "Choose a Font" : {
 
     },
+    "Choose a folder inside your Obsidian vault" : {
+
+    },
+    "Choose a folder to watch for new audio files" : {
+
+    },
     "Choose a meeting" : {
 
     },
@@ -1278,6 +2139,9 @@
 
     },
     "Choose a page or database" : {
+
+    },
+    "Choose a page or database." : {
 
     },
     "Choose a profile for this recording" : {
@@ -1295,10 +2159,22 @@
     "Choose a transcription model" : {
 
     },
+    "Choose a vault" : {
+
+    },
+    "Choose a vault first." : {
+
+    },
     "Choose a voice from the list to give it a name." : {
 
     },
+    "Choose useful topics and describe the conversation’s tone." : {
+
+    },
     "Choose who each voice belongs to." : {
+
+    },
+    "Choose your Obsidian vault folder" : {
 
     },
     "Choose…" : {
@@ -1308,6 +2184,9 @@
 
     },
     "Claude CLI" : {
+
+    },
+    "Claude CLI calendar command" : {
 
     },
     "Claude CLI connector" : {
@@ -1322,7 +2201,13 @@
     "Claude launcher" : {
 
     },
+    "Clean up now" : {
+
+    },
     "Cleanup" : {
+
+    },
+    "Cleanup could not finish safely. Check storage before retrying." : {
 
     },
     "Clear Chat" : {
@@ -1406,6 +2291,9 @@
     "Colour" : {
 
     },
+    "Comfortable" : {
+
+    },
     "Comma-separated tags" : {
 
     },
@@ -1418,6 +2306,12 @@
     "Command ran" : {
 
     },
+    "Command test failed" : {
+
+    },
+    "Compact" : {
+
+    },
     "Company" : {
 
     },
@@ -1427,13 +2321,28 @@
     "Completion unconfirmed" : {
 
     },
+    "Compressed model for a smaller footprint; ratings are family estimates." : {
+
+    },
     "Compute, warm-up, large files" : {
+
+    },
+    "Concise" : {
 
     },
     "Conditions" : {
 
     },
+    "Configure a command before testing it." : {
+
+    },
     "Configured endpoints" : {
+
+    },
+    "Configured remote endpoint" : {
+
+    },
+    "Confirm first" : {
 
     },
     "Confirm speaker" : {
@@ -1448,13 +2357,59 @@
     "Connected" : {
 
     },
+    "Connected apps and exports" : {
+
+    },
     "Connected — partial data returned for the test window." : {
 
     },
-    "Connected — the connector answered the test window%@." : {
+    "Connected — the connector answered the test window (%lld events)." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Connected — the connector answered the test window (%lld event)."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Connected — the connector answered the test window (%lld events)."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verbonden — de connector gaf antwoord voor het testvenster (%lld afspraak)."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verbonden — de connector gaf antwoord voor het testvenster (%lld afspraken)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Connected — the connector answered the test window." : {
 
     },
     "Connection" : {
+
+    },
+    "Connection failed" : {
 
     },
     "Connection successful" : {
@@ -1523,6 +2478,9 @@
     "Could not check yt-dlp updates: %@" : {
 
     },
+    "Could not load this transcript. Choose another recording or the example." : {
+
+    },
     "Could not read aloud: %@" : {
 
     },
@@ -1539,6 +2497,9 @@
 
     },
     "Couldn’t export answer" : {
+
+    },
+    "Couldn’t export diagnostics. %@" : {
 
     },
     "Couldn’t finish: %@ Try again, or choose another action." : {
@@ -1562,6 +2523,9 @@
           }
         }
       }
+    },
+    "Create an internal integration, then connect your page or database to it (••• → Connections)." : {
+
     },
     "Current model" : {
 
@@ -1615,13 +2579,37 @@
     "Custom provider" : {
 
     },
+    "Custom vocabulary" : {
+
+    },
+    "Customer feedback · Example" : {
+
+    },
+    "Customized" : {
+
+    },
     "Custom…" : {
+
+    },
+    "Danish" : {
+
+    },
+    "Dark" : {
+
+    },
+    "Dark Paper" : {
 
     },
     "Dark mode" : {
 
     },
     "Data" : {
+
+    },
+    "Database" : {
+
+    },
+    "Database “%@”" : {
 
     },
     "Date" : {
@@ -1633,10 +2621,19 @@
     "Decrease prompt text size" : {
 
     },
+    "Deepgram native API. Long files and speaker identification are handled server-side." : {
+
+    },
     "Default" : {
 
     },
     "Default calendar" : {
+
+    },
+    "Default folder" : {
+
+    },
+    "Default list" : {
 
     },
     "Default profile" : {
@@ -1651,6 +2648,16 @@
     "Delete %@" : {
 
     },
+    "Delete %@ older than %@?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete %1$@ older than %2$@?"
+          }
+        }
+      }
+    },
     "Delete Recording" : {
 
     },
@@ -1660,7 +2667,13 @@
     "Delete after" : {
 
     },
+    "Delete old recordings" : {
+
+    },
     "Delete old recordings…" : {
+
+    },
+    "Delete old transcripts" : {
 
     },
     "Delete old transcripts…" : {
@@ -1687,16 +2700,131 @@
     "Delete “%@”?" : {
 
     },
+    "Deleted %lld files (%@)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted %#@n@ (%2$@)."
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg file"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg files"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%#@n@ verwijderd (%2$@)."
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg bestand"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg bestanden"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Deleted %lld files. Some privacy evidence could not be removed; retry cleanup when storage is available." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deleted %lld file. Some privacy evidence could not be removed; retry cleanup when storage is available."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deleted %lld files. Some privacy evidence could not be removed; retry cleanup when storage is available."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld bestand verwijderd. Niet alle privacygegevens konden worden verwijderd; probeer opnieuw als de opslag beschikbaar is."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld bestanden verwijderd. Niet alle privacygegevens konden worden verwijderd; probeer opnieuw als de opslag beschikbaar is."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Delete…" : {
 
     },
     "Deletion could not finish. Some files may remain; check storage before retrying." : {
 
     },
+    "Deliver" : {
+
+    },
     "Denied" : {
 
     },
     "Descending" : {
+
+    },
+    "Describe what you’d like to change." : {
+
+    },
+    "Destination" : {
+
+    },
+    "Destination is unavailable. It is kept for recovery; choose an accessible folder." : {
+
+    },
+    "Detailed" : {
 
     },
     "Detect Speakers Again" : {
@@ -1715,6 +2843,15 @@
 
     },
     "Diagnostics" : {
+
+    },
+    "Diagnostics exported. Review the report before sharing it with support." : {
+
+    },
+    "Diarize" : {
+
+    },
+    "Different settings for different kinds of meetings." : {
 
     },
     "Discard" : {
@@ -1759,6 +2896,12 @@
     "Display options" : {
 
     },
+    "Do nothing" : {
+
+    },
+    "Documentation" : {
+
+    },
     "Done" : {
 
     },
@@ -1786,13 +2929,28 @@
     "Downloaded" : {
 
     },
+    "Downloaded once from Hugging Face. Runs analysis and chat on this Mac." : {
+
+    },
+    "Downloading Gemma…" : {
+
+    },
     "Downloading audio…" : {
+
+    },
+    "Downloading search model…" : {
+
+    },
+    "Downloading speakers…" : {
 
     },
     "Downloading yt-dlp…" : {
 
     },
     "Downloading…" : {
+
+    },
+    "Downloads on first use" : {
 
     },
     "Drag to move recording controls" : {
@@ -1819,6 +2977,9 @@
     "Dutch" : {
 
     },
+    "Dynamic male voice with strong rhythmic drive · English" : {
+
+    },
     "Each delivery has an Idempotency-Key; retry unconfirmed sends with Integrations… on the recording" : {
 
     },
@@ -1834,6 +2995,9 @@
     "Edit %@ prompt" : {
 
     },
+    "Edit AI provider" : {
+
+    },
     "Edit Question" : {
 
     },
@@ -1847,6 +3011,9 @@
 
     },
     "Edit to rename the recording" : {
+
+    },
+    "Edit transcription service" : {
 
     },
     "Editing" : {
@@ -1879,6 +3046,15 @@
     "Elapsed time %@" : {
 
     },
+    "ElevenLabs native API. Long files are handled server-side." : {
+
+    },
+    "Empty destination; using the app default." : {
+
+    },
+    "Enable AI processing" : {
+
+    },
     "Enable Microphone, Screen Recording, or both to continue." : {
 
     },
@@ -1903,10 +3079,19 @@
     "English only. Choose a multilingual model for %@." : {
 
     },
+    "English voices download on first use (about 510 KB each), then work offline. British voices currently use US pronunciation rules." : {
+
+    },
+    "Enough voiceprints to recognise them reliably." : {
+
+    },
     "Enter a mailbox to connect" : {
 
     },
     "Enter a positive whole number, or leave blank for automatic." : {
+
+    },
+    "Enter a term before saving." : {
 
     },
     "Enter an AI output language code." : {
@@ -1937,6 +3122,9 @@
 
     },
     "Examples" : {
+
+    },
+    "Excellent" : {
 
     },
     "Execution evidence for this recording. No audio, transcript text, prompts, or credentials are stored in the receipt." : {
@@ -1981,6 +3169,9 @@
     "Export Selected…" : {
 
     },
+    "Export dBrief Diagnostics" : {
+
+    },
     "Export diagnostics…" : {
 
     },
@@ -1990,13 +3181,40 @@
     "Externally managed" : {
 
     },
+    "Externally managed by your configured command" : {
+
+    },
+    "Extra high" : {
+
+    },
     "Extract action items" : {
 
     },
     "Failed" : {
 
     },
+    "Fair" : {
+
+    },
     "Families follow Claude's current aliases; versions stay pinned. Availability depends on your Claude account." : {
+
+    },
+    "Fast" : {
+
+    },
+    "Fast English transcription, distilled from large v3." : {
+
+    },
+    "Fast on-device transcription. English v2 or multilingual v3, with optional speaker identification." : {
+
+    },
+    "Fast · English, Spanish, French, Japanese" : {
+
+    },
+    "Faster large-v3 transcription with a small accuracy tradeoff." : {
+
+    },
+    "Fastest" : {
 
     },
     "Fastest model" : {
@@ -2006,6 +3224,12 @@
 
     },
     "Fetched from Hugging Face." : {
+
+    },
+    "Fewest errors for %@ meetings." : {
+
+    },
+    "Fewest errors in %@." : {
 
     },
     "Field" : {
@@ -2023,7 +3247,13 @@
     "Filter by recording status" : {
 
     },
+    "Finalize audio" : {
+
+    },
     "Finish or discard the pending reprocessing attempt to use chat." : {
+
+    },
+    "Finish signing in in your browser." : {
 
     },
     "Finished" : {
@@ -2035,10 +3265,26 @@
     "Finishing save… Please keep dBrief open." : {
 
     },
+    "First heard" : {
+
+    },
+    "First heard %@ · last heard %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "First heard %1$@ · last heard %2$@"
+          }
+        }
+      }
+    },
     "Floating recording window" : {
 
     },
     "FluidAudio Apple Silicon implementation" : {
+
+    },
+    "FluidAudio · on this Mac" : {
 
     },
     "Focus Reader" : {
@@ -2047,7 +3293,16 @@
     "Focus Reader (⇧⌘F)" : {
 
     },
+    "Folder name" : {
+
+    },
+    "Folder “%@”" : {
+
+    },
     "Folders" : {
+
+    },
+    "Follow System" : {
 
     },
     "Follow System switches between your light and dark theme with macOS." : {
@@ -2080,7 +3335,13 @@
     "Forget %lld voices" : {
 
     },
+    "Forget %lld voices?" : {
+
+    },
     "Forget Voiceprint" : {
+
+    },
+    "Forget this voice?" : {
 
     },
     "Forget this voiceprint" : {
@@ -2098,10 +3359,19 @@
     "Format probe" : {
 
     },
+    "French" : {
+
+    },
     "Full width" : {
 
     },
     "Gemma 4 E4B Local" : {
+
+    },
+    "Gemma model" : {
+
+    },
+    "General" : {
 
     },
     "Generate Spoken Summary" : {
@@ -2122,16 +3392,34 @@
     "Generate summary, actions, and tags" : {
 
     },
+    "Generate tags" : {
+
+    },
     "Generated audio" : {
+
+    },
+    "Generating preview…" : {
 
     },
     "Generating summary and analysis…" : {
 
     },
+    "Generating…" : {
+
+    },
+    "German" : {
+
+    },
     "Get Started" : {
 
     },
+    "Getting the local model ready. First use may require a download." : {
+
+    },
     "Go" : {
+
+    },
+    "Good" : {
 
     },
     "Google Keep" : {
@@ -2140,13 +3428,34 @@
     "Granted" : {
 
     },
+    "Graph base URL" : {
+
+    },
+    "Graph token" : {
+
+    },
+    "Gray" : {
+
+    },
+    "Green" : {
+
+    },
     "Group by company" : {
+
+    },
+    "Guidance unavailable for this model." : {
+
+    },
+    "Guide the tone and pace of the spoken summary." : {
 
     },
     "Header" : {
 
     },
     "Headers" : {
+
+    },
+    "Hear the difference" : {
 
     },
     "Hidden" : {
@@ -2182,10 +3491,25 @@
     "Hides this run. The recording and its current results stay; the unfinished run can't be resumed afterwards." : {
 
     },
+    "High" : {
+
+    },
+    "Higher accuracy with more memory and processing time." : {
+
+    },
+    "Higher priority wins, then more conditions." : {
+
+    },
+    "Hindi" : {
+
+    },
     "Hostname" : {
 
     },
     "How automation works" : {
+
+    },
+    "How fast each model runs on this Mac." : {
 
     },
     "I understand my responsibility to use dBrief lawfully and obtain any required consent." : {
@@ -2194,7 +3518,53 @@
     "Identify speakers" : {
 
     },
+    "Import" : {
+
+    },
     "Import Audio File…" : {
+
+    },
+    "Imported %lld profiles." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Imported %lld profile."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Imported %lld profiles."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld profiel geïmporteerd."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld profielen geïmporteerd."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Imported default profile was converted to custom." : {
 
     },
     "Import…" : {
@@ -2211,6 +3581,9 @@
 
     },
     "Improve clarity while preserving intent" : {
+
+    },
+    "Improve with AI" : {
 
     },
     "Improvement request" : {
@@ -2249,6 +3622,12 @@
     "Independent on-device evaluation" : {
 
     },
+    "Indigo" : {
+
+    },
+    "Inherited" : {
+
+    },
     "Input device" : {
 
     },
@@ -2259,6 +3638,9 @@
 
     },
     "Integration" : {
+
+    },
+    "Integration secret" : {
 
     },
     "Integrations" : {
@@ -2276,7 +3658,16 @@
     "It is downloaded again the next time it's needed, which can take a while." : {
 
     },
+    "Italian" : {
+
+    },
     "Its saved API key is deleted too. Profiles that use it switch to the default provider." : {
+
+    },
+    "Japanese" : {
+
+    },
+    "Japanese uses its own voice model (about 217 MB), downloaded on first use, then works offline." : {
 
     },
     "Jump to latest message" : {
@@ -2318,6 +3709,9 @@
     "Key points" : {
 
     },
+    "Korean" : {
+
+    },
     "Labels who said what. Adds processing time and about 500 MB of memory." : {
 
     },
@@ -2327,7 +3721,13 @@
     "Language code" : {
 
     },
+    "Language override is inactive with Parakeet." : {
+
+    },
     "Languages" : {
+
+    },
+    "Large file handling" : {
 
     },
     "Large files" : {
@@ -2339,7 +3739,22 @@
     "Larger text" : {
 
     },
+    "Last 30 Days" : {
+
+    },
+    "Last 7 Days" : {
+
+    },
+    "Last Year" : {
+
+    },
     "Last checked %@." : {
+
+    },
+    "Last clean-up" : {
+
+    },
+    "Last heard" : {
 
     },
     "Leave on Automatic unless large models fail." : {
@@ -2357,7 +3772,13 @@
     "Library unavailable" : {
 
     },
+    "Light" : {
+
+    },
     "Light mode" : {
+
+    },
+    "Lightweight transcription for quick, everyday recordings." : {
 
     },
     "Line spacing" : {
@@ -2373,6 +3794,15 @@
 
     },
     "Links" : {
+
+    },
+    "List" : {
+
+    },
+    "Listen before you save." : {
+
+    },
+    "Listen to a recording's summary." : {
 
     },
     "Listening…" : {
@@ -2397,10 +3827,16 @@
     "Live transcription" : {
 
     },
+    "Lively, slightly husky male voice · Chinese (Sichuan)" : {
+
+    },
     "Load / overhead" : {
 
     },
     "Load calendar attendees" : {
+
+    },
+    "Load calendar attendees during processing" : {
 
     },
     "Load during processing" : {
@@ -2415,17 +3851,50 @@
     "Load template" : {
 
     },
-    "Loaded %lld model%@ from the server." : {
+    "Loaded %lld models from the server." : {
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Loaded %1$lld model%2$@ from the server."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Loaded %lld model from the server."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Loaded %lld models from the server."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld model van de server geladen."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld modellen van de server geladen."
+                }
+              }
+            }
           }
         }
       }
     },
     "Loaded, but could not save the cache." : {
+
+    },
+    "Loading Gemma…" : {
 
     },
     "Loading evidence…" : {
@@ -2446,6 +3915,9 @@
     "Loading speakers…" : {
 
     },
+    "Loading the model into memory on this Mac." : {
+
+    },
     "Loading transcript…" : {
 
     },
@@ -2453,6 +3925,9 @@
 
     },
     "Loads after launch and wake to start faster. Keeps memory in use while idle." : {
+
+    },
+    "Local %@ model cache removed." : {
 
     },
     "Local CLI" : {
@@ -2464,13 +3939,34 @@
     "Local CLI can't stream, so chat uses this engine." : {
 
     },
+    "Local CLI command" : {
+
+    },
+    "Local CLI configuration" : {
+
+    },
+    "Local Whisper" : {
+
+    },
     "Local model" : {
+
+    },
+    "Low" : {
 
     },
     "Low available memory" : {
 
     },
+    "Lowest accuracy; for quick drafts." : {
+
+    },
+    "M4A/AAC 96 kbps · 48 kHz stereo" : {
+
+    },
     "Mailbox" : {
+
+    },
+    "Make commitments and follow-ups easy to find." : {
 
     },
     "Managed Claude command" : {
@@ -2512,6 +4008,9 @@
     "Max upload size" : {
 
     },
+    "Maximum" : {
+
+    },
     "Maximum attendees" : {
 
     },
@@ -2519,6 +4018,9 @@
 
     },
     "Meeting" : {
+
+    },
+    "Meeting Info" : {
 
     },
     "Meeting Insights" : {
@@ -2539,7 +4041,13 @@
     "Meeting matching" : {
 
     },
+    "Meeting platforms" : {
+
+    },
     "Meeting title" : {
+
+    },
+    "Meetings" : {
 
     },
     "Meetings from %@, with likely matches first." : {
@@ -2587,6 +4095,9 @@
     "Merge into" : {
 
     },
+    "Merge into “%@”?" : {
+
+    },
     "Merge into…" : {
 
     },
@@ -2596,7 +4107,13 @@
     "Metadata" : {
 
     },
+    "Metal GPU" : {
+
+    },
     "Mic" : {
+
+    },
+    "Mic: 80Hz HPF, sidechain duck vs. system, -16 LUFS loudnorm\nSystem: 40Hz HPF, 12kHz LPF\nMix: amix normalize=0" : {
 
     },
     "Microphone" : {
@@ -2605,7 +4122,13 @@
     "Microphone input" : {
 
     },
+    "Microphone, shortcut and what you see while recording." : {
+
+    },
     "Microsoft OneNote" : {
+
+    },
+    "Microsoft account" : {
 
     },
     "Model" : {
@@ -2635,7 +4158,13 @@
     "Models download on first use." : {
 
     },
+    "Moderate" : {
+
+    },
     "Monitor %@" : {
+
+    },
+    "Monospace" : {
 
     },
     "More actions" : {
@@ -2648,6 +4177,9 @@
 
     },
     "More specific" : {
+
+    },
+    "Most accurate" : {
 
     },
     "Move Aside" : {
@@ -2677,7 +4209,16 @@
     "Multilingual" : {
 
     },
+    "Multilingual · voice styles" : {
+
+    },
     "Must print a JSON object (title_concept, summary, action_items, tags, sentiment). Runs with your login shell's PATH." : {
+
+    },
+    "My LLM server" : {
+
+    },
+    "My Whisper server" : {
 
     },
     "NVIDIA model evaluation" : {
@@ -2735,6 +4276,9 @@
     "Named" : {
 
     },
+    "Names and terms dBrief should spell exactly." : {
+
+    },
     "Narrow" : {
 
     },
@@ -2756,6 +4300,9 @@
     "Needs the 1.7B model. Your instruction is kept for when you switch back." : {
 
     },
+    "Neural Engine" : {
+
+    },
     "Never" : {
 
     },
@@ -2763,6 +4310,9 @@
 
     },
     "New name" : {
+
+    },
+    "New profile" : {
 
     },
     "New term" : {
@@ -2777,13 +4327,22 @@
     "Next speaker" : {
 
     },
-    "No %@s yet" : {
+    "No AI providers configured." : {
+
+    },
+    "No AI providers yet" : {
 
     },
     "No Markdown file was written for this recording" : {
 
     },
     "No action items found" : {
+
+    },
+    "No action items found." : {
+
+    },
+    "No additional diagnostic information can be displayed safely. Check the selected service or model and its configuration, then try again." : {
 
     },
     "No analysis or processing details are available." : {
@@ -2795,13 +4354,22 @@
     "No attendees or saved voices yet — type this person’s name above." : {
 
     },
+    "No calendars" : {
+
+    },
     "No calendars available" : {
 
     },
     "No clear stretch of this voice to play." : {
 
     },
+    "No company" : {
+
+    },
     "No custom phrases. Built-in phrases always apply while this is on." : {
+
+    },
+    "No custom terms" : {
 
     },
     "No endpoint configured" : {
@@ -2915,7 +4483,16 @@
     "No transcription endpoint is set up. Add one in Settings → Transcription." : {
 
     },
+    "No transcription services configured." : {
+
+    },
+    "No transcription services yet" : {
+
+    },
     "No unfinished actions." : {
+
+    },
+    "No voiceprints" : {
 
     },
     "No voices saved yet" : {
@@ -2930,6 +4507,9 @@
     "None selected" : {
 
     },
+    "Norwegian" : {
+
+    },
     "Not applicable" : {
 
     },
@@ -2939,7 +4519,19 @@
     "Not available with %@. Your choice is kept for other engines." : {
 
     },
+    "Not chosen" : {
+
+    },
+    "Not configured" : {
+
+    },
+    "Not connected" : {
+
+    },
     "Not downloaded" : {
+
+    },
+    "Not downloaded · %lld MB" : {
 
     },
     "Not now" : {
@@ -2951,7 +4543,16 @@
     "Not rated" : {
 
     },
+    "Not run yet." : {
+
+    },
+    "Not set" : {
+
+    },
     "Not transcribed yet" : {
+
+    },
+    "Notebook ID" : {
 
     },
     "Notes" : {
@@ -2960,7 +4561,13 @@
     "Nothing recorded this week." : {
 
     },
+    "Nothing to delete." : {
+
+    },
     "Nothing to read yet" : {
+
+    },
+    "Notice calls and match recordings to calendar events." : {
 
     },
     "Notice when a call starts" : {
@@ -2978,7 +4585,13 @@
     "Notion" : {
 
     },
+    "Notion destination" : {
+
+    },
     "Numbers & dates" : {
+
+    },
+    "OAuth token" : {
 
     },
     "OK" : {
@@ -2987,7 +4600,19 @@
     "Obsidian" : {
 
     },
+    "Obsidian default folder" : {
+
+    },
+    "Obsidian notes folder" : {
+
+    },
     "Obsidian output folder" : {
+
+    },
+    "Obsidian vault" : {
+
+    },
+    "Obsidian vault override path is unavailable; default vault will be used." : {
 
     },
     "Off" : {
@@ -3005,16 +4630,52 @@
     "Offline" : {
 
     },
+    "On" : {
+
+    },
     "On this Mac" : {
+
+    },
+    "On-device Foundation Models. Requires macOS 26+ with Apple Silicon." : {
+
+    },
+    "On-device Gemma model. Private, downloads once." : {
+
+    },
+    "On-device MLX Gemma 4 E4B 4-bit model. Downloaded once from Hugging Face." : {
 
     },
     "On-device Whisper only" : {
 
     },
+    "On-device Whisper with multilingual models. Downloads a model once." : {
+
+    },
     "On-device and CLI engines merge these into one JSON result" : {
 
     },
+    "On-device and private. Requires macOS 26 on Apple Silicon." : {
+
+    },
+    "On-device speech with macOS-managed language downloads. Supported macOS 26 locales use SpeechAnalyzer; other cases use the classic recognizer." : {
+
+    },
     "One page per meeting, under a page or in a database" : {
+
+    },
+    "One reminder per action item · default list" : {
+
+    },
+    "One reminder per action item · list “%@”" : {
+
+    },
+    "One task per action item · list “%@”" : {
+
+    },
+    "One task per action item · project “%@”" : {
+
+    },
+    "One voiceprint. Name them in another recording to recognise them more reliably." : {
 
     },
     "Only action items are sent, one reminder each" : {
@@ -3033,6 +4694,9 @@
 
     },
     "Only overlapping" : {
+
+    },
+    "Only recordings started for a call" : {
 
     },
     "Only these calendars are used for matching and the meeting picker." : {
@@ -3057,6 +4721,9 @@
 
     },
     "Open Todoist" : {
+
+    },
+    "Open a GitHub issue" : {
 
     },
     "Open file" : {
@@ -3089,6 +4756,12 @@
     "Opens the local transcription model picker" : {
 
     },
+    "Optimistic" : {
+
+    },
+    "Optional" : {
+
+    },
     "Optional for local servers." : {
 
     },
@@ -3096,6 +4769,9 @@
 
     },
     "Or install manually: brew install yt-dlp" : {
+
+    },
+    "Orange" : {
 
     },
     "Origin not recorded" : {
@@ -3134,10 +4810,37 @@
     "PLAYING" : {
 
     },
+    "Page" : {
+
+    },
+    "Page “%@”" : {
+
+    },
+    "Pages and databases connected to the integration" : {
+
+    },
+    "Paper" : {
+
+    },
+    "Parakeet (Local)" : {
+
+    },
+    "Parakeet / FluidAudio · fast transcription; ratings are family estimates." : {
+
+    },
+    "Parakeet Phonon-2 / FluidAudio · ~360 MB download; fastest English model, slightly less accurate than Ultra." : {
+
+    },
     "Parakeet Phonon-2 model card" : {
 
     },
+    "Parakeet Redux / FluidAudio · ~220 MB download; first use compiles for several minutes." : {
+
+    },
     "Parakeet Redux model card" : {
+
+    },
+    "Parakeet Ultra / FluidAudio · v3 retrained for accuracy; fewest errors in FluidAudio's FLEURS and LibriSpeech results." : {
 
     },
     "Parakeet Ultra model card" : {
@@ -3147,6 +4850,12 @@
 
     },
     "Parakeet detects the language itself. This choice is kept for other engines." : {
+
+    },
+    "Parakeet does not use the profile language override. It is kept for other engines." : {
+
+    },
+    "Parakeet ignores the language selection. Any saved override is kept for other engines." : {
 
     },
     "Parakeet model" : {
@@ -3173,6 +4882,9 @@
     "Pause spoken summary" : {
 
     },
+    "Pause to review speaker names before analysis." : {
+
+    },
     "Paused" : {
 
     },
@@ -3182,13 +4894,22 @@
     "People this month" : {
 
     },
+    "Performance" : {
+
+    },
     "Permissions" : {
+
+    },
+    "Permissions and access" : {
 
     },
     "Pick how recordings are turned into text and summaries. The defaults run fully on-device — no account or server needed." : {
 
     },
     "Pinch on the trackpad or press ⌘+ / ⌘− to resize." : {
+
+    },
+    "Pink" : {
 
     },
     "Play" : {
@@ -3230,7 +4951,16 @@
     "Playback speed" : {
 
     },
+    "Playful, light Japanese female voice · Japanese" : {
+
+    },
     "Playing sample" : {
+
+    },
+    "Polish" : {
+
+    },
+    "Portuguese" : {
 
     },
     "Possible voice match" : {
@@ -3252,6 +4982,9 @@
 
     },
     "Prepare your models" : {
+
+    },
+    "Preparing Gemma…" : {
 
     },
     "Preparing audio…" : {
@@ -3281,10 +5014,19 @@
     "Preparing your audio. Longer recordings can take a few minutes. Please keep dBrief open." : {
 
     },
+    "Preparing…" : {
+
+    },
+    "Preselect transcription after recording" : {
+
+    },
     "Press **%@** anytime to start or stop recording." : {
 
     },
     "Press Return to add each name · matched to speakers in order of first appearance." : {
+
+    },
+    "Press shortcut…" : {
 
     },
     "Preview" : {
@@ -3323,6 +5065,12 @@
     "Process Queue (%lld)" : {
 
     },
+    "Process audio files dropped into watched folders." : {
+
+    },
+    "Process automatically" : {
+
+    },
     "Process next" : {
 
     },
@@ -3354,7 +5102,44 @@
 
     },
     "Processing in %lld seconds" : {
-
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Processing in %lld second"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Processing in %lld seconds"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verwerken over %lld seconde"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verwerken over %lld seconden"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Processing may slow down. Closing other apps helps." : {
 
@@ -3377,6 +5162,9 @@
     "Processing…" : {
 
     },
+    "Product planning · Example" : {
+
+    },
     "Profile" : {
       "localizations" : {
         "nl" : {
@@ -3387,25 +5175,64 @@
         }
       }
     },
+    "Profile AI overrides" : {
+
+    },
+    "Profile automation policy" : {
+
+    },
     "Profile changes wait for the current job to finish" : {
 
     },
     "Profile chosen manually for this recording" : {
 
     },
+    "Profile destination overrides" : {
+
+    },
     "Profile for this recording" : {
+
+    },
+    "Profile integration overrides" : {
 
     },
     "Profile name" : {
 
     },
+    "Profile selection and reset" : {
+
+    },
+    "Profile task overrides" : {
+
+    },
+    "Profile transcription overrides" : {
+
+    },
+    "Profile vocabulary" : {
+
+    },
     "Profile: %@" : {
+
+    },
+    "Profiles" : {
 
     },
     "Profiles can override each task" : {
 
     },
+    "Profiles exported to %@." : {
+
+    },
+    "Project" : {
+
+    },
+    "Project retrospective · Example" : {
+
+    },
     "Prompt improvement" : {
+
+    },
+    "Prompt options" : {
 
     },
     "Prompt question" : {
@@ -3426,6 +5253,12 @@
     "Providers" : {
 
     },
+    "Purple" : {
+
+    },
+    "Quantized" : {
+
+    },
     "Question" : {
 
     },
@@ -3439,6 +5272,9 @@
 
     },
     "Queue a recording for later to add it here." : {
+
+    },
+    "Queue automatically" : {
 
     },
     "Queue for later" : {
@@ -3457,12 +5293,64 @@
 
     },
     "Queueing in %lld seconds" : {
-
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Queueing in %lld second"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Queueing in %lld seconds"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "In wachtrij over %lld seconde"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "In wachtrij over %lld seconden"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Quick pick" : {
 
     },
+    "Quickest for %@ on this Mac." : {
+
+    },
+    "Quickest for your meetings on this Mac." : {
+
+    },
+    "Quickest on Apple Silicon. Skip it for meetings in other languages." : {
+
+    },
     "Quit dBrief" : {
+
+    },
+    "Qwen3 TTS 0.6B (lighter)" : {
+
+    },
+    "Qwen3 TTS 1.7B (most natural)" : {
 
     },
     "RAM is installed, not currently free. Model memory is an estimate, not download size or peak whole-app use." : {
@@ -3481,6 +5369,9 @@
 
     },
     "Ratings are estimates, not measured on this Mac" : {
+
+    },
+    "Raw error text is omitted because provider responses and command output may contain credentials or private data." : {
 
     },
     "Re-download" : {
@@ -3544,7 +5435,16 @@
     "Recently processed" : {
 
     },
+    "Recognised well. One more voiceprint makes it more reliable." : {
+
+    },
+    "Recognition" : {
+
+    },
     "Recognition %@" : {
+
+    },
+    "Recommended" : {
 
     },
     "Record automatically" : {
@@ -3579,6 +5479,9 @@
         }
       }
     },
+    "Recording and transcript folders" : {
+
+    },
     "Recording audio" : {
 
     },
@@ -3588,16 +5491,28 @@
     "Recording finalization" : {
 
     },
+    "Recording folder" : {
+
+    },
+    "Recording indicators" : {
+
+    },
     "Recording library" : {
 
     },
     "Recording recovery needs attention" : {
 
     },
+    "Recording shortcut" : {
+
+    },
     "Recording sidebar width" : {
 
     },
     "Recording status" : {
+
+    },
+    "Recording title" : {
 
     },
     "Recording — live transcript" : {
@@ -3616,6 +5531,9 @@
 
     },
     "Recovery files" : {
+
+    },
+    "Red" : {
 
     },
     "Redirected" : {
@@ -3678,6 +5596,15 @@
     "Regenerate Spoken Summary" : {
 
     },
+    "Relative folder in vault" : {
+
+    },
+    "Relative speed" : {
+
+    },
+    "Release notes" : {
+
+    },
     "Reload saved" : {
 
     },
@@ -3685,6 +5612,9 @@
 
     },
     "Remote" : {
+
+    },
+    "Remote Endpoint" : {
 
     },
     "Remote endpoints" : {
@@ -3774,6 +5704,9 @@
     "Rename to" : {
 
     },
+    "Renamed %lld." : {
+
+    },
     "Rename…" : {
 
     },
@@ -3787,6 +5720,9 @@
 
     },
     "Replaces the draft. Save when you’re ready." : {
+
+    },
+    "Report an issue" : {
 
     },
     "Reprocess" : {
@@ -3835,6 +5771,9 @@
 
     },
     "Response interrupted: %@" : {
+
+    },
+    "Restore Default" : {
 
     },
     "Restore Previous Results" : {
@@ -3900,6 +5839,9 @@
     "Review Deliveries" : {
 
     },
+    "Review before processing" : {
+
+    },
     "Review delivery status and retry an individual integration" : {
 
     },
@@ -3933,10 +5875,22 @@
     "Run test" : {
 
     },
+    "Run your own command (claude, ollama, llm…)." : {
+
+    },
+    "Runs a local command-line tool once per recording to produce the analysis." : {
+
+    },
     "Runs at launch and then daily while dBrief is open, in these folders and every profile's folders" : {
 
     },
     "Runs your command once per recording" : {
+
+    },
+    "Russian" : {
+
+    },
+    "Same as Interface Text" : {
 
     },
     "Same as the viewer" : {
@@ -3969,6 +5923,9 @@
     "Save changes" : {
 
     },
+    "Save changes to %@?" : {
+
+    },
     "Save the audio and wait in the queue until you choose Process Queue" : {
 
     },
@@ -3985,6 +5942,18 @@
 
     },
     "Saved results are not ready to open." : {
+
+    },
+    "Saved, but inactive until Claude CLI is the calendar source." : {
+
+    },
+    "Saved, but inactive until Local CLI is selected as the AI engine." : {
+
+    },
+    "Saved, but inactive until the effort provider is Claude Code." : {
+
+    },
+    "Saved, but not applicable to the selected Haiku model." : {
 
     },
     "Saving recording" : {
@@ -4023,6 +5992,15 @@
     "Search transcript" : {
 
     },
+    "Seasoned male voice with a low, mellow timbre · Chinese" : {
+
+    },
+    "Section ID" : {
+
+    },
+    "See how your instructions shape the result." : {
+
+    },
     "Seeking unavailable" : {
 
     },
@@ -4059,6 +6037,12 @@
     "Selected meeting changed or disappeared. Review your selection." : {
 
     },
+    "Selected provider is unavailable; using the app default." : {
+
+    },
+    "Send audio to your own Whisper server or API." : {
+
+    },
     "Send fields" : {
 
     },
@@ -4071,6 +6055,39 @@
     "Send results to" : {
 
     },
+    "Send results to the apps you work in." : {
+
+    },
+    "Send to Apple Notes" : {
+
+    },
+    "Send to Apple Reminders" : {
+
+    },
+    "Send to Evernote" : {
+
+    },
+    "Send to Google Keep" : {
+
+    },
+    "Send to Notion" : {
+
+    },
+    "Send to Obsidian" : {
+
+    },
+    "Send to OneNote" : {
+
+    },
+    "Send to TickTick" : {
+
+    },
+    "Send to Todoist" : {
+
+    },
+    "Send to a webhook" : {
+
+    },
     "Sends the selected text to this endpoint." : {
 
     },
@@ -4078,6 +6095,9 @@
 
     },
     "Sentiment · %@" : {
+
+    },
+    "Sessions" : {
 
     },
     "Set as default" : {
@@ -4104,10 +6124,19 @@
     "Setup" : {
 
     },
+    "Setup guide" : {
+
+    },
+    "Shape the summary of your recording." : {
+
+    },
     "Share or export this answer" : {
 
     },
     "Shared defaults" : {
+
+    },
+    "Shared settings and the Default profile restored." : {
 
     },
     "Shared with inheriting profiles" : {
@@ -4200,6 +6229,12 @@
     "Sign out" : {
 
     },
+    "Slow" : {
+
+    },
+    "Slow. For recordings where every word matters." : {
+
+    },
     "Smaller Text" : {
 
     },
@@ -4207,6 +6242,9 @@
 
     },
     "Smaller text" : {
+
+    },
+    "Software updates" : {
 
     },
     "Some attempts or outcomes are missing. This history cannot establish all processing that occurred." : {
@@ -4225,6 +6263,12 @@
 
     },
     "Sources" : {
+
+    },
+    "Spacious" : {
+
+    },
+    "Spanish" : {
 
     },
     "Speaker Names" : {
@@ -4254,7 +6298,13 @@
     "Speech synthesis" : {
 
     },
+    "Speed" : {
+
+    },
     "Speed and accuracy are estimates, not measured on this Mac." : {
+
+    },
+    "Speed: %@" : {
 
     },
     "Spelling correction" : {
@@ -4275,10 +6325,19 @@
     "Spoken summary progress" : {
 
     },
+    "Spoken summary prompt" : {
+
+    },
     "Spoken summary script" : {
 
     },
+    "Spoken voice" : {
+
+    },
     "Spoken words appear here as you record." : {
+
+    },
+    "Stable" : {
 
     },
     "Start" : {
@@ -4291,6 +6350,9 @@
 
     },
     "Start at login" : {
+
+    },
+    "Start at login and dock icon" : {
 
     },
     "Start from a template" : {
@@ -4308,10 +6370,16 @@
     "Started" : {
 
     },
+    "Starting…" : {
+
+    },
     "Starts or pauses audio playback" : {
 
     },
     "Startup" : {
+
+    },
+    "Startup, updates and the setup guide." : {
 
     },
     "Status" : {
@@ -4327,6 +6395,9 @@
 
     },
     "Stop Reading" : {
+
+    },
+    "Stop automatically" : {
 
     },
     "Stop generating" : {
@@ -4371,7 +6442,13 @@
     "Stopped generating." : {
 
     },
+    "Storage" : {
+
+    },
     "Streaming engines show words as they arrive. Other engines show the transcript when transcription finishes." : {
+
+    },
+    "Strong" : {
 
     },
     "Strong voice match" : {
@@ -4411,6 +6488,9 @@
     "Suggested: %@ — waiting for the current job" : {
 
     },
+    "Summaries, action items, tags and Ask dBrief AI." : {
+
+    },
     "Summarize" : {
 
     },
@@ -4423,13 +6503,28 @@
     "Summary editor" : {
 
     },
+    "Summary prompt" : {
+
+    },
+    "Summary task" : {
+
+    },
+    "Summary, action items, and tags are inactive while AI analysis is off for this profile. Saved choices are kept." : {
+
+    },
     "Summary, action items, tags and sentiment. Profiles can override this." : {
+
+    },
+    "Sunny American male voice with a clear midrange · English" : {
 
     },
     "Support depends on your Claude model." : {
 
     },
     "Support report" : {
+
+    },
+    "Swedish" : {
 
     },
     "Symbol" : {
@@ -4456,7 +6551,13 @@
     "System language" : {
 
     },
+    "System-supported languages" : {
+
+    },
     "Tags" : {
+
+    },
+    "Tags & Sentiment" : {
 
     },
     "Tags and sentiment" : {
@@ -4465,10 +6566,25 @@
     "Tags draft" : {
 
     },
+    "Tags prompt" : {
+
+    },
+    "Tags task" : {
+
+    },
     "Tags · %@" : {
 
     },
     "Task defaults" : {
+
+    },
+    "Teal" : {
+
+    },
+    "Team stand-up · Example" : {
+
+    },
+    "Tell voices apart and recognise people you've named." : {
 
     },
     "Term" : {
@@ -4516,16 +6632,43 @@
     "The calendar CLI call failed. Check the claude command and its login." : {
 
     },
+    "The command could not be launched. Check the executable path and permissions, then test it again." : {
+
+    },
+    "The command exited with code %lld. Check the command, its installation, and authentication, then test it again." : {
+
+    },
+    "The command produced no output. Check that it prints the result to standard output, then test it again." : {
+
+    },
+    "The command returned invalid JSON. Check that its output matches the required format, then test it again." : {
+
+    },
     "The conversation is removed from this recording. This can't be undone." : {
 
     },
+    "The error indicates a timeout. Check the connection or allow more time, then try again." : {
+
+    },
+    "The error indicates an unavailable network connection. Check the connection, then try again." : {
+
+    },
+    "The error indicates an unavailable resource. Check the service address or required local model, then try again." : {
+
+    },
     "The full calendar context is saved even when these fields are kept." : {
+
+    },
+    "The full transcript at the end of the page. Long meetings make long pages." : {
 
     },
     "The library is updating. Try again in a moment." : {
 
     },
     "The meeting context is saved. Existing generated results are kept until you choose to regenerate them." : {
+
+    },
+    "The model needs to download to this Mac before it can run. Generation starts automatically." : {
 
     },
     "The new results appear here when reprocessing finishes." : {
@@ -4537,13 +6680,40 @@
     "The original recording stays unchanged." : {
 
     },
+    "The profile and default endpoints are unavailable. Using the first configured endpoint." : {
+
+    },
     "The prompt, request, or AI configuration changed. Generate a new suggestion." : {
+
+    },
+    "The provider could not find the requested resource (HTTP 404). Check the base URL and model name, then test the connection again." : {
+
+    },
+    "The provider limited the request (HTTP 429). Check account quota or wait before testing again." : {
+
+    },
+    "The provider rejected access (HTTP %lld). Check the API key and account permissions, then test the connection again." : {
+
+    },
+    "The provider returned HTTP %lld. Check the provider configuration and service status, then test the connection again." : {
 
     },
     "The recording's current results stay. The unfinished reprocess can't be resumed afterwards." : {
 
     },
+    "The saved default endpoint is unavailable. Using the first configured endpoint." : {
+
+    },
     "The saved language is unavailable with Apple Speech. Choose a supported language or change the transcription engine." : {
+
+    },
+    "The saved summary and action items exceed Apple Intelligence’s input budget. The preview keeps the beginning and end." : {
+
+    },
+    "The selected transcript exceeds this engine’s input budget. The production preview keeps the beginning and end." : {
+
+    },
+    "The summary is written and spoken in this language." : {
 
     },
     "The summary was regenerated while you were editing. Copy your text, cancel, and edit the new summary." : {
@@ -4555,17 +6725,33 @@
     "The update is stored in dBrief's support folder." : {
 
     },
-    "The voiceprints of %@ move into “%@”, and %@ removed. This cannot be undone." : {
+    "The voiceprints of %@ move into “%@”, and that person is removed. This cannot be undone." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "The voiceprints of %1$@ move into “%2$@”, and %3$@ removed. This cannot be undone."
+            "value" : "The voiceprints of %1$@ move into “%2$@”, and that person is removed. This cannot be undone."
+          }
+        }
+      }
+    },
+    "The voiceprints of %@ move into “%@”, and those people are removed. This cannot be undone." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The voiceprints of %1$@ move into “%2$@”, and those people are removed. This cannot be undone."
           }
         }
       }
     },
     "Theme" : {
+
+    },
+    "Theme, accent colour and interface text." : {
+
+    },
+    "These are the default tasks after recording. The profile’s automation setting controls whether they start automatically." : {
 
     },
     "These choices apply when you turn it on." : {
@@ -4580,13 +6766,22 @@
     "This Mac" : {
 
     },
+    "This engine’s current transcription pass uses the app language setting. The profile override is kept." : {
+
+    },
     "This is me" : {
+
+    },
+    "This permanently deletes matching files in %@. This can't be undone." : {
 
     },
     "This permanently deletes the recording, its transcript and notes in dBrief, and anything queued for it. Markdown notes exported elsewhere and content already sent to integrations are kept." : {
 
     },
     "This profile and its overrides will be removed. This can’t be undone." : {
+
+    },
+    "This profile’s endpoint is unavailable. Using the app’s default endpoint." : {
 
     },
     "This receipt covers recorded attempts, including retries. It makes no claims about earlier activity or provider retention. Externally managed apps and processes may sync or send data elsewhere. A start without a completion does not prove whether data was received." : {
@@ -4607,13 +6802,28 @@
     "This recording has other analysis, but no summary text was saved." : {
 
     },
+    "This recording is no longer available. Choose the example." : {
+
+    },
     "This recording · On-device" : {
+
+    },
+    "This term changed or was removed. Cancel and choose the term again." : {
+
+    },
+    "This term is already in your vocabulary." : {
 
     },
     "This week" : {
 
     },
     "TickTick" : {
+
+    },
+    "TickTick account" : {
+
+    },
+    "TickTick list" : {
 
     },
     "Timeout" : {
@@ -4623,6 +6833,9 @@
 
     },
     "Timings appear after your next transcription." : {
+
+    },
+    "Timings are recorded every time a recording is transcribed or analysed." : {
 
     },
     "Title" : {
@@ -4636,6 +6849,25 @@
     },
     "Todoist" : {
 
+    },
+    "Todoist project" : {
+
+    },
+    "Todoist → Settings → Integrations → Developer" : {
+
+    },
+    "Token" : {
+
+    },
+    "Topics: %@\nSentiment: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Topics: %1$@\nSentiment: %2$@"
+          }
+        }
+      }
     },
     "Transcribe" : {
 
@@ -4661,7 +6893,13 @@
     "Transcript" : {
 
     },
+    "Transcript cleanup" : {
+
+    },
     "Transcript density" : {
+
+    },
+    "Transcript folder" : {
 
     },
     "Transcript is passed to your configured Local CLI command, which may use an external service." : {
@@ -4676,6 +6914,18 @@
     "Transcription & AI" : {
 
     },
+    "Transcription compute and warm-up" : {
+
+    },
+    "Transcription endpoint override not found; default endpoint will be used." : {
+
+    },
+    "Transcription engine" : {
+
+    },
+    "Transcription folder" : {
+
+    },
     "Transcription is required for AI analysis." : {
 
     },
@@ -4685,10 +6935,55 @@
     "Transcription pending" : {
 
     },
+    "Transcription service" : {
+
+    },
+    "Transcription service API key (optional)" : {
+
+    },
+    "Transcription service base URL" : {
+
+    },
+    "Transcription service model" : {
+
+    },
+    "Transcription service name" : {
+
+    },
+    "Transcription service output token limit" : {
+
+    },
+    "Transcription services" : {
+
+    },
     "Transcription speed relative to real-time (audio ÷ transcription time)" : {
 
     },
+    "Transcription task" : {
+
+    },
+    "Transcripts" : {
+
+    },
+    "Transcripts and linked Markdown exports dBrief recognises. Audio and unknown files are kept." : {
+
+    },
+    "Try Prompt" : {
+
+    },
     "Try a different name or company." : {
+
+    },
+    "Try prompt" : {
+
+    },
+    "Try your prompt" : {
+
+    },
+    "Turkish" : {
+
+    },
+    "Turn audio into text." : {
 
     },
     "Two letters, for example DE or FR." : {
@@ -4703,6 +6998,15 @@
     "Type a name…" : {
 
     },
+    "UI font and size" : {
+
+    },
+    "URL" : {
+
+    },
+    "Ukrainian" : {
+
+    },
     "Unavailable" : {
 
     },
@@ -4712,7 +7016,16 @@
     "Unavailable endpoint" : {
 
     },
+    "Unavailable list" : {
+
+    },
     "Unavailable while recording or processing" : {
+
+    },
+    "Understand" : {
+
+    },
+    "Undo AI Edit" : {
 
     },
     "Unfinished" : {
@@ -4724,10 +7037,19 @@
     "Unfinished actions" : {
 
     },
+    "Unknown" : {
+
+    },
     "Unknown language" : {
 
     },
+    "Unnamed" : {
+
+    },
     "Unsaved changes" : {
+
+    },
+    "Untitled" : {
 
     },
     "Untitled meeting" : {
@@ -4754,15 +7076,11 @@
     "Use %@ as a new name" : {
 
     },
-    "Use %@ when %@ mode is active" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Use %1$@ when %2$@ mode is active"
-          }
-        }
-      }
+    "Use %@ when dark mode is active" : {
+
+    },
+    "Use %@ when light mode is active" : {
+
     },
     "Use %@, %@" : {
       "localizations" : {
@@ -4774,10 +7092,19 @@
         }
       }
     },
+    "Use App Default" : {
+
+    },
     "Use Font" : {
 
     },
+    "Use a remote LLM endpoint configured below." : {
+
+    },
     "Use an ID without spaces or shell characters. The previous selection is kept until the ID is valid." : {
+
+    },
+    "Use an OpenAI-compatible LLM endpoint (e.g. your own server)." : {
 
     },
     "Use as Default" : {
@@ -4804,6 +7131,9 @@
     "Uses Apple's speech model for the selected language." : {
 
     },
+    "Uses app default — %@" : {
+
+    },
     "Uses the accent instead of the brand gradient on outlines and the AI sparkle." : {
 
     },
@@ -4825,23 +7155,57 @@
     "Using current defaults" : {
 
     },
+    "Using offline model list — couldn't reach HuggingFace." : {
+
+    },
     "Using previous attempt settings" : {
 
     },
     "Value" : {
 
     },
-    "Version %@ (%@) · %@" : {
+    "Vault" : {
+
+    },
+    "Vault override is empty or unavailable; using the app default." : {
+
+    },
+    "Vault root" : {
+
+    },
+    "Version" : {
+
+    },
+    "Version %@ (%@) · Beta" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Version %1$@ (%2$@) · %3$@"
+            "value" : "Version %1$@ (%2$@) · Beta"
+          }
+        }
+      }
+    },
+    "Version %@ (%@) · Stable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Version %1$@ (%2$@) · Stable"
           }
         }
       }
     },
     "Versions" : {
+
+    },
+    "Very fast" : {
+
+    },
+    "Very good" : {
+
+    },
+    "Very slow" : {
 
     },
     "Video URL" : {
@@ -4856,10 +7220,25 @@
     "View transcript" : {
 
     },
+    "Violet" : {
+
+    },
+    "Vocabulary" : {
+
+    },
     "Vocabulary correction" : {
 
     },
+    "Vocabulary fix" : {
+
+    },
+    "Vocabulary terms" : {
+
+    },
     "Voice" : {
+
+    },
+    "Voice Style" : {
 
     },
     "Voice engine" : {
@@ -4871,7 +7250,16 @@
     "Voice model" : {
 
     },
+    "Voice preview failed" : {
+
+    },
     "Voice style" : {
+
+    },
+    "Voiceprints" : {
+
+    },
+    "Voiceprints (%lld)" : {
 
     },
     "Voiceprints stay on this Mac and are never uploaded" : {
@@ -4886,6 +7274,9 @@
     "Voices %lld%% alike. Probably the same person." : {
 
     },
+    "Voices download on first use, then work offline." : {
+
+    },
     "Voices you skip keep the name shown in the list." : {
 
     },
@@ -4898,10 +7289,19 @@
     "Waiting to download" : {
 
     },
+    "Warm Korean female voice with rich emotion · Korean" : {
+
+    },
+    "Warm, gentle young female voice · Chinese" : {
+
+    },
     "Warning: %@" : {
 
     },
     "Watch folders for new audio" : {
+
+    },
+    "Weak" : {
 
     },
     "Webhook" : {
@@ -4910,16 +7310,28 @@
     "Webhook fields: %@" : {
 
     },
+    "Website" : {
+
+    },
     "Welcome and setup guide" : {
 
     },
     "Welcome to dBrief" : {
 
     },
+    "What dBrief can access on this Mac." : {
+
+    },
     "What did %@ commit to?" : {
 
     },
+    "What happens when you stop recording." : {
+
+    },
     "What would you like to improve?" : {
+
+    },
+    "What's new in v%@" : {
 
     },
     "When a call ends" : {
@@ -4931,7 +7343,16 @@
     "When a voice is recognised" : {
 
     },
+    "Where files go and how long they stay." : {
+
+    },
     "Where it runs" : {
+
+    },
+    "Where to find it" : {
+
+    },
+    "Where to get it" : {
 
     },
     "Where transcription runs" : {
@@ -4946,6 +7367,12 @@
     "Whisper model" : {
 
     },
+    "WhisperKit · on this Mac" : {
+
+    },
+    "White" : {
+
+    },
     "Who’s speaking?" : {
 
     },
@@ -4958,6 +7385,9 @@
     "Width" : {
 
     },
+    "With owners and deadlines" : {
+
+    },
     "Works even when transcription and AI analysis are off." : {
 
     },
@@ -4968,6 +7398,9 @@
 
     },
     "Write a summary" : {
+
+    },
+    "Write a summary that sounds natural aloud." : {
 
     },
     "Write results in" : {
@@ -4994,6 +7427,12 @@
     "YouTube or video link…" : {
 
     },
+    "Your TickTick sign-in expired. Sign in again." : {
+
+    },
+    "Your changes to %@ have not been saved." : {
+
+    },
     "Your command determines where the selected text is processed." : {
 
     },
@@ -5018,6 +7457,9 @@
     "Your saved profile. Controls on this page edit app defaults." : {
 
     },
+    "Youthful, clear male voice · Chinese (Beijing)" : {
+
+    },
     "Zoom, Teams, Meet and others" : {
 
     },
@@ -5031,10 +7473,16 @@
         }
       }
     },
+    "^[%lld voiceprint](inflect: true)" : {
+
+    },
     "about %lld minutes" : {
 
     },
     "about a minute" : {
+
+    },
+    "checking download" : {
 
     },
     "claude" : {
@@ -5076,10 +7524,16 @@
     "dBrief’s copy of this audio is removed. The original isn’t touched." : {
 
     },
+    "downloaded" : {
+
+    },
     "e.g. claude-opus-5-5" : {
 
     },
     "end-to-end, faster than real-time" : {
+
+    },
+    "esc to cancel" : {
 
     },
     "expanded" : {
@@ -5091,16 +7545,35 @@
     "iCal matching will return no meetings." : {
 
     },
+    "model %@ · +overhead %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "model %1$@ · +overhead %2$@"
+          }
+        }
+      }
+    },
     "model speed, faster than real-time" : {
 
     },
     "name@company.com" : {
 
     },
+    "needs ⌃, ⌥, or ⌘" : {
+
+    },
     "no participants" : {
 
     },
+    "not downloaded" : {
+
+    },
     "or drop audio on the menu bar icon" : {
+
+    },
+    "recordings" : {
 
     },
     "seconds" : {
@@ -5110,6 +7583,9 @@
 
     },
     "takes a few minutes" : {
+
+    },
+    "transcripts" : {
 
     },
     "um, uh, you know. Off keeps transcripts verbatim." : {
@@ -5132,6 +7608,12 @@
       }
     },
     "yt-dlp not found" : {
+
+    },
+    "~%.1f GiB RAM" : {
+
+    },
+    "~%@ GiB RAM" : {
 
     },
     "© 2026 dBrief · MIT License" : {

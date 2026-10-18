@@ -14,7 +14,7 @@ struct ModelPickerQuickPick: View {
     @Environment(\.viewerPalette) private var palette
     @Environment(\.menuPanelPalette) private var status
 
-    private var languageName: String { ModelSuggestions.languageName(language) ?? "Auto-detect" }
+    private var languageName: String { ModelSuggestions.languageName(language) ?? String(localized: "Auto-detect") }
     private var showsCurrentRow: Bool { !suggestions.contains(where: { $0.modelID == currentID }) }
 
     var body: some View {
@@ -50,7 +50,7 @@ struct ModelPickerQuickPick: View {
         let id = suggestion.modelID
         let selected = id == selectedID
         let profile = LocalTranscriptionChoice.profile(id, modernApple: modernApple)
-        let ram = profile?.runtimeGiB.map { String(format: "%.1f GB RAM", $0) } ?? ""
+        let ram = profile?.runtimeGiB.map { String(localized: "\($0.formatted(.number.precision(.fractionLength(1)))) GB RAM") } ?? ""
         let download = Self.downloadText(downloaded: cached[id], downloadMB: profile?.downloadMB)
         return VStack(alignment: .leading, spacing: 7) {
             Label(suggestion.intent.title.uppercased(), systemImage: suggestion.intent.symbol)
@@ -110,11 +110,12 @@ struct ModelPickerQuickPick: View {
     /// What VoiceOver reads for a tile: the speed/accuracy trade-off first, then the facts.
     nonisolated static func accessibilityValue(profile: LocalModelProfile?, downloaded: Bool?) -> String {
         var parts: [String] = []
-        if let speed = profile?.speed { parts.append("Speed: \(ModelRatingKind.speed.word(speed))") }
-        if let accuracy = profile?.accuracy { parts.append("Accuracy: \(ModelRatingKind.accuracy.word(accuracy))") }
+        if let speed = profile?.speed { parts.append(String(localized: "Speed: \(ModelRatingKind.speed.word(speed))")) }
+        if let accuracy = profile?.accuracy { parts.append(String(localized: "Accuracy: \(ModelRatingKind.accuracy.word(accuracy))")) }
         if let profile { parts.append(profile.languageLabel) }
-        if let ram = profile?.runtimeGiB { parts.append(String(format: "%.1f GB RAM", ram)) }
-        parts.append(downloaded.map { $0 ? "downloaded" : "not downloaded" } ?? "checking download")
+        if let ram = profile?.runtimeGiB { parts.append(String(localized: "\(ram.formatted(.number.precision(.fractionLength(1)))) GB RAM")) }
+        parts.append(downloaded.map { $0 ? String(localized: "downloaded") : String(localized: "not downloaded") }
+                     ?? String(localized: "checking download"))
         return parts.joined(separator: ", ")
     }
 
@@ -122,9 +123,10 @@ struct ModelPickerQuickPick: View {
     /// the download size for a model that still has to download.
     nonisolated static func downloadText(downloaded: Bool?, downloadMB: Int?) -> String {
         switch downloaded {
-        case nil: return "Checking…"
-        case true?: return "Downloaded"
-        case false?: return "Not downloaded" + (downloadMB.map { " · \($0) MB" } ?? "")
+        case nil: return String(localized: "Checking…")
+        case true?: return String(localized: "Downloaded")
+        case false?: return downloadMB.map { String(localized: "Not downloaded · \($0) MB") }
+            ?? String(localized: "Not downloaded")
         }
     }
 

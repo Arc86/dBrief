@@ -76,7 +76,7 @@ final class ModelDownloadCoordinator {
         let attempt = UUID()
         attempts[kind] = attempt
         taskAttempts[kind] = attempt
-        phases[kind] = .downloading(progress: nil, label: "Starting…")
+        phases[kind] = .downloading(progress: nil, label: String(localized: "Starting…"))
         let dependencies = self.dependencies
         let task = Task { @MainActor [weak self] in
             // Client cancellation may not stop an already-running helper call.

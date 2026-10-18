@@ -36,11 +36,11 @@ extension VoiceLibraryRow {
 
         var title: String {
             switch self {
-            case .name: "Name"
-            case .company: "Company"
-            case .voiceprints: "Voiceprints"
-            case .firstHeard: "First heard"
-            case .lastHeard: "Last heard"
+            case .name: String(localized: "Name")
+            case .company: String(localized: "Company")
+            case .voiceprints: String(localized: "Voiceprints")
+            case .firstHeard: String(localized: "First heard")
+            case .lastHeard: String(localized: "Last heard")
             }
         }
 

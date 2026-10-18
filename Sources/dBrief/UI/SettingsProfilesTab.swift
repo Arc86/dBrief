@@ -38,7 +38,7 @@ struct SettingsProfilesTab: View {
             showSymbolPicker = false
         }
         .confirmationDialog(
-            profilePendingDeletion.map { "Delete “\($0.name)”?" } ?? "Delete profile?",
+            profilePendingDeletion.map { String(localized: "Delete “\($0.name)”?") } ?? String(localized: "Delete profile?"),
             isPresented: Binding(
                 get: { profilePendingDeletion != nil },
                 set: { if !$0 { profilePendingDeletion = nil } }
@@ -53,7 +53,7 @@ struct SettingsProfilesTab: View {
         .alert("Restore shared defaults?", isPresented: $isConfirmingSharedReset) {
             Button("Restore defaults", role: .destructive) {
                 appSettings.resetDefaultProfileToBuiltInDefaults()
-                statusMessage = "Shared settings and the Default profile restored."
+                statusMessage = String(localized: "Shared settings and the Default profile restored.")
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -141,8 +141,8 @@ struct SettingsProfilesTab: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             profile.name
-                + (profile.id == appSettings.activeProfileId ? ", saved selection" : "")
-                + (profile.id == appSettings.automaticProfileId ? ", automatic selection" : "")
+                + (profile.id == appSettings.activeProfileId ? String(localized: ", saved selection") : "")
+                + (profile.id == appSettings.automaticProfileId ? String(localized: ", automatic selection") : "")
         )
     }
 
@@ -173,7 +173,7 @@ struct SettingsProfilesTab: View {
     private var bottomControlBar: some View {
         HStack(spacing: 2) {
             Button {
-                let created = appSettings.createProfile(name: "New profile")
+                let created = appSettings.createProfile(name: String(localized: "New profile"))
                 selectedProfileId = created.id
             } label: {
                 Label("Add profile", systemImage: "plus")
@@ -288,7 +288,7 @@ struct SettingsProfilesTab: View {
                 Toggle("Select this profile when all conditions match", isOn: profileBinding(\.automaticMatchingEnabled, fallback: false))
             }
             if profile.automaticMatchingEnabled {
-                SettingsRow(verbatim: "Priority", caption: "Higher priority wins, then more conditions.") {
+                SettingsRow(verbatim: String(localized: "Priority"), caption: String(localized: "Higher priority wins, then more conditions.")) {
                     HStack(spacing: 6) {
                         Text("\(profile.matchPriority)")
                             .uiFont(.system(size: 12).monospacedDigit())
@@ -369,7 +369,7 @@ struct SettingsProfilesTab: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     NativeTextField(
-                        placeholder: "Profile name",
+                        placeholder: String(localized: "Profile name"),
                         text: profileBinding(\.name, fallback: profile.name)
                     )
                     .frame(height: 22)
@@ -475,7 +475,7 @@ struct SettingsProfilesTab: View {
         let total = [isSet(\.transcriptionEngine), isSet(\.transcriptionLanguage),
                     isSet(\.customVocabulary), isSet(\.transcriptionEndpointId)].count
         return SettingsCard("Transcription", description: "\(overridden) of \(total) overridden", section: .profileTranscription) {
-                overrideRow("Transcription engine", \.transcriptionEngine,
+                overrideRow(String(localized: "Transcription engine"), \.transcriptionEngine,
                             defaultValue: appSettings.transcriptionEngine) {
                     Picker("Engine", selection: overrideBinding(\.transcriptionEngine,
                                                                 fallback: appSettings.transcriptionEngine)) {
@@ -486,10 +486,10 @@ struct SettingsProfilesTab: View {
                     .pickerStyle(.menu)
                 }
 
-                overrideRow("Language", \.transcriptionLanguage,
+                overrideRow(String(localized: "Language"), \.transcriptionLanguage,
                             defaultValue: appSettings.transcriptionLanguage) {
                     if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .parakeetLocal {
-                        noteRow("Language override is inactive with Parakeet.")
+                        noteRow(String(localized: "Language override is inactive with Parakeet."))
                     } else if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .appleSpeech {
                         AppleSpeechLanguagePicker(selection: overrideBinding(\.transcriptionLanguage,
                             fallback: appSettings.transcriptionLanguage))
@@ -499,10 +499,10 @@ struct SettingsProfilesTab: View {
                     }
                 }
                 if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .parakeetLocal {
-                    noteRow("Parakeet ignores the language selection. Any saved override is kept for other engines.")
+                    noteRow(String(localized: "Parakeet ignores the language selection. Any saved override is kept for other engines."))
                 }
 
-                overrideRow("Custom vocabulary", \.customVocabulary,
+                overrideRow(String(localized: "Custom vocabulary"), \.customVocabulary,
                             defaultValue: appSettings.customVocabulary.isEmpty ? nil : appSettings.customVocabulary) {
                     NativeTextView(text: Binding(
                         get: {
@@ -517,14 +517,14 @@ struct SettingsProfilesTab: View {
                             appSettings.profiles[index].overrides.customVocabulary =
                                 TokenField.tokens(from: newValue)
                         }
-                    ), accessibilityName: "Profile vocabulary")
+                    ), accessibilityName: String(localized: "Profile vocabulary"))
                     .frame(height: 70)
                 }
 
-                overrideRow("Transcription service", \.transcriptionEndpointId,
+                overrideRow(String(localized: "Transcription service"), \.transcriptionEndpointId,
                             defaultValue: appSettings.defaultTranscriptionEndpoint?.id) {
                     if appSettings.transcriptionEndpoints.isEmpty {
-                        noteRow("No transcription services configured.")
+                        noteRow(String(localized: "No transcription services configured."))
                     } else {
                         Picker("Endpoint", selection: overrideBinding(\.transcriptionEndpointId,
                                                                       fallback: appSettings.transcriptionEndpoints[0].id)) {
@@ -547,15 +547,15 @@ struct SettingsProfilesTab: View {
                     isSet(\.summaryPrompt), isSet(\.actionItemsPrompt), isSet(\.tagsPrompt)].count
         return SettingsCard("AI analysis", description: "\(overridden) of \(total) overridden", section: .profileAI) {
                 if !(selectedProfile?.overrides.aiProcessingEnabled ?? appSettings.aiProcessingEnabled) {
-                    noteRow("AI analysis is off for this profile. You can configure its options for later use; transcription remains available.")
+                    noteRow(String(localized: "AI analysis is off for this profile. You can configure its options for later use; transcription remains available."))
                 }
-                overrideRow("AI processing", \.aiProcessingEnabled,
+                overrideRow(String(localized: "AI processing"), \.aiProcessingEnabled,
                             defaultValue: appSettings.aiProcessingEnabled) {
-                    boolToggle("Enable AI processing", \.aiProcessingEnabled,
+                    boolToggle(String(localized: "Enable AI processing"), \.aiProcessingEnabled,
                                fallback: appSettings.aiProcessingEnabled)
                 }
 
-                overrideRow("AI engine", \.aiEngine, defaultValue: appSettings.aiEngine) {
+                overrideRow(String(localized: "AI engine"), \.aiEngine, defaultValue: appSettings.aiEngine) {
                     Picker("AI engine", selection: overrideBinding(\.aiEngine, fallback: appSettings.aiEngine)) {
                         ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
                             Text(engine.displayName).tag(engine)
@@ -564,10 +564,10 @@ struct SettingsProfilesTab: View {
                     .pickerStyle(.menu)
                 }
 
-                overrideRow("AI provider", \.aiEndpointId,
+                overrideRow(String(localized: "AI provider"), \.aiEndpointId,
                             defaultValue: appSettings.defaultAIEndpoint?.id) {
                     if appSettings.aiEndpoints.isEmpty {
-                        noteRow("No AI providers configured.")
+                        noteRow(String(localized: "No AI providers configured."))
                     } else {
                         Picker("Endpoint", selection: overrideBinding(\.aiEndpointId,
                                                                       fallback: appSettings.aiEndpoints[0].id)) {
@@ -579,26 +579,26 @@ struct SettingsProfilesTab: View {
                     }
                 }
 
-                overrideRow("AI analysis CLI effort", \.localCLIReasoningEffort,
+                overrideRow(String(localized: "AI analysis CLI effort"), \.localCLIReasoningEffort,
                             defaultValue: appSettings.localCLIConfig.effort) {
-                    CLIReasoningEffortPicker(title: "AI analysis CLI effort",
+                    CLIReasoningEffortPicker(title: String(localized: "AI analysis CLI effort"),
                         selection: overrideBinding(\.localCLIReasoningEffort,
                                                    fallback: appSettings.localCLIConfig.effort),
                         recommendation: .medium)
                 }
                 if appSettings.localCLIConfig.effortProvider == .commandDefault {
-                    noteRow("AI CLI effort is saved but inactive until Claude Code is selected as its effort provider.")
+                    noteRow(String(localized: "AI CLI effort is saved but inactive until Claude Code is selected as its effort provider."))
                 }
 
-                overrideRow("Calendar CLI effort", \.calendarCLIReasoningEffort,
+                overrideRow(String(localized: "Calendar CLI effort"), \.calendarCLIReasoningEffort,
                             defaultValue: appSettings.calendarCLIConfig.effort) {
-                    CLIReasoningEffortPicker(title: "Calendar CLI effort",
+                    CLIReasoningEffortPicker(title: String(localized: "Calendar CLI effort"),
                         selection: overrideBinding(\.calendarCLIReasoningEffort,
                                                    fallback: appSettings.calendarCLIConfig.effort),
                         recommendation: .low)
                 }
                 if appSettings.calendarCLIConfig.modelID?.lowercased().contains("haiku") == true {
-                    noteRow("Calendar effort is saved but not applicable to the selected Haiku model.")
+                    noteRow(String(localized: "Calendar effort is saved but not applicable to the selected Haiku model."))
                 }
 
                 if let profile = selectedProfile {
@@ -617,27 +617,27 @@ struct SettingsProfilesTab: View {
                     isSet(\.autoActionItems), isSet(\.autoTags),
                     isSet(\.autoLoadCalendarParticipants)].count
         return SettingsCard("Task defaults", description: "\(overridden) of \(total) overridden", section: .profileTasks) {
-                noteRow("These are the default tasks after recording. The profile’s automation setting controls whether they start automatically.")
+                noteRow(String(localized: "These are the default tasks after recording. The profile’s automation setting controls whether they start automatically."))
                 if !(selectedProfile?.overrides.aiProcessingEnabled ?? appSettings.aiProcessingEnabled) {
-                    noteRow("Summary, action items, and tags are inactive while AI analysis is off for this profile. Saved choices are kept.")
+                    noteRow(String(localized: "Summary, action items, and tags are inactive while AI analysis is off for this profile. Saved choices are kept."))
                 }
-                overrideRow("Transcription task", \.autoTranscribe,
+                overrideRow(String(localized: "Transcription task"), \.autoTranscribe,
                             defaultValue: appSettings.autoTranscribe) {
-                    boolToggle("Preselect transcription after recording", \.autoTranscribe, fallback: appSettings.autoTranscribe)
+                    boolToggle(String(localized: "Preselect transcription after recording"), \.autoTranscribe, fallback: appSettings.autoTranscribe)
                 }
-                overrideRow("Auto summary", \.autoSummary, defaultValue: appSettings.autoSummary) {
-                    boolToggle("Generate summary", \.autoSummary, fallback: appSettings.autoSummary)
+                overrideRow(String(localized: "Auto summary"), \.autoSummary, defaultValue: appSettings.autoSummary) {
+                    boolToggle(String(localized: "Generate summary"), \.autoSummary, fallback: appSettings.autoSummary)
                 }
-                overrideRow("Auto action items", \.autoActionItems,
+                overrideRow(String(localized: "Auto action items"), \.autoActionItems,
                             defaultValue: appSettings.autoActionItems) {
-                    boolToggle("Extract action items", \.autoActionItems, fallback: appSettings.autoActionItems)
+                    boolToggle(String(localized: "Extract action items"), \.autoActionItems, fallback: appSettings.autoActionItems)
                 }
-                overrideRow("Auto tags", \.autoTags, defaultValue: appSettings.autoTags) {
-                    boolToggle("Generate tags", \.autoTags, fallback: appSettings.autoTags)
+                overrideRow(String(localized: "Auto tags"), \.autoTags, defaultValue: appSettings.autoTags) {
+                    boolToggle(String(localized: "Generate tags"), \.autoTags, fallback: appSettings.autoTags)
                 }
-                overrideRow("Calendar attendees", \.autoLoadCalendarParticipants,
+                overrideRow(String(localized: "Calendar attendees"), \.autoLoadCalendarParticipants,
                             defaultValue: appSettings.autoLoadCalendarParticipants) {
-                    boolToggle("Load calendar attendees during processing", \.autoLoadCalendarParticipants,
+                    boolToggle(String(localized: "Load calendar attendees during processing"), \.autoLoadCalendarParticipants,
                                fallback: appSettings.autoLoadCalendarParticipants)
                 }
         }
@@ -649,17 +649,17 @@ struct SettingsProfilesTab: View {
         let total = [isSet(\.recordingFolderPath), isSet(\.transcriptionFolderPath),
                     isSet(\.obsidianVaultPath), isSet(\.obsidianDefaultFolderRelativePath)].count
         return SettingsCard("Folders", description: "\(overridden) of \(total) overridden", section: .profileFolders) {
-                folderOverrideRow("Recording folder", \.recordingFolderPath,
+                folderOverrideRow(String(localized: "Recording folder"), \.recordingFolderPath,
                                   fallback: appSettings.recordingFolderURL.path)
-                folderOverrideRow("Transcription folder", \.transcriptionFolderPath,
+                folderOverrideRow(String(localized: "Transcription folder"), \.transcriptionFolderPath,
                                   fallback: appSettings.transcriptionFolderURL.path)
-                folderOverrideRow("Obsidian vault", \.obsidianVaultPath,
+                folderOverrideRow(String(localized: "Obsidian vault"), \.obsidianVaultPath,
                                   fallback: appSettings.obsidianVaultURL?.path ?? "")
 
-                overrideRow("Obsidian default folder", \.obsidianDefaultFolderRelativePath,
+                overrideRow(String(localized: "Obsidian default folder"), \.obsidianDefaultFolderRelativePath,
                             defaultValue: appSettings.obsidianDefaultFolderRelativePath) {
                     NativeTextField(
-                        placeholder: "Relative folder in vault",
+                        placeholder: String(localized: "Relative folder in vault"),
                         text: overrideBinding(\.obsidianDefaultFolderRelativePath,
                                               fallback: appSettings.obsidianDefaultFolderRelativePath)
                     )
@@ -676,12 +676,12 @@ struct SettingsProfilesTab: View {
         return SettingsCard("Integrations", description: "\(overridden) of \(keys.count) overridden",
                             section: .profileIntegrations) {
             if showTickTick {
-                taskDestinationOverrideRow("TickTick list", service: .tickTick,
+                taskDestinationOverrideRow(String(localized: "TickTick list"), service: .tickTick,
                                            id: \.tickTickProjectID, name: \.tickTickProjectName,
                                            base: appSettings.integrations.tickTick.projectID,
                                            baseName: appSettings.integrations.tickTick.projectName)
             }
-            taskDestinationOverrideRow("Todoist project", service: .todoist,
+            taskDestinationOverrideRow(String(localized: "Todoist project"), service: .todoist,
                                        id: \.todoistProjectID, name: \.todoistProjectName,
                                        base: appSettings.integrations.todoist.projectID,
                                        baseName: appSettings.integrations.todoist.projectName)
@@ -697,9 +697,12 @@ struct SettingsProfilesTab: View {
         let overrides = selectedProfileIndex.map { appSettings.profiles[$0].overrides }
         let currentID = overrides?.notionParentID ?? ""
         let currentType = overrides?.notionParentType.flatMap(NotionParentType.init(rawValue:)) ?? .page
-        let baseLabel = base.parentID.isEmpty ? "Not chosen" : base.parentName ?? "Untitled"
-        return SettingsRow(verbatim: "Notion destination",
-                           caption: "\(enabled ? "App default" : "Uses app default") — \(baseLabel)") {
+        let baseLabel = base.parentID.isEmpty
+            ? String(localized: "Not chosen") : base.parentName ?? String(localized: "Untitled")
+        return SettingsRow(verbatim: String(localized: "Notion destination"),
+                           caption: enabled
+                               ? String(localized: "App default — \(baseLabel)")
+                               : String(localized: "Uses app default — \(baseLabel)")) {
             HStack(spacing: 12) {
                 if enabled {
                     TaskDestinationPicker(
@@ -736,8 +739,11 @@ struct SettingsProfilesTab: View {
         let enabled = isSet(idPath)
         let overrides = selectedProfileIndex.map { appSettings.profiles[$0].overrides }
         let current = overrides?[keyPath: idPath] ?? ""
+        let baseLabel = baseName ?? String(localized: "Inbox")
         return SettingsRow(verbatim: title,
-                           caption: "\(enabled ? "App default" : "Uses app default") — \(baseName ?? "Inbox")") {
+                           caption: enabled
+                               ? String(localized: "App default — \(baseLabel)")
+                               : String(localized: "Uses app default — \(baseLabel)")) {
             HStack(spacing: 12) {
                 if enabled {
                     TaskDestinationPicker(service: service, savedID: current.isEmpty ? nil : current,
@@ -773,14 +779,18 @@ struct SettingsProfilesTab: View {
         let fields = SettingsProfileScope.Field.allCases.filter { $0.keyPath == keyPath }
         let summary = SettingsProfileScope(settings: appSettings, profile: selectedProfile, fields: fields).summary(for: keyPath)
         SettingsRow(verbatim: title,
-                    caption: summary.map { "\(enabled ? "App default" : "Uses app default") — \($0.defaultValue)" }) {
+                    caption: summary.map {
+                        enabled
+                            ? String(localized: "App default — \($0.defaultValue)")
+                            : String(localized: "Uses app default — \($0.defaultValue)")
+                    }) {
             Toggle("Override \(title)", isOn: Binding(
                 get: { isSet(keyPath) },
                 set: { setOverride(keyPath, enabled: $0, defaultValue: defaultValue) }
             ))
         }
         if let summary, let note = summary.note {
-            noteRow("\(note) Profile setting: \(summary.profileValue)")
+            noteRow(String(localized: "\(note) Profile setting: \(summary.profileValue)"))
         }
         if enabled {
             SettingsStackedRow { control() }
@@ -955,9 +965,9 @@ struct SettingsProfilesTab: View {
             let data = try Data(contentsOf: url)
             let result = try appSettings.importProfiles(from: data)
             selectedProfileId = appSettings.activeProfileId
-            var message = "Imported \(result.importedCount) profile\(result.importedCount == 1 ? "" : "s")."
+            var message = String(localized: "Imported \(result.importedCount) profiles.")
             if result.renamedCount > 0 {
-                message += " Renamed \(result.renamedCount)."
+                message += " " + String(localized: "Renamed \(result.renamedCount).")
             }
             if !result.warnings.isEmpty {
                 message += " \(result.warnings.joined(separator: " "))"
@@ -978,7 +988,7 @@ struct SettingsProfilesTab: View {
             let ids = selectedOnly ? selectedProfile.map { [$0.id] } : nil
             let data = try appSettings.exportProfiles(ids: ids)
             try data.write(to: url)
-            statusMessage = "Profiles exported to \(url.lastPathComponent)."
+            statusMessage = String(localized: "Profiles exported to \(url.lastPathComponent).")
         } catch {
             statusMessage = error.localizedDescription
         }

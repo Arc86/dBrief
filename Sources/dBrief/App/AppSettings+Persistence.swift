@@ -65,7 +65,7 @@ extension AppSettings {
 
     func obsidianFolderDisplayName(relativePath: String?) -> String {
         let trimmed = (relativePath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Vault root" : trimmed
+        return trimmed.isEmpty ? String(localized: "Vault root") : trimmed
     }
 
     // MARK: Default Folders

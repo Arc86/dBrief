@@ -53,7 +53,7 @@ struct ModelPickerAllModels: View {
             return "\(id) \(LocalTranscriptionChoice.title(id)) \(LocalTranscriptionChoice.shortTitle(id)) \(language)"
                 .localizedCaseInsensitiveContains(query)
         }
-        return [ModelGroup(id: "builtin", title: "Built in", ids: [LocalTranscriptionChoice.apple]),
+        return [ModelGroup(id: "builtin", title: String(localized: "Built in"), ids: [LocalTranscriptionChoice.apple]),
                 ModelGroup(id: "parakeet", title: "Parakeet", ids: parakeet),
                 ModelGroup(id: "whisper", title: "Whisper", ids: whisper)]
             .map { ModelGroup(id: $0.id, title: $0.title, ids: $0.ids.filter(matches)) }
@@ -136,7 +136,7 @@ struct ModelPickerAllModels: View {
 
     private func ramText(_ id: String) -> String {
         if id == LocalTranscriptionChoice.apple { return "macOS" }
-        return LocalTranscriptionChoice.profile(id)?.runtimeGiB.map { String(format: "%.1f GB", $0) } ?? "—"
+        return LocalTranscriptionChoice.profile(id)?.runtimeGiB.map { String(localized: "\($0.formatted(.number.precision(.fractionLength(1)))) GB") } ?? "—"
     }
 
     private func row(_ id: String, group: ModelGroup) -> some View {
@@ -173,7 +173,7 @@ struct ModelPickerAllModels: View {
         .onKeyPress(.space) { selectedID = id; return .handled }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(LocalTranscriptionChoice.shortTitle(id))
-        .accessibilityValue([ready ? "Downloaded" : nil, mark?.title, ramText(id)].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue([ready ? String(localized: "Downloaded") : nil, mark?.title, ramText(id)].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { selectedID = id }
         .id(id)
@@ -253,9 +253,9 @@ struct ModelInspector: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Memory while transcribing").uiFont(.caption).foregroundStyle(palette.secondary.color)
                 MemoryShareBar(model: ram, speakers: speakers, installed: installed)
-                Text(identifySpeakers
-                     ? String(format: "%.1f GB + %.1f GB speakers of %.0f GB", ram, speakers, installed)
-                     : String(format: "%.1f GB of %.0f GB", ram, installed))
+                (identifySpeakers
+                     ? Text("\(ram, specifier: "%.1f") GB + \(speakers, specifier: "%.1f") GB speakers of \(installed, specifier: "%.0f") GB")
+                     : Text("\(ram, specifier: "%.1f") GB of \(installed, specifier: "%.0f") GB"))
                     .uiFont(.caption).foregroundStyle(palette.text.color)
             }
         } else {
@@ -270,7 +270,7 @@ struct ModelInspector: View {
         Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
             GridRow {
                 Text("Languages").foregroundStyle(palette.secondary.color)
-                Text(profile?.languageLabel ?? "Unknown")
+                Text(profile?.languageLabel ?? String(localized: "Unknown"))
             }
             GridRow {
                 Text("Download").foregroundStyle(palette.secondary.color)
@@ -286,18 +286,18 @@ struct ModelInspector: View {
     }
 
     private var downloadText: String {
-        if let mb = profile?.downloadMB { return "\(mb) MB" }
+        if let mb = profile?.downloadMB { return String(localized: "\(mb) MB") }
         switch engine {
-        case .appleSpeech: return "Managed by macOS"
-        default: return "Downloads on first use"
+        case .appleSpeech: return String(localized: "Managed by macOS")
+        default: return String(localized: "Downloads on first use")
         }
     }
 
     private var engineText: String {
         switch engine {
         case .appleSpeech: modernApple ? "Apple SpeechAnalyzer" : "Apple Speech"
-        case .parakeetLocal: "FluidAudio · on this Mac"
-        default: "WhisperKit · on this Mac"
+        case .parakeetLocal: String(localized: "FluidAudio · on this Mac")
+        default: String(localized: "WhisperKit · on this Mac")
         }
     }
 
@@ -345,6 +345,6 @@ private struct MemoryShareBar: View {
         .frame(height: 8)
         .accessibilityElement()
         .accessibilityLabel("Estimated share of installed memory")
-        .accessibilityValue(String(format: "%.0f percent", (model + speakers) / total * 100))
+        .accessibilityValue(Text("\((model + speakers) / total * 100, specifier: "%.0f") percent"))
     }
 }

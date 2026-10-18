@@ -37,7 +37,7 @@ struct SettingsTranscriptionTab: View {
         let modelNames = await recordingManager.fetchAvailableWhisperModels()
         if modelNames.isEmpty {
             whisperModels = Self.offlineWhisperModels
-            whisperModelFetchError = "Using offline model list — couldn't reach HuggingFace."
+            whisperModelFetchError = String(localized: "Using offline model list — couldn't reach HuggingFace.")
         } else {
             whisperModels = modelNames.map { WhisperModelInfo.parse($0) }.sorted()
         }
@@ -78,7 +78,7 @@ struct SettingsTranscriptionTab: View {
                     SettingsRow("Remote transcription", caption: "Uses the default provider below.")
                 }
                 if let purgeMessage {
-                    SettingsRow(verbatim: "Model download", caption: purgeMessage)
+                    SettingsRow(verbatim: String(localized: "Model download"), caption: purgeMessage)
                 }
             }
 
@@ -152,9 +152,9 @@ struct SettingsTranscriptionTab: View {
                         Toggle("Split large files", isOn: $settings.remoteChunkingEnabled)
                     }
                     if settings.remoteChunkingEnabled {
-                        stepperRow("Max upload size", "\(settings.remoteChunkMaxUploadMB) MB",
+                        stepperRow("Max upload size", String(localized: "\(settings.remoteChunkMaxUploadMB) MB"),
                                    value: $settings.remoteChunkMaxUploadMB, in: 1...100)
-                        stepperRow("Overlap", "\(Int(settings.remoteChunkOverlapSeconds)) s",
+                        stepperRow("Overlap", String(localized: "\(Int(settings.remoteChunkOverlapSeconds)) s"),
                                    value: $settings.remoteChunkOverlapSeconds, in: 0...15)
                         stepperRow("Retries", "\(settings.remoteChunkRetryCount)",
                                    value: $settings.remoteChunkRetryCount, in: 0...5)
@@ -342,10 +342,16 @@ struct TranscriptionLanguagePicker: View {
     @Binding var selection: String
 
     static let languages: [(code: String, name: String)] = [
-        ("en", "English"), ("nl", "Dutch"), ("de", "German"), ("fr", "French"), ("es", "Spanish"),
-        ("it", "Italian"), ("pt", "Portuguese"), ("ja", "Japanese"), ("zh", "Chinese"), ("ko", "Korean"),
-        ("ru", "Russian"), ("ar", "Arabic"), ("hi", "Hindi"), ("pl", "Polish"), ("tr", "Turkish"),
-        ("uk", "Ukrainian"), ("sv", "Swedish"), ("da", "Danish"), ("no", "Norwegian"),
+        ("en", String(localized: "English")), ("nl", String(localized: "Dutch")),
+        ("de", String(localized: "German")), ("fr", String(localized: "French")),
+        ("es", String(localized: "Spanish")), ("it", String(localized: "Italian")),
+        ("pt", String(localized: "Portuguese")), ("ja", String(localized: "Japanese")),
+        ("zh", String(localized: "Chinese")), ("ko", String(localized: "Korean")),
+        ("ru", String(localized: "Russian")), ("ar", String(localized: "Arabic")),
+        ("hi", String(localized: "Hindi")), ("pl", String(localized: "Polish")),
+        ("tr", String(localized: "Turkish")), ("uk", String(localized: "Ukrainian")),
+        ("sv", String(localized: "Swedish")), ("da", String(localized: "Danish")),
+        ("no", String(localized: "Norwegian")),
     ]
 
     var body: some View {

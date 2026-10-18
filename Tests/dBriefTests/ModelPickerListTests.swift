@@ -53,7 +53,7 @@ struct ModelPickerListTests {
     @Test func tileAccessibilityValueIncludesTheTradeOff() throws {
         let profile = try #require(LocalTranscriptionChoice.profile("parakeet:v3"))
         #expect(ModelPickerQuickPick.accessibilityValue(profile: profile, downloaded: false)
-                == "Speed: Very fast, Accuracy: Very good, 25 European languages, 1.8 GB RAM, not downloaded")
+                == "Speed: Very fast, Accuracy: Very good, 25 European languages, \(1.8.formatted(.number.precision(.fractionLength(1)))) GB RAM, not downloaded")
         #expect(ModelPickerQuickPick.accessibilityValue(profile: nil, downloaded: true) == "downloaded")
         #expect(ModelPickerQuickPick.accessibilityValue(profile: nil, downloaded: nil) == "checking download")
     }

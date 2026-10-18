@@ -24,10 +24,10 @@ struct SettingsAITab: View {
                                 : "Off. You can still set it up here for later or for profiles that turn it on.") {
                     Toggle("AI analysis", isOn: $settings.aiProcessingEnabled)
                 }
-                SettingsRow(verbatim: "Engine", caption: engineDescription(for: settings.aiEngine)) {
+                SettingsRow(verbatim: String(localized: "Engine"), caption: engineDescription(for: settings.aiEngine)) {
                     Picker("Engine", selection: $settings.aiEngine) {
                         ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
-                            Text(engine.isRecommended ? "\(engine.displayName) · Recommended" : engine.displayName).tag(engine)
+                            Text(engine.isRecommended ? String(localized: "\(engine.displayName) · Recommended") : engine.displayName).tag(engine)
                         }
                     }
                     .pickerStyle(.menu)
@@ -36,8 +36,8 @@ struct SettingsAITab: View {
                 if settings.aiEngine == .qwenLocal {
                     SettingsStackedRow {
                         TranscriptionModelCard(presentation: .init(
-                            title: "Gemma 4 E4B", language: "Multilingual", footprint: "4-bit, on this Mac",
-                            summary: "Downloaded once from Hugging Face. Runs analysis and chat on this Mac.")) {
+                            title: "Gemma 4 E4B", language: String(localized: "Multilingual"), footprint: String(localized: "4-bit, on this Mac"),
+                            summary: String(localized: "Downloaded once from Hugging Face. Runs analysis and chat on this Mac."))) {
                             HStack(spacing: 6) {
                                 ModelDownloadButton(kind: .gemma, compact: true)
                                 ModelActionsMenu(modelName: "Gemma", message: $purgeMessage) {
@@ -47,7 +47,7 @@ struct SettingsAITab: View {
                         }
                     }
                     if let purgeMessage {
-                        SettingsRow(verbatim: "Model download", caption: purgeMessage)
+                        SettingsRow(verbatim: String(localized: "Model download"), caption: purgeMessage)
                     }
                 }
             }
@@ -127,13 +127,13 @@ struct SettingsAITab: View {
     private func engineDescription(for engine: AppSettings.AIEngine) -> String {
         switch engine {
         case .appleIntelligence:
-            "On-device Foundation Models. Requires macOS 26+ with Apple Silicon."
+            String(localized: "On-device Foundation Models. Requires macOS 26+ with Apple Silicon.")
         case .qwenLocal:
-            "On-device MLX Gemma 4 E4B 4-bit model. Downloaded once from Hugging Face."
+            String(localized: "On-device MLX Gemma 4 E4B 4-bit model. Downloaded once from Hugging Face.")
         case .remoteEndpoint:
-            "Use a remote LLM endpoint configured below."
+            String(localized: "Use a remote LLM endpoint configured below.")
         case .localCLI:
-            "Runs a local command-line tool once per recording to produce the analysis."
+            String(localized: "Runs a local command-line tool once per recording to produce the analysis.")
         }
     }
 
@@ -195,7 +195,7 @@ struct SettingsAITab: View {
         }
         SettingsStackedRow {
             VStack(alignment: .leading, spacing: 6) {
-                NativeTextView(text: localCLICommandBinding, monospaced: true, accessibilityName: "Local CLI command")
+                NativeTextView(text: localCLICommandBinding, monospaced: true, accessibilityName: String(localized: "Local CLI command"))
                     .frame(height: 70)
                 Text("Prompts arrive as DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT and DBRIEF_FULL_PROMPT, and on stdin. If a tool isn't found, use its absolute path (`which <tool>`).")
                     .uiFont(.system(size: 11.5))
@@ -242,7 +242,7 @@ struct SettingsAITab: View {
         }
         if appSettings.localCLIConfig.effortProvider == .claude {
             SettingsRow("Reasoning effort", caption: "Applies to this child process. An inline environment assignment can override it.") {
-                CLIReasoningEffortPicker(title: "Reasoning effort", selection: Binding(
+                CLIReasoningEffortPicker(title: String(localized: "Reasoning effort"), selection: Binding(
                     get: { appSettings.localCLIConfig.effort },
                     set: { effort in
                         appSettings.localCLIConfig.effort = effort
@@ -275,7 +275,7 @@ struct SettingsAITab: View {
             }
         }
         if let cliTestError {
-            SettingsStackedRow { SettingsErrorDetails(summary: "Command test failed", error: cliTestError) }
+            SettingsStackedRow { SettingsErrorDetails(summary: String(localized: "Command test failed"), error: cliTestError) }
         }
     }
 

@@ -2,6 +2,38 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>%@ · %lld attendees</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld genodigde</string>
+			<key>other</key>
+			<string>%2$lld genodigden</string>
+		</dict>
+	</dict>
+	<key>%@ · %lld fields</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld veld</string>
+			<key>other</key>
+			<string>%2$lld velden</string>
+		</dict>
+	</dict>
 	<key>%lld attendees loaded</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -18,6 +50,38 @@
 			<string>%lld genodigden geladen</string>
 		</dict>
 	</dict>
+	<key>%lld calendars</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld agenda</string>
+			<key>other</key>
+			<string>%lld agenda’s</string>
+		</dict>
+	</dict>
+	<key>%lld days</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld dag</string>
+			<key>other</key>
+			<string>%lld dagen</string>
+		</dict>
+	</dict>
 	<key>%lld meeting participants</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -32,6 +96,38 @@
 			<string>%lld deelnemer aan de vergadering</string>
 			<key>other</key>
 			<string>%lld deelnemers aan de vergadering</string>
+		</dict>
+	</dict>
+	<key>%lld minutes</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld minuut</string>
+			<key>other</key>
+			<string>%lld minuten</string>
+		</dict>
+	</dict>
+	<key>%lld models · nothing downloads until first use</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld model · er wordt pas iets gedownload bij het eerste gebruik</string>
+			<key>other</key>
+			<string>%lld modellen · er wordt pas iets gedownload bij het eerste gebruik</string>
 		</dict>
 	</dict>
 	<key>%lld need attention</key>
@@ -66,6 +162,70 @@
 			<string>%lld deelnemers</string>
 		</dict>
 	</dict>
+	<key>%lld permissions need attention.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld toestemming vraagt aandacht.</string>
+			<key>other</key>
+			<string>%lld toestemmingen vragen aandacht.</string>
+		</dict>
+	</dict>
+	<key>%lld seconds</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld seconde</string>
+			<key>other</key>
+			<string>%lld seconden</string>
+		</dict>
+	</dict>
+	<key>%lld selected calendars are unavailable and won’t provide meetings.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld gekozen agenda is niet beschikbaar en levert geen vergaderingen.</string>
+			<key>other</key>
+			<string>%lld gekozen agenda’s zijn niet beschikbaar en leveren geen vergaderingen.</string>
+		</dict>
+	</dict>
+	<key>%lld sessions</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld sessie</string>
+			<key>other</key>
+			<string>%lld sessies</string>
+		</dict>
+	</dict>
 	<key>%lld words</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -80,6 +240,22 @@
 			<string>%lld woord</string>
 			<key>other</key>
 			<string>%lld woorden</string>
+		</dict>
+	</dict>
+	<key>**%@** overrides %lld settings on this page.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>**%1$@** wijzigt %2$#@n@ op deze pagina.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld instelling</string>
+			<key>other</key>
+			<string>%2$lld instellingen</string>
 		</dict>
 	</dict>
 	<key>Add %lld Items</key>
@@ -114,6 +290,86 @@
 			<string>%lld actiepunten toegevoegd.</string>
 		</dict>
 	</dict>
+	<key>Connected — the connector answered the test window (%lld events).</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Verbonden — de connector gaf antwoord voor het testvenster (%lld afspraak).</string>
+			<key>other</key>
+			<string>Verbonden — de connector gaf antwoord voor het testvenster (%lld afspraken).</string>
+		</dict>
+	</dict>
+	<key>Deleted %lld files (%@).</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@n@ verwijderd (%2$@).</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%1$lld bestand</string>
+			<key>other</key>
+			<string>%1$lld bestanden</string>
+		</dict>
+	</dict>
+	<key>Deleted %lld files. Some privacy evidence could not be removed; retry cleanup when storage is available.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld bestand verwijderd. Niet alle privacygegevens konden worden verwijderd; probeer opnieuw als de opslag beschikbaar is.</string>
+			<key>other</key>
+			<string>%lld bestanden verwijderd. Niet alle privacygegevens konden worden verwijderd; probeer opnieuw als de opslag beschikbaar is.</string>
+		</dict>
+	</dict>
+	<key>Imported %lld profiles.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld profiel geïmporteerd.</string>
+			<key>other</key>
+			<string>%lld profielen geïmporteerd.</string>
+		</dict>
+	</dict>
+	<key>Loaded %lld models from the server.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld model van de server geladen.</string>
+			<key>other</key>
+			<string>%lld modellen van de server geladen.</string>
+		</dict>
+	</dict>
 	<key>Name the %lld voices before the analysis continues.</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -128,6 +384,38 @@
 			<string>Geef de stem een naam voordat de analyse verdergaat.</string>
 			<key>other</key>
 			<string>Geef de %lld stemmen een naam voordat de analyse verdergaat.</string>
+		</dict>
+	</dict>
+	<key>Processing in %lld seconds</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Verwerken over %lld seconde</string>
+			<key>other</key>
+			<string>Verwerken over %lld seconden</string>
+		</dict>
+	</dict>
+	<key>Queueing in %lld seconds</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>In wachtrij over %lld seconde</string>
+			<key>other</key>
+			<string>In wachtrij over %lld seconden</string>
 		</dict>
 	</dict>
 </dict>

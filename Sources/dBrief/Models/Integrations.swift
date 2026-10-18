@@ -55,14 +55,14 @@ enum DeliveryField: String, CaseIterable, Codable, Hashable, Sendable, Identifia
 
     var displayName: String {
         switch self {
-        case .audio: "Audio"
-        case .transcript: "Transcript"
-        case .summary: "Summary"
-        case .tags: "Tags"
-        case .sentiment: "Sentiment"
-        case .actionItems: "Action Items"
+        case .audio: String(localized: "Audio")
+        case .transcript: String(localized: "Transcript")
+        case .summary: String(localized: "Summary")
+        case .tags: String(localized: "Tags")
+        case .sentiment: String(localized: "Sentiment")
+        case .actionItems: String(localized: "Action Items")
         case .markdown: "Markdown"
-        case .meetingInfo: "Meeting Info"
+        case .meetingInfo: String(localized: "Meeting Info")
         }
     }
 

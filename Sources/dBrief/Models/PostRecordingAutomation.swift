@@ -6,9 +6,9 @@ enum PostRecordingPolicy: String, Codable, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .review: "Review before processing"
-        case .process: "Process automatically"
-        case .queue: "Queue automatically"
+        case .review: String(localized: "Review before processing")
+        case .process: String(localized: "Process automatically")
+        case .queue: String(localized: "Queue automatically")
         }
     }
 }

@@ -16,7 +16,7 @@ struct SettingsPermissionsTab: View {
     var body: some View {
         SettingsPageScaffold(page: .permissions, notice: {
             if attention > 0 {
-                SettingsNotice(Text(attention == 1 ? "1 permission needs attention." : "\(attention) permissions need attention."),
+                SettingsNotice(Text("\(attention) permissions need attention."),
                                tone: .warning) {
                     Button("Refresh") { permissions.refresh() }.buttonStyle(.settingsSecondary)
                 }

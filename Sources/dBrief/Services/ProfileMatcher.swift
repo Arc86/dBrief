@@ -6,12 +6,12 @@ struct ProfileMatchRule: Codable, Hashable, Identifiable, Sendable {
 
         var title: String {
             switch self {
-            case .title: "Recording title"
-            case .callApplication: "Call application"
-            case .calendarTitle: "Calendar title"
-            case .calendarNotes: "Calendar notes"
-            case .calendarLocation: "Calendar location"
-            case .attendeeDomain: "Attendee email domain"
+            case .title: String(localized: "Recording title")
+            case .callApplication: String(localized: "Call application")
+            case .calendarTitle: String(localized: "Calendar title")
+            case .calendarNotes: String(localized: "Calendar notes")
+            case .calendarLocation: String(localized: "Calendar location")
+            case .attendeeDomain: String(localized: "Attendee email domain")
             }
         }
     }

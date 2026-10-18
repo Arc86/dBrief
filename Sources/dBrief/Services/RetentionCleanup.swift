@@ -13,8 +13,8 @@ enum RetentionCategory: Sendable, Hashable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .recordings: "recordings"
-        case .transcripts: "transcripts"
+        case .recordings: String(localized: "recordings")
+        case .transcripts: String(localized: "transcripts")
         }
     }
 }
@@ -28,12 +28,11 @@ struct RetentionCleanupResult: Sendable {
     /// One-line, user-facing summary for the Settings UI.
     var summary: String {
         if privacyCleanupFailures > 0 {
-            return "Deleted \(filesDeleted) files. Some privacy evidence could not be removed; retry cleanup when storage is available."
+            return String(localized: "Deleted \(filesDeleted) files. Some privacy evidence could not be removed; retry cleanup when storage is available.")
         }
-        guard filesDeleted > 0 else { return "Nothing to delete." }
+        guard filesDeleted > 0 else { return String(localized: "Nothing to delete.") }
         let size = ByteCountFormatter.string(fromByteCount: bytesFreed, countStyle: .file)
-        let noun = filesDeleted == 1 ? "file" : "files"
-        return "Deleted \(filesDeleted) \(noun) (\(size))."
+        return String(localized: "Deleted \(filesDeleted) files (\(size)).")
     }
 }
 

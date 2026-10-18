@@ -102,14 +102,18 @@ struct SettingsVoiceLibraryTab: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { targets in
-            Text("\(quotedNames(targets)) and all \(targets.count == 1 ? "its" : "their") voiceprints will be removed. This cannot be undone.")
+            targets.count == 1
+                ? Text("\(quotedNames(targets)) and all its voiceprints will be removed. This cannot be undone.")
+                : Text("\(quotedNames(targets)) and all their voiceprints will be removed. This cannot be undone.")
         }
         .alert(mergeTitle, isPresented: $confirmingMerge, presenting: pendingMerge) { merge in
             Button("Merge", role: .destructive) { performMerge(sources: merge.sources, into: merge.survivor) }
             Button("Cancel", role: .cancel) {}
         } message: { merge in
             let others = merge.sources.filter { $0.id != merge.survivor.id }
-            Text("The voiceprints of \(quotedNames(others)) move into \u{201C}\(merge.survivor.name)\u{201D}, and \(others.count == 1 ? "that person is" : "those people are") removed. This cannot be undone.")
+            others.count == 1
+                ? Text("The voiceprints of \(quotedNames(others)) move into \u{201C}\(merge.survivor.name)\u{201D}, and that person is removed. This cannot be undone.")
+                : Text("The voiceprints of \(quotedNames(others)) move into \u{201C}\(merge.survivor.name)\u{201D}, and those people are removed. This cannot be undone.")
         }
         .alert("Name already exists", isPresented: $showingCollision, presenting: collision) { collision in
             Button("Merge", role: .destructive) {
@@ -418,12 +422,14 @@ struct SettingsVoiceLibraryTab: View {
     }
 
     private var forgetTitle: String {
-        forgetTargets.count == 1 ? "Forget this voice?" : "Forget \(forgetTargets.count) voices?"
+        forgetTargets.count == 1
+            ? String(localized: "Forget this voice?")
+            : String(localized: "Forget \(forgetTargets.count) voices?")
     }
 
     private var mergeTitle: String {
         guard let merge = pendingMerge else { return "" }
-        return "Merge into \u{201C}\(merge.survivor.name)\u{201D}?"
+        return String(localized: "Merge into \u{201C}\(merge.survivor.name)\u{201D}?")
     }
 
     private func quotedNames(_ people: [KnownPerson]) -> String {

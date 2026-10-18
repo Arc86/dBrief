@@ -3,14 +3,16 @@ import SwiftUI
 enum ModelRatingKind {
     case speed, accuracy
 
-    var label: String { self == .speed ? "Speed" : "Accuracy" }
+    var label: String { self == .speed ? String(localized: "Speed") : String(localized: "Accuracy") }
 
     /// Word for a 1...5 estimate (out-of-range values clamp).
     func word(_ value: Int) -> String {
         let index = min(max(value, 1), 5) - 1
         switch self {
-        case .speed: return ["Very slow", "Slow", "Moderate", "Fast", "Very fast"][index]
-        case .accuracy: return ["Basic", "Fair", "Good", "Very good", "Excellent"][index]
+        case .speed: return [String(localized: "Very slow"), String(localized: "Slow"), String(localized: "Moderate"),
+                              String(localized: "Fast"), String(localized: "Very fast")][index]
+        case .accuracy: return [String(localized: "Basic"), String(localized: "Fair"), String(localized: "Good"),
+                                 String(localized: "Very good"), String(localized: "Excellent")][index]
         }
     }
 }
@@ -34,14 +36,15 @@ struct ModelRatingMeter: View {
                         .frame(minWidth: 10, minHeight: 5, maxHeight: 5)
                 }
             }
-            Text(value.map(kind.word) ?? "Not rated")
+            Text(value.map(kind.word) ?? String(localized: "Not rated"))
                 .foregroundStyle(palette.text.color)
                 .frame(width: 58, alignment: .trailing)
         }
         .uiFont(.system(size: 11))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(kind.label)
-        .accessibilityValue(value.map { "\(kind.word($0)), \($0) out of 5, estimated" } ?? "Not rated")
+        .accessibilityValue(value.map { String(localized: "\(kind.word($0)), \($0) out of 5, estimated") }
+                            ?? String(localized: "Not rated"))
     }
 
     private var fill: Color { kind == .speed ? status.success.color : palette.accentText.color }

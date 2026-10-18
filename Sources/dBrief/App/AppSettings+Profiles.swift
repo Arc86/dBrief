@@ -87,7 +87,7 @@ extension AppSettings {
             var profile = sourceProfile
             if profile.preset == .default {
                 profile.preset = .custom
-                warnings.append("Imported default profile was converted to custom.")
+                warnings.append(String(localized: "Imported default profile was converted to custom."))
             }
 
             let newName = uniqueImportedProfileName(from: profile.name, existing: workingProfiles)
@@ -130,18 +130,18 @@ extension AppSettings {
         if let endpointID = profile.overrides.transcriptionEndpointId,
            !transcriptionEndpoints.contains(where: { $0.id == endpointID })
         {
-            values.append("Transcription endpoint override not found; default endpoint will be used.")
+            values.append(String(localized: "Transcription endpoint override not found; default endpoint will be used."))
         }
         if let endpointID = profile.overrides.aiEndpointId,
            !aiEndpoints.contains(where: { $0.id == endpointID })
         {
-            values.append("AI endpoint override not found; default endpoint will be used.")
+            values.append(String(localized: "AI endpoint override not found; default endpoint will be used."))
         }
         if let path = profile.overrides.obsidianVaultPath,
            !path.isEmpty,
            !FileManager.default.fileExists(atPath: path)
         {
-            values.append("Obsidian vault override path is unavailable; default vault will be used.")
+            values.append(String(localized: "Obsidian vault override path is unavailable; default vault will be used."))
         }
         return values
     }
