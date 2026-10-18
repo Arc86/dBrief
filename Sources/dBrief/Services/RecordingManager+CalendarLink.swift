@@ -100,6 +100,6 @@ extension RecordingManager {
 private enum CalendarLinkError: LocalizedError {
     case calendarAccess
     var errorDescription: String? {
-        "Enable calendar integration and allow calendar access in Settings before linking a meeting."
+        String(localized: "Enable calendar integration and allow calendar access in Settings before linking a meeting.")
     }
 }

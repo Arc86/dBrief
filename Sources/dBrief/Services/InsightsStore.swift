@@ -126,13 +126,13 @@ enum InsightsStoreError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noSidecarURL:
-            "Cannot determine the analysis sidecar path."
+            String(localized: "Cannot determine the analysis sidecar path.")
         case .unsupportedVersion(let version):
-            "Analysis version \(version) is not supported."
+            String(localized: "Analysis version \(version) is not supported.")
         case .verificationFailed:
-            "Analysis could not be verified after saving."
+            String(localized: "Analysis could not be verified after saving.")
         case .actionChanged:
-            "This action changed. Reload the summary before updating its status."
+            String(localized: "This action changed. Reload the summary before updating its status.")
         }
     }
 }

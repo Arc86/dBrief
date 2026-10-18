@@ -11,7 +11,7 @@ final class RecordingReviewSlot {
     enum Failure: LocalizedError {
         case busy
         var errorDescription: String? {
-            "Finish the recording you're reviewing, and wait for recording, saving or cleanup, before importing audio."
+            String(localized: "Finish the recording you're reviewing, and wait for recording, saving or cleanup, before importing audio.")
         }
     }
     private let appState: AppState

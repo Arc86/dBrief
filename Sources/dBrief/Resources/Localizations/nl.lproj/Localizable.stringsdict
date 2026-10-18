@@ -226,6 +226,22 @@
 			<string>%lld sessies</string>
 		</dict>
 	</dict>
+	<key>%lld tasks weren't added to Todoist: %@</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@n@ aan Todoist toegevoegd: %2$@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%1$lld taak is niet</string>
+			<key>other</key>
+			<string>%1$lld taken zijn niet</string>
+		</dict>
+	</dict>
 	<key>%lld words</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -416,6 +432,38 @@
 			<string>In wachtrij over %lld seconde</string>
 			<key>other</key>
 			<string>In wachtrij over %lld seconden</string>
+		</dict>
+	</dict>
+	<key>The Local CLI command timed out after %lld seconds. Allow more time or try a shorter request.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>De Local CLI-opdracht reageerde niet binnen %lld seconde. Geef meer tijd of probeer een korter verzoek.</string>
+			<key>other</key>
+			<string>De Local CLI-opdracht reageerde niet binnen %lld seconden. Geef meer tijd of probeer een korter verzoek.</string>
+		</dict>
+	</dict>
+	<key>You have %lld recordings queued for processing. You're now on AC power.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Er staat %lld opname klaar om te verwerken. Je Mac is nu aangesloten op de stroom.</string>
+			<key>other</key>
+			<string>Er staan %lld opnamen klaar om te verwerken. Je Mac is nu aangesloten op de stroom.</string>
 		</dict>
 	</dict>
 </dict>

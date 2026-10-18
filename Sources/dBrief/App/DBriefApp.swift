@@ -162,9 +162,9 @@ final class AppContext {
             }
 
             appSettings.lastRetentionCleanupDate = Date()
-            appSettings.lastRetentionCleanupSummary = combined.summary
+            appSettings.lastRetentionCleanupSummary = RetentionCleanupSummary.stored(combined)
         } catch {
-            appSettings.lastRetentionCleanupSummary = "Cleanup deferred: recovery data could not be safely cleaned, or recording/processing is active."
+            appSettings.lastRetentionCleanupSummary = RetentionCleanupSummary.deferred
         }
     }
 

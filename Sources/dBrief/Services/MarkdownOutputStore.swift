@@ -9,9 +9,9 @@ actor MarkdownOutputStore {
 
         var errorDescription: String? {
             switch self {
-            case .unsupportedVersion: "The saved Markdown export version is not supported."
-            case .invalidDestination: "The saved Markdown destination is invalid."
-            case .conflict: "The Markdown destination contains another file or edited note. It was left untouched."
+            case .unsupportedVersion: String(localized: "The saved Markdown export version is not supported.")
+            case .invalidDestination: String(localized: "The saved Markdown destination is invalid.")
+            case .conflict: String(localized: "The Markdown destination contains another file or edited note. It was left untouched.")
             }
         }
     }

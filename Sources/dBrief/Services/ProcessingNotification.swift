@@ -22,22 +22,27 @@ enum ProcessingNotification {
     static let recordingPathKey = "recordingPath"
 
     static func content(_ outcome: Outcome, title: String) -> Content {
-        let name = "“\(title)”"
+        let name = String(localized: "“\(title)”", comment: "A meeting title in quotation marks")
         switch outcome {
         case .processed(let analyzed):
-            return .init(title: "Recording processed",
-                         body: "\(name) is \(analyzed ? "transcribed and analyzed" : "transcribed").")
+            return .init(title: String(localized: "Recording processed"),
+                         body: analyzed ? String(localized: "\(name) is transcribed and analyzed.")
+                             : String(localized: "\(name) is transcribed."))
         case .finishedWithIssues(let steps):
-            let first = steps.first ?? "A step"
-            let more = steps.count > 1 ? " and \(steps.count - 1) more step\(steps.count == 2 ? "" : "s")" : ""
-            return .init(title: "Processing finished with issues",
-                         body: "\(name): \(first)\(more) didn't finish. Open it to retry.")
+            let first = steps.first ?? String(localized: "A step")
+            let body = steps.count > 1
+                ? String(AttributedString(localized:
+                    "\(name): \(first) and ^[\(steps.count - 1) more step](inflect: true) didn't finish. Open it to retry.").characters)
+                : String(localized: "\(name): \(first) didn't finish. Open it to retry.")
+            return .init(title: String(localized: "Processing finished with issues"), body: body)
         case .failed(let stage):
-            return .init(title: "Processing didn't finish", body: "\(name): \(stage.lowercased()) failed. Open it to retry.")
+            return .init(title: String(localized: "Processing didn't finish"),
+                         body: String(localized: "\(name): \(stage) failed. Open it to retry."))
         case .reprocessed:
-            return .init(title: "Reprocessing finished", body: "\(name) has new results.")
+            return .init(title: String(localized: "Reprocessing finished"), body: String(localized: "\(name) has new results."))
         case .reprocessFailed:
-            return .init(title: "Reprocessing didn't finish", body: "\(name): current results were kept. Open it to retry.")
+            return .init(title: String(localized: "Reprocessing didn't finish"),
+                         body: String(localized: "\(name): current results were kept. Open it to retry."))
         }
     }
 

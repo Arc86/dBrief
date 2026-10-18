@@ -10,9 +10,9 @@ actor IntegrationDeliveryStore: IntegrationDeliveryPersistence {
         case invalidRecord, verificationFailed, busy
         var errorDescription: String? {
             switch self {
-            case .invalidRecord: "Saved integration deliveries could not be read. Their files were left untouched."
-            case .verificationFailed: "Integration delivery progress could not be saved. No further sends were attempted."
-            case .busy: "Integration delivery is already running."
+            case .invalidRecord: String(localized: "Saved integration deliveries could not be read. Their files were left untouched.")
+            case .verificationFailed: String(localized: "Integration delivery progress could not be saved. No further sends were attempted.")
+            case .busy: String(localized: "Integration delivery is already running.")
             }
         }
     }

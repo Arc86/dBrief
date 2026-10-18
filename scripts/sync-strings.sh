@@ -30,6 +30,8 @@ PY
     rm -rf "$COMPILED"
     mkdir -p "$COMPILED"
     xcrun xcstringstool compile "$CATALOG" --output-directory "$COMPILED"
+    # Permission prompts: InfoPlist.xcstrings -> <lang>.lproj/InfoPlist.strings.
+    xcrun xcstringstool compile "$ROOT/Sources/dBrief/Resources/InfoPlist.xcstrings" --output-directory "$COMPILED"
     echo "Compiled: $(cd "$COMPILED" && ls -d ./*.lproj 2>/dev/null | xargs -n1 basename | tr '\n' ' ')"
 }
 

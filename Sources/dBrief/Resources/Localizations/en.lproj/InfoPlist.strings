@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>dBrief accesses your calendar to pre-fill meeting title, participants, and agenda context at recording time.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>dBrief needs microphone access to record audio from your microphone during calls and voice recordings.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>dBrief uses full Reminders access to save extracted action items.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>dBrief uses Reminders access to save extracted action items.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>dBrief needs screen recording permission to capture system audio during calls.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>dBrief uses speech recognition to transcribe your recordings on-device.</string>
+</dict>
+</plist>

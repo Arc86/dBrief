@@ -276,9 +276,9 @@ enum IntegrationError: LocalizedError {
         case .missingConfiguration(let message):
             message
         case .invalidURL(let value):
-            "Invalid URL: \(value)"
+            String(localized: "Invalid URL: \(value)")
         case .transport(let code, let body):
-            "Request failed (\(code)): \(body)"
+            String(localized: "Request failed (\(code)): \(body)")
         case .permissionDenied(let reason):
             reason
         case .unsupported(let message):

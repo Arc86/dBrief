@@ -95,6 +95,7 @@ enum SettingsErrorSanitizer {
 /// can carry credentials, so the part from a server or command error onward is replaced
 /// by the same safe hint Settings shows; anything before it, and other messages, stay.
 enum UserFacingError {
+    /// English on purpose: the services keep these prefixes untranslated so redaction works in every language.
     private static let markers = ["Server error (", "Local CLI command exited with code", "Failed to launch local CLI command:"]
 
     static func text(_ raw: String) -> String {

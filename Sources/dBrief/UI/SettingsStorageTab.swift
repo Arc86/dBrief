@@ -70,7 +70,7 @@ struct SettingsStorageTab: View {
     private var lastCleanupCaption: String {
         guard let lastRun = appSettings.lastRetentionCleanupDate else { return String(localized: "Not run yet.") }
         let date = lastRun.formatted(date: .abbreviated, time: .shortened)
-        let summary = appSettings.lastRetentionCleanupSummary
+        let summary = RetentionCleanupSummary.display(appSettings.lastRetentionCleanupSummary)
         return summary.isEmpty ? date : "\(date) · \(summary)"
     }
 
@@ -150,7 +150,7 @@ struct SettingsStorageTab: View {
                 let result = try await recordingManager.runRetentionCleanup(category: category, days: days, folders: folders)
                 cleanupMessage[category] = result.summary
                 appSettings.lastRetentionCleanupDate = Date()
-                appSettings.lastRetentionCleanupSummary = result.summary
+                appSettings.lastRetentionCleanupSummary = RetentionCleanupSummary.stored(result)
             } catch let blocked as RecordingBlockedError {
                 cleanupMessage[category] = blocked.localizedDescription
             } catch {

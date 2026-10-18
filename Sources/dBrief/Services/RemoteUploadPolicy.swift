@@ -22,21 +22,21 @@ struct RemoteUploadPolicy: Sendable {
         if standardHTTPS {
             switch endpoint.provider {
             case .openAICompatible where Self.openAIHosts.contains(host):
-                hostedLimit = Limit(provider: "OpenAI", maximumBytes: 25_000_000, description: "25 MB or less")
+                hostedLimit = Limit(provider: "OpenAI", maximumBytes: 25_000_000, description: String(localized: "25 MB or less"))
                 hostedDiarization = endpoint.modelName.lowercased().contains("diarize")
             case .openAICompatible where host == "api.groq.com":
                 // Direct multipart attachments are 25 MB, even though the Dev
                 // tier's URL-based input supports 100 MB. We upload files.
-                hostedLimit = Limit(provider: "Groq", maximumBytes: 25_000_000, description: "25 MB or less")
+                hostedLimit = Limit(provider: "Groq", maximumBytes: 25_000_000, description: String(localized: "25 MB or less"))
             case .openAICompatible where host == "openrouter.ai":
                 // Multipart uploads share OpenAI's 25 MB cap; only base64 JSON
                 // bodies bypass it, and we upload files.
-                hostedLimit = Limit(provider: "OpenRouter", maximumBytes: 25_000_000, description: "25 MB or less")
+                hostedLimit = Limit(provider: "OpenRouter", maximumBytes: 25_000_000, description: String(localized: "25 MB or less"))
             case .deepgram where Self.deepgramHosts.contains(host):
-                hostedLimit = Limit(provider: "Deepgram", maximumBytes: 2_000_000_000, description: "2 GB or less")
+                hostedLimit = Limit(provider: "Deepgram", maximumBytes: 2_000_000_000, description: String(localized: "2 GB or less"))
             case .elevenLabs where Self.elevenLabsHosts.contains(host):
                 // The API explicitly requires a file *less than* 5.0 GB.
-                hostedLimit = Limit(provider: "ElevenLabs", maximumBytes: 4_999_999_999, description: "smaller than 5 GB")
+                hostedLimit = Limit(provider: "ElevenLabs", maximumBytes: 4_999_999_999, description: String(localized: "smaller than 5 GB"))
             default:
                 break
             }
@@ -116,9 +116,9 @@ enum RemoteUploadError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .unreadableAudio:
-            "The audio file's size could not be read. Check that the recording is still available and accessible."
+            String(localized: "The audio file's size could not be read. Check that the recording is still available and accessible.")
         case .fileTooLarge(let provider, let requirement):
-            "\(provider) requires an audio file \(requirement). Compress this recording or choose another endpoint, then retry. The original audio has been kept."
+            String(localized: "\(provider) requires an audio file \(requirement). Compress this recording or choose another endpoint, then retry. The original audio has been kept.")
         }
     }
 }

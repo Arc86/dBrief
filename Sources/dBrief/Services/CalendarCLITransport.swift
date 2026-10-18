@@ -251,19 +251,19 @@ enum CalendarCLITransportError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            "No mailbox is configured for the Claude CLI calendar source."
+            String(localized: "No mailbox is configured for the Claude CLI calendar source.")
         case .invalidCommand:
-            "The advanced calendar CLI command contains flags that conflict with the managed invocation."
+            String(localized: "The advanced calendar CLI command contains flags that conflict with the managed invocation.")
         case .timeout(let seconds):
-            "The calendar CLI call timed out after \(seconds)s."
+            String(localized: "The calendar CLI call timed out after \(seconds)s.")
         case .processFailed(let status):
-            "The calendar CLI command exited with code \(status). Check its authentication and connection."
+            String(localized: "The calendar CLI command exited with code \(status). Check its authentication and connection.")
         case .unsupportedEffort:
-            "This Claude CLI does not support the selected effort. Update Claude CLI or choose CLI default."
+            String(localized: "This Claude CLI does not support the selected effort. Update Claude CLI or choose CLI default.")
         case .invalidOutput(let reason):
-            "The calendar CLI response was rejected: \(reason.diagnosticText)"
+            String(localized: "The calendar CLI response was rejected: \(reason.diagnosticText)")
         case .cancelled:
-            "The calendar CLI call was cancelled."
+            String(localized: "The calendar CLI call was cancelled.")
         }
     }
 }
@@ -271,18 +271,18 @@ enum CalendarCLITransportError: Error, LocalizedError {
 extension CalendarCLITransportError.Reason {
     var diagnosticText: String {
         switch self {
-        case .emptyOutput: "the command produced no output"
-        case .undecodableOutput: "the output was not a valid result envelope"
-        case .cliReportedError: "the CLI reported an error instead of a result"
-        case .missingStructuredOutput: "the structured output payload was missing"
-        case .unsupportedPayloadVersion: "the payload version is unsupported"
-        case .requestIDMismatch: "the response did not match this request"
-        case .mailboxMismatch: "the response was for a different mailbox"
-        case .windowMismatch: "the response was for a different date window"
-        case .unknownStatus: "the response status was unrecognized"
-        case .occurrenceIdentityMismatch: "the response did not match the requested occurrence"
-        case .rosterExceedsCap: "the roster exceeded the configured attendee limit"
-        case .invalidAttendeeCount: "the attendee count was invalid"
+        case .emptyOutput: String(localized: "the command produced no output")
+        case .undecodableOutput: String(localized: "the output was not a valid result envelope")
+        case .cliReportedError: String(localized: "the CLI reported an error instead of a result")
+        case .missingStructuredOutput: String(localized: "the structured output payload was missing")
+        case .unsupportedPayloadVersion: String(localized: "the payload version is unsupported")
+        case .requestIDMismatch: String(localized: "the response did not match this request")
+        case .mailboxMismatch: String(localized: "the response was for a different mailbox")
+        case .windowMismatch: String(localized: "the response was for a different date window")
+        case .unknownStatus: String(localized: "the response status was unrecognized")
+        case .occurrenceIdentityMismatch: String(localized: "the response did not match the requested occurrence")
+        case .rosterExceedsCap: String(localized: "the roster exceeded the configured attendee limit")
+        case .invalidAttendeeCount: String(localized: "the attendee count was invalid")
         }
     }
 }

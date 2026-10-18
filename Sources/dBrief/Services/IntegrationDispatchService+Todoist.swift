@@ -18,7 +18,7 @@ extension IntegrationDispatchService {
             try Task.checkCancellation()
             guard try IntegrationDeliveryBatch.configurationDigests(config, available: available)[.todoist]
                     == delivery.configurationDigest else {
-                throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
+                throw IntegrationError.executionFailed(String(localized: "Integration settings changed. Restore the original destination before retrying."))
             }
             let token = try todoistToken()
             guard !token.isEmpty else { throw TodoistError.missingToken }
@@ -48,7 +48,7 @@ extension IntegrationDispatchService {
                 }
             }
             if let first = failures.first {
-                throw IntegrationError.executionFailed("\(failures.count == 1 ? "1 task wasn't" : "\(failures.count) tasks weren't") added to Todoist: \(first)")
+                throw IntegrationError.executionFailed(String(localized: "\(failures.count) tasks weren't added to Todoist: \(first)"))
             }
             let remoteID = items.compactMap { created[$0.index] }.filter { !$0.isEmpty }.joined(separator: ",")
             Logger.integrations.info("Integration success: todoist (\(items.count, privacy: .public) items)")

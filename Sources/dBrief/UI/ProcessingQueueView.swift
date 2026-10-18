@@ -231,10 +231,10 @@ struct ProcessingQueueView: View {
             Image(systemName: entry.isDelivery ? "paperplane" : "exclamationmark.triangle")
                 .foregroundStyle(status.warning.color)
         } metadata: {
-            Text(entry.status).lineLimit(1)
+            Text(LibraryWorkItem.localizedStoredText(entry.status)).lineLimit(1)
         } actions: {
             VStack(alignment: .leading, spacing: 6) {
-                Text(entry.status + " · " + entry.date.formatted(date: .abbreviated, time: .shortened))
+                Text(LibraryWorkItem.localizedStoredText(entry.status) + " · " + entry.date.formatted(date: .abbreviated, time: .shortened))
                     .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
                     .fixedSize(horizontal: false, vertical: true)
                 FlowLayout(spacing: 6) {

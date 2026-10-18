@@ -43,8 +43,8 @@ final class CaptureCoordinator {
         case busy, terminating
         var errorDescription: String? {
             switch self {
-            case .busy: "A recording is already starting, running or stopping."
-            case .terminating: "The app is shutting down."
+            case .busy: String(localized: "A recording is already starting, running or stopping.")
+            case .terminating: String(localized: "The app is shutting down.")
             }
         }
     }

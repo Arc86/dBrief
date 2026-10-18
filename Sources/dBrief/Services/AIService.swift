@@ -515,11 +515,12 @@ enum AIServiceError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidEndpoint: "Invalid AI endpoint URL."
-        case .invalidResponse: "Invalid response from AI server."
-        case .truncatedResponse: "The model did not finish its answer within the output token limit. Reasoning can use this allowance too. Increase the provider's Output token limit in AI settings if the model supports it, or request a shorter answer."
-        case .contextWindowExceeded: "The transcript is larger than the model's context window. Increase your server's context size (e.g. llama.cpp --ctx-size / vLLM --max-model-len) or use an endpoint with a larger context."
-        case .noModelsFound: "Connected, but no models were returned by the provider."
+        case .invalidEndpoint: String(localized: "Invalid AI endpoint URL.")
+        case .invalidResponse: String(localized: "Invalid response from AI server.")
+        case .truncatedResponse: String(localized: "The model did not finish its answer within the output token limit. Reasoning can use this allowance too. Increase the provider's Output token limit in AI settings if the model supports it, or request a shorter answer.")
+        case .contextWindowExceeded: String(localized: "The transcript is larger than the model's context window. Increase your server's context size (e.g. llama.cpp --ctx-size / vLLM --max-model-len) or use an endpoint with a larger context.")
+        case .noModelsFound: String(localized: "Connected, but no models were returned by the provider.")
+        // Not localized: UserFacingError finds "Server error (" to redact the provider body.
         case .serverError(let code, let body): "Server error (\(code)): \(body)"
         }
     }

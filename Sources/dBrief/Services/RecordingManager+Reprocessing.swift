@@ -19,12 +19,12 @@ enum ReprocessingError: LocalizedError {
     case failedAnalysis(String)
     var errorDescription: String? {
         switch self {
-        case .pendingAttempt: "This recording has unfinished reprocessing. Resume or discard that attempt first."
-        case .missingAudio: "The saved audio is unavailable. Reconnect its storage or restore the audio file, then retry."
-        case .missingTranscript: "The saved transcript could not be read. Choose Retranscribe to create a replacement from the audio."
-        case .failedAnalysis(let detail): "AI results could not be generated.\n\n\(detail)\n\nCurrent results were kept. Resolve the error, then choose Resume in Queue & Recovery to retry."
-        case .busy: "Finish the active save, review, or cleanup before reprocessing."
-        case .noSpeakers: "No speakers were detected. Current results have been kept."
+        case .pendingAttempt: String(localized: "This recording has unfinished reprocessing. Resume or discard that attempt first.")
+        case .missingAudio: String(localized: "The saved audio is unavailable. Reconnect its storage or restore the audio file, then retry.")
+        case .missingTranscript: String(localized: "The saved transcript could not be read. Choose Retranscribe to create a replacement from the audio.")
+        case .failedAnalysis(let detail): String(localized: "AI results could not be generated.\n\n\(detail)\n\nCurrent results were kept. Resolve the error, then choose Resume in Queue & Recovery to retry.")
+        case .busy: String(localized: "Finish the active save, review, or cleanup before reprocessing.")
+        case .noSpeakers: String(localized: "No speakers were detected. Current results have been kept.")
         }
     }
 
@@ -34,11 +34,11 @@ enum ReprocessingError: LocalizedError {
             let label: String
             let missing: Bool
             switch field {
-            case .summary: label = "Summary"; missing = output.summary == nil
-            case .actionItems: label = "Action items"; missing = output.actionItems == nil
-            case .tags: label = "Tags"; missing = output.tags == nil
+            case .summary: label = String(localized: "Summary"); missing = output.summary == nil
+            case .actionItems: label = String(localized: "Action items"); missing = output.actionItems == nil
+            case .tags: label = String(localized: "Tags"); missing = output.tags == nil
             }
-            guard let reason = output.failures[field] ?? (missing ? "no result was returned" : nil) else { continue }
+            guard let reason = output.failures[field] ?? (missing ? String(localized: "no result was returned") : nil) else { continue }
             if let index = reasons.firstIndex(where: { $0.reason == reason }) {
                 reasons[index].fields.append(label)
             } else {
@@ -46,7 +46,7 @@ enum ReprocessingError: LocalizedError {
             }
         }
         let details = reasons.map { "\($0.fields.joined(separator: ", ")): \($0.reason)" }.joined(separator: "\n\n")
-        return .failedAnalysis("\(output.modelDisplayName ?? "AI engine")\n\(details)")
+        return .failedAnalysis("\(output.modelDisplayName ?? String(localized: "AI engine"))\n\(details)")
     }
 }
 
@@ -103,7 +103,7 @@ extension RecordingManager {
             .filter { $0.source.finalizedAudioPath == audio.path && $0.source.calendarParticipantSelection != nil }
             .max { $0.updatedAt < $1.updatedAt }
         guard options.loadCalendarParticipants != true || priorCalendar != nil else {
-            throw ReprocessingError.failedAnalysis("No saved Claude calendar occurrence is available for this recording.")
+            throw ReprocessingError.failedAnalysis(String(localized: "No saved Claude calendar occurrence is available for this recording."))
         }
         var request = ReprocessingRequest(options: options, recordingID: metadata?.recordingID ?? recording.id,
             date: metadata.flatMap { ISO8601DateFormatter().date(from: $0.dateISO8601) } ?? recording.date,
@@ -134,7 +134,7 @@ extension RecordingManager {
             for attempt in attempts where attempt.status != .completed && attempt.status != .queued
                 && attempt.status != .stopped && attempt.status != .failed {
                 try await reprocessingStore.checkpoint(attemptID: attempt.id, status: .stopped,
-                    message: "Interrupted reprocessing — current results have been kept.")
+                    message: String(localized: "Interrupted reprocessing — current results have been kept."))
             }
             reprocessingRecoveryReady = true
             clearReprocessingRecoveryError()
@@ -148,7 +148,7 @@ extension RecordingManager {
 
     /// Kept apart from other notices: the library blocks saved results on this alone.
     func reportReprocessingRecoveryError(_ error: Error) {
-        let message = "Saved reprocessing results can't be opened yet: \(error.localizedDescription) Retry Recovery, or check storage."
+        let message = String(localized: "Saved reprocessing results can't be opened yet: \(error.localizedDescription) Retry Recovery, or check storage.")
         reprocessingRecoveryError = message
         appState.notices.clear(source: .recovery)
         appState.post(.init(tone: .error, message: message, source: .recovery))
@@ -206,7 +206,7 @@ extension RecordingManager {
         } catch {
             try? await reprocessingStore.checkpoint(attemptID: id, status: Task.isCancelled ? .stopped : .failed,
                 message: error.localizedDescription)
-            appState.post(.error, "Reprocessing couldn't start: \(error.localizedDescription)", source: .reprocessing,
+            appState.post(.error, String(localized: "Reprocessing couldn't start: \(error.localizedDescription)"), source: .reprocessing,
                           actions: [.openQueue])
             await refreshReprocessingAttempts()
         }
@@ -281,12 +281,12 @@ extension RecordingManager {
             }
             let stopped = Task.isCancelled
             try? await store.checkpoint(attemptID: job.id, status: stopped ? .stopped : .failed,
-                message: stopped ? "Stopped — current results have been kept." : error.localizedDescription)
+                message: stopped ? String(localized: "Stopped — current results have been kept.") : error.localizedDescription)
             if !stopped, appState.processingJob === job {
-                appState.post(.error, "Reprocessing “\(job.recording.meetingTitleDraft)” didn't finish: \(error.localizedDescription) Current results were kept.",
+                appState.post(.error, String(localized: "Reprocessing “\(job.recording.meetingTitleDraft)” didn't finish: \(error.localizedDescription) Current results were kept."),
                               source: .reprocessing, recordingURL: job.recording.finalizedAudioURL, actions: [.openQueue])
                 notify(.reprocessFailed, about: job.recording)
-                appState.processingSteps.append(.init(name: "Reprocessing", status: .failed(error.localizedDescription)))
+                appState.processingSteps.append(.init(name: String(localized: "Reprocessing"), status: .failed(error.localizedDescription)))
                 await endReprocessing(job)
             }
         }
@@ -312,7 +312,7 @@ extension RecordingManager {
         await forceReleaseGPU()
         await job.task?.value
         try? await reprocessingStore.checkpoint(attemptID: job.id, status: .stopped,
-            message: "Stopped — current results have been kept.")
+            message: String(localized: "Stopped — current results have been kept."))
         if appState.processingJob === job { appState.processingJob = nil }
         await refreshWorkQueue()
     }
@@ -326,7 +326,7 @@ extension RecordingManager {
             reprocessingResultsRevision += 1
             await refreshWorkQueue()
         }
-        catch { appState.post(.error, "Couldn't discard the reprocess: \(error.localizedDescription)", source: .queue, actions: [.openQueue]) }
+        catch { appState.post(.error, String(localized: "Couldn't discard the reprocess: \(error.localizedDescription)"), source: .queue, actions: [.openQueue]) }
     }
 
     func restoreReprocessingResults(for recording: Recording) async throws {

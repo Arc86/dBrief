@@ -106,7 +106,22 @@
     "%@ audio" : {
 
     },
+    "%@ changed since this attempt started. The saved candidate has been preserved." : {
+
+    },
     "%@ didn’t finish" : {
+
+    },
+    "%@ has new results." : {
+
+    },
+    "%@ is not available" : {
+
+    },
+    "%@ is transcribed and analyzed." : {
+
+    },
+    "%@ is transcribed." : {
 
     },
     "%@ isn't available with %@, so English is used." : {
@@ -154,6 +169,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@ requires %2$@ GB but only %3$@ GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps%4$@ if it stalls."
+          }
+        }
+      }
+    },
+    "%@ requires an audio file %@. Compress this recording or choose another endpoint, then retry. The original audio has been kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ requires an audio file %2$@. Compress this recording or choose another endpoint, then retry. The original audio has been kept."
           }
         }
       }
@@ -383,6 +408,39 @@
           }
         }
       }
+    },
+    "%@: %@ and ^[%lld more step](inflect: true) didn't finish. Open it to retry." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@ and ^[%3$lld more step](inflect: true) didn't finish. Open it to retry."
+          }
+        }
+      }
+    },
+    "%@: %@ didn't finish. Open it to retry." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@ didn't finish. Open it to retry."
+          }
+        }
+      }
+    },
+    "%@: %@ failed. Open it to retry." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@ failed. Open it to retry."
+          }
+        }
+      }
+    },
+    "%@: current results were kept. Open it to retry." : {
+
     },
     "%@s" : {
 
@@ -975,6 +1033,66 @@
         }
       }
     },
+    "%lld tasks weren't added to Todoist: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%#@n@ added to Todoist: %2$@"
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg task wasn't"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg tasks weren't"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%#@n@ aan Todoist toegevoegd: %2$@"
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg taak is niet"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg taken zijn niet"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld unavailable" : {
 
     },
@@ -1127,10 +1245,16 @@
     "15 seconds" : {
 
     },
+    "2 GB or less" : {
+
+    },
     "2 weeks" : {
 
     },
     "25 European languages" : {
+
+    },
+    "25 MB or less" : {
 
     },
     "30 seconds" : {
@@ -1163,7 +1287,19 @@
     "A quick on-device preview (and live chat). The final transcript still comes from the engine above." : {
 
     },
+    "A recording changed during indexing. Refresh to load the latest version." : {
+
+    },
+    "A recording is already starting, running or stopping." : {
+
+    },
+    "A recovered recording's Markdown note was found, but dBrief couldn't save that it finished. Its files were left untouched." : {
+
+    },
     "A stale list refreshes when you open the meeting picker or start recording." : {
+
+    },
+    "A step" : {
 
     },
     "A token is required." : {
@@ -1233,6 +1369,9 @@
 
     },
     "AI providers" : {
+
+    },
+    "AI results could not be generated.\n\n%@\n\nCurrent results were kept. Resolve the error, then choose Resume in Queue & Recovery to retry." : {
 
     },
     "API base URL" : {
@@ -1528,6 +1667,9 @@
     "All changes saved" : {
 
     },
+    "All chunks failed during transcription." : {
+
+    },
     "All companies" : {
 
     },
@@ -1546,6 +1688,9 @@
           }
         }
       }
+    },
+    "All remaining (%lld)" : {
+
     },
     "All voices reviewed" : {
 
@@ -1568,7 +1713,16 @@
     "An API token is required." : {
 
     },
+    "An exported audio chunk was empty." : {
+
+    },
+    "An exported chunk exceeds the upload limit. The original audio has been kept." : {
+
+    },
     "An integration secret is required." : {
+
+    },
+    "An unfinished processing run can't find its recording. Reconnect its storage, or remove it in Queue & Recovery." : {
 
     },
     "Analysis" : {
@@ -1580,13 +1734,43 @@
     "Analysis could not be saved. Your draft is kept. %@" : {
 
     },
+    "Analysis could not be verified after saving." : {
+
+    },
+    "Analysis failed" : {
+
+    },
     "Analysis saved, but the linked Markdown note could not be updated. Your draft is kept so you can retry. %@" : {
+
+    },
+    "Analysis version %lld is not supported." : {
 
     },
     "Analyze tags & sentiment" : {
 
     },
     "Analyzed" : {
+
+    },
+    "Analyzing long recording in %lld parts" : {
+
+    },
+    "Analyzing recording" : {
+
+    },
+    "Analyzing tags & sentiment" : {
+
+    },
+    "Analyzing tags & sentiment (Gemma 4 E4B local)" : {
+
+    },
+    "Analyzing tags & sentiment (Local CLI)" : {
+
+    },
+    "Analyzing tags (Apple Intelligence)" : {
+
+    },
+    "Analyzing transcript (Gemma 4 E4B local)" : {
 
     },
     "Another person is already named “%@”. Merge “%@” into them?" : {
@@ -1641,6 +1825,40 @@
     "Apple Intelligence" : {
 
     },
+    "Apple Intelligence blocked this content with its safety guardrails." : {
+
+    },
+    "Apple Intelligence blocked this question with its safety guardrails. Try rephrasing it." : {
+
+    },
+    "Apple Intelligence chat is not available here" : {
+
+    },
+    "Apple Intelligence could not analyze part %lld of %lld of this recording, even after splitting it. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Apple Intelligence could not analyze part %1$lld of %2$lld of this recording, even after splitting it. %3$@"
+          }
+        }
+      }
+    },
+    "Apple Intelligence could not complete the request. Try again or choose a different engine." : {
+
+    },
+    "Apple Intelligence could not process this request because of its safety guardrails." : {
+
+    },
+    "Apple Intelligence couldn't answer right now. Try again, or choose a different AI engine." : {
+
+    },
+    "Apple Intelligence declined to analyze this content. Try again or choose a different AI engine." : {
+
+    },
+    "Apple Intelligence declined to answer this question. Try rephrasing it, or choose a different AI engine." : {
+
+    },
     "Apple Intelligence declined to read %lld of %lld parts, so anything in them may be missing." : {
       "localizations" : {
         "en" : {
@@ -1651,10 +1869,46 @@
         }
       }
     },
+    "Apple Intelligence does not support this language. Choose a different engine." : {
+
+    },
+    "Apple Intelligence does not support this language. Choose a different output language or AI engine." : {
+
+    },
+    "Apple Intelligence is currently unavailable." : {
+
+    },
+    "Apple Intelligence is not supported on this Mac." : {
+
+    },
+    "Apple Intelligence is turned off. Enable it in System Settings → Apple Intelligence & Siri, then try again." : {
+
+    },
+    "Apple Intelligence is unavailable. Check macOS support and enable Apple Intelligence in System Settings." : {
+
+    },
+    "Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match." : {
+
+    },
+    "Apple Intelligence requires macOS 26 or later" : {
+
+    },
+    "Apple Intelligence requires macOS 26 or later." : {
+
+    },
+    "Apple Intelligence requires macOS 26+." : {
+
+    },
+    "Apple Intelligence returned an incomplete result. Try again or choose a different AI engine." : {
+
+    },
     "Apple Notes" : {
 
     },
     "Apple Reminders" : {
+
+    },
+    "Apple Speech (macOS 26) does not support this language." : {
 
     },
     "Apple Speech uses the system language when set to Auto." : {
@@ -1667,6 +1921,12 @@
 
     },
     "Apple SpeechAnalyzer · provisional research-based ratings." : {
+
+    },
+    "Apple’s %@ transcription model is currently unavailable on this Mac. macOS lists the language but cannot provide its speech model." : {
+
+    },
+    "Apple’s %@ transcription model is not ready. The download did not finish; try again when connected to the internet." : {
 
     },
     "Application" : {
@@ -1747,6 +2007,9 @@
     "Attendee load failed — try again" : {
 
     },
+    "Attendee loading is set to Never for the Claude CLI calendar source." : {
+
+    },
     "Attendee loading is set to Never in Settings → Meetings." : {
 
     },
@@ -1768,6 +2031,9 @@
     "Audio dBrief recognises from its metadata. Transcripts, notes and unknown files are kept." : {
 
     },
+    "Audio engine failed to start: %@" : {
+
+    },
     "Audio export" : {
 
     },
@@ -1780,7 +2046,32 @@
     "Audio file not found" : {
 
     },
+    "Audio file writer failed: %@" : {
+
+    },
     "Audio file…" : {
+
+    },
+    "Audio finalization failed" : {
+
+    },
+    "Audio finalization failed with status %d after producing %lld bytes of diagnostic output. The original recording tracks were preserved." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Audio finalization failed with status %1$d after producing %2$lld bytes of diagnostic output. The original recording tracks were preserved."
+          }
+        }
+      }
+    },
+    "Audio finalization stopped making progress and was terminated. The original recording tracks were preserved." : {
+
+    },
+    "Audio finalization warnings" : {
+
+    },
+    "Audio finalization was cancelled. The original recording tracks were preserved." : {
 
     },
     "Audio input device" : {
@@ -1969,10 +2260,16 @@
     "Calendar attendees are already included with the selected meeting." : {
 
     },
+    "Calendar attendees were unavailable" : {
+
+    },
     "Calendar connections and matching" : {
 
     },
     "Calendar effort is saved but not applicable to the selected Haiku model." : {
+
+    },
+    "Calendar event" : {
 
     },
     "Calendar fetch" : {
@@ -2023,7 +2320,28 @@
     "Cancelled" : {
 
     },
+    "Cancelled by user" : {
+
+    },
+    "Cannot determine queue file path — recording not finalized." : {
+
+    },
+    "Cannot determine the analysis sidecar path." : {
+
+    },
+    "Cannot determine the rich-transcript sidecar path." : {
+
+    },
+    "Cannot determine the transcript checkpoint path." : {
+
+    },
     "Cannot open prompt" : {
+
+    },
+    "Cantonese (China mainland)" : {
+
+    },
+    "Cantonese (Hong Kong)" : {
 
     },
     "Capture" : {
@@ -2105,6 +2423,19 @@
     "Checking saved recording results…" : {
 
     },
+    "Checking the whole recording needs Gemma or Apple Intelligence as the chat engine." : {
+
+    },
+    "Checking the whole recording stopped at part %lld of %lld." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Checking the whole recording stopped at part %1$lld of %2$lld."
+          }
+        }
+      }
+    },
     "Checking yt-dlp for updates…" : {
 
     },
@@ -2112,6 +2443,12 @@
 
     },
     "Chinese" : {
+
+    },
+    "Chinese (China mainland)" : {
+
+    },
+    "Chinese (Taiwan)" : {
 
     },
     "Chip title" : {
@@ -2124,6 +2461,12 @@
 
     },
     "Choose a Font" : {
+
+    },
+    "Choose a Notion page or database to send notes to." : {
+
+    },
+    "Choose a Whisper model before retranscribing." : {
 
     },
     "Choose a folder inside your Obsidian vault" : {
@@ -2153,7 +2496,16 @@
     "Choose a recording to view its transcript." : {
 
     },
+    "Choose a recording with a transcript, or use the example." : {
+
+    },
+    "Choose a spoken language code, or automatic detection." : {
+
+    },
     "Choose a supported language…" : {
+
+    },
+    "Choose a transcription endpoint before processing this recording." : {
 
     },
     "Choose a transcription model" : {
@@ -2168,6 +2520,18 @@
     "Choose a voice from the list to give it a name." : {
 
     },
+    "Choose an OpenAI-compatible or Anthropic endpoint with a valid URL and model in Settings → AI analysis." : {
+
+    },
+    "Choose an audio file to transcribe" : {
+
+    },
+    "Choose an available profile before processing." : {
+
+    },
+    "Choose an available profile before saving this recording." : {
+
+    },
     "Choose useful topics and describe the conversation’s tone." : {
 
     },
@@ -2178,6 +2542,28 @@
 
     },
     "Choose…" : {
+
+    },
+    "Chunk %lld (%@-%@) failed: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Chunk %1$lld (%2$@-%3$@) failed: %4$@"
+          }
+        }
+      }
+    },
+    "Chunk export ended in unexpected state." : {
+
+    },
+    "Chunk export failed." : {
+
+    },
+    "Chunk export was cancelled." : {
+
+    },
+    "Chunking failed: %@" : {
 
     },
     "Chunks are transcribed in order and merged. Native cloud diarization uses one file." : {
@@ -2208,6 +2594,12 @@
 
     },
     "Cleanup could not finish safely. Check storage before retrying." : {
+
+    },
+    "Cleanup deferred: recovery data could not be safely cleaned, or recording/processing is active." : {
+
+    },
+    "Cleanup or recovery is running. Try again when it finishes." : {
 
     },
     "Clear Chat" : {
@@ -2291,6 +2683,16 @@
     "Colour" : {
 
     },
+    "Combining %lld parts · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Combining %1$lld parts · %2$@"
+          }
+        }
+      }
+    },
     "Comfortable" : {
 
     },
@@ -2333,7 +2735,13 @@
     "Conditions" : {
 
     },
+    "Configure a Local CLI command in Settings → AI analysis before trying again." : {
+
+    },
     "Configure a command before testing it." : {
+
+    },
+    "Configure an AI endpoint in Settings → AI analysis before trying again." : {
 
     },
     "Configured endpoints" : {
@@ -2406,6 +2814,9 @@
     "Connected — the connector answered the test window." : {
 
     },
+    "Connected, but no models were returned by the provider." : {
+
+    },
     "Connection" : {
 
     },
@@ -2413,6 +2824,9 @@
 
     },
     "Connection successful" : {
+
+    },
+    "Connection test returned invalid response" : {
 
     },
     "Contains text" : {
@@ -2475,7 +2889,16 @@
     "Core ML variants" : {
 
     },
+    "Correcting vocabulary…" : {
+
+    },
     "Could not check yt-dlp updates: %@" : {
+
+    },
+    "Could not download yt-dlp: %@" : {
+
+    },
+    "Could not fit an audio chunk within the %lld-byte upload limit. Compress the recording or choose another endpoint. The original audio has been kept." : {
 
     },
     "Could not load this transcript. Choose another recording or the example." : {
@@ -2484,13 +2907,68 @@
     "Could not read aloud: %@" : {
 
     },
+    "Could not read the audio for transcription. %@" : {
+
+    },
     "Could not restore results" : {
+
+    },
+    "Could not save audio: %@" : {
 
     },
     "Couldn't create the spoken summary" : {
 
     },
     "Couldn't delete the recording" : {
+
+    },
+    "Couldn't discard the reprocess: %@" : {
+
+    },
+    "Couldn't dismiss this recovery item. Check storage and try again." : {
+
+    },
+    "Couldn't load this recovery item. Its saved files were left untouched." : {
+
+    },
+    "Couldn't move “%@” aside. Check that the folder still exists and storage is available." : {
+
+    },
+    "Couldn't queue the recording you were reviewing. It will be recovered the next time dBrief opens. %@" : {
+
+    },
+    "Couldn't read %@. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't read %1$@. %2$@"
+          }
+        }
+      }
+    },
+    "Couldn't remove the queued item. Processing is paused for this session; check storage and try again." : {
+
+    },
+    "Couldn't resume recording: %@" : {
+
+    },
+    "Couldn't save processing progress. The recording was not processed." : {
+
+    },
+    "Couldn't save progress" : {
+
+    },
+    "Couldn't save the queue order. The previous order is unchanged." : {
+
+    },
+    "Couldn't save the queue setting. Check available storage and try again." : {
+
+    },
+    "Couldn't start recording: %@" : {
+
+    },
+    "Couldn't switch microphone: %@" : {
 
     },
     "Couldn’t add this answer to the recording. Try again, or edit it from the Summary tab." : {
@@ -2809,6 +3287,12 @@
     "Deliver" : {
 
     },
+    "Delivery unconfirmed — retry may create duplicates" : {
+
+    },
+    "Delivery unconfirmed. Check the destination, then retry with Integrations…." : {
+
+    },
     "Denied" : {
 
     },
@@ -2840,6 +3324,9 @@
 
     },
     "Detected speakers" : {
+
+    },
+    "Detecting speakers" : {
 
     },
     "Diagnostics" : {
@@ -2914,6 +3401,9 @@
     "Download" : {
 
     },
+    "Download failed: %@" : {
+
+    },
     "Download model" : {
 
     },
@@ -2932,13 +3422,34 @@
     "Downloaded once from Hugging Face. Runs analysis and chat on this Mac." : {
 
     },
+    "Downloading Gemma model" : {
+
+    },
     "Downloading Gemma…" : {
+
+    },
+    "Downloading Kokoro voice model…" : {
+
+    },
+    "Downloading Parakeet model…" : {
+
+    },
+    "Downloading SpeakerKit model" : {
+
+    },
+    "Downloading TTS model…" : {
+
+    },
+    "Downloading WhisperKit model…" : {
 
     },
     "Downloading audio…" : {
 
     },
     "Downloading search model…" : {
+
+    },
+    "Downloading speaker model…" : {
 
     },
     "Downloading speakers…" : {
@@ -2984,6 +3495,12 @@
 
     },
     "Earlier" : {
+
+    },
+    "Echo cancellation off — headphones detected" : {
+
+    },
+    "Echo cancellation re-enabled" : {
 
     },
     "Edit" : {
@@ -3052,6 +3569,9 @@
     "Empty destination; using the app default." : {
 
     },
+    "Enable %@ in Settings before retrying." : {
+
+    },
     "Enable AI processing" : {
 
     },
@@ -3059,6 +3579,9 @@
 
     },
     "Enable at least one audio source. Use Microphone for your voice, Screen Recording for system audio, or both for calls." : {
+
+    },
+    "Enable calendar integration and allow calendar access in Settings before linking a meeting." : {
 
     },
     "End-to-end" : {
@@ -3071,6 +3594,24 @@
 
     },
     "English" : {
+
+    },
+    "English (Australia)" : {
+
+    },
+    "English (Canada)" : {
+
+    },
+    "English (India)" : {
+
+    },
+    "English (Singapore)" : {
+
+    },
+    "English (United Kingdom)" : {
+
+    },
+    "English (United States)" : {
 
     },
     "English only" : {
@@ -3091,10 +3632,16 @@
     "Enter a positive whole number, or leave blank for automatic." : {
 
     },
+    "Enter a prompt before asking for improvements." : {
+
+    },
     "Enter a term before saving." : {
 
     },
     "Enter an AI output language code." : {
+
+    },
+    "Enter instructions or restore the default prompt." : {
 
     },
     "Error details" : {
@@ -3110,6 +3657,9 @@
 
     },
     "Evernote" : {
+
+    },
+    "Evernote token is required" : {
 
     },
     "Every condition must match. Email domains match exactly. Empty conditions never match." : {
@@ -3190,7 +3740,22 @@
     "Extract action items" : {
 
     },
+    "Extracting action items" : {
+
+    },
+    "Extracting action items (Apple Intelligence)" : {
+
+    },
+    "Extracting action items (Gemma 4 E4B local)" : {
+
+    },
+    "Extracting action items (Local CLI)" : {
+
+    },
     "Failed" : {
+
+    },
+    "Failed to convert audio for transcription. %@" : {
 
     },
     "Fair" : {
@@ -3250,10 +3815,34 @@
     "Finalize audio" : {
 
     },
+    "Finalized output verification failed; raw capture was retained." : {
+
+    },
+    "Finalizing audio" : {
+
+    },
     "Finish or discard the pending reprocessing attempt to use chat." : {
 
     },
+    "Finish reviewing integration deliveries first." : {
+
+    },
     "Finish signing in in your browser." : {
+
+    },
+    "Finish the active processing or queue operation first." : {
+
+    },
+    "Finish the active processing, speaker review, or cleanup operation first." : {
+
+    },
+    "Finish the active save, review, or cleanup before reprocessing." : {
+
+    },
+    "Finish the current recording and its review before deleting a recording." : {
+
+    },
+    "Finish the recording you're reviewing, and wait for recording, saving or cleanup, before importing audio." : {
 
     },
     "Finished" : {
@@ -3362,7 +3951,16 @@
     "French" : {
 
     },
+    "French (Canada)" : {
+
+    },
+    "French (France)" : {
+
+    },
     "Full width" : {
+
+    },
+    "Gemma 4 E4B (Local)" : {
 
     },
     "Gemma 4 E4B Local" : {
@@ -3398,7 +3996,22 @@
     "Generated audio" : {
 
     },
+    "Generating Title" : {
+
+    },
     "Generating preview…" : {
+
+    },
+    "Generating summary" : {
+
+    },
+    "Generating summary (Apple Intelligence)" : {
+
+    },
+    "Generating summary (Gemma 4 E4B local)" : {
+
+    },
+    "Generating summary (Local CLI)" : {
 
     },
     "Generating summary and analysis…" : {
@@ -3408,6 +4021,9 @@
 
     },
     "German" : {
+
+    },
+    "German (Germany)" : {
 
     },
     "Get Started" : {
@@ -3423,6 +4039,9 @@
 
     },
     "Google Keep" : {
+
+    },
+    "Google Keep token is required" : {
 
     },
     "Granted" : {
@@ -3515,7 +4134,13 @@
     "I understand my responsibility to use dBrief lawfully and obtain any required consent." : {
 
     },
+    "Identify Speakers" : {
+
+    },
     "Identify speakers" : {
+
+    },
+    "Identifying speakers" : {
 
     },
     "Import" : {
@@ -3564,7 +4189,13 @@
         }
       }
     },
+    "Imported audio file is missing: %@" : {
+
+    },
     "Imported default profile was converted to custom." : {
+
+    },
+    "Imported output verification failed; the source was retained." : {
 
     },
     "Import…" : {
@@ -3640,10 +4271,28 @@
     "Integration" : {
 
     },
+    "Integration deliveries" : {
+
+    },
+    "Integration delivery is already running." : {
+
+    },
+    "Integration delivery progress could not be saved. No further sends were attempted." : {
+
+    },
+    "Integration review needed" : {
+
+    },
     "Integration secret" : {
 
     },
+    "Integration settings changed. Restore the original destination before retrying." : {
+
+    },
     "Integrations" : {
+
+    },
+    "Integrations to send" : {
 
     },
     "Integrations…" : {
@@ -3652,7 +4301,34 @@
     "Interface text" : {
 
     },
+    "Interrupted capture" : {
+
+    },
+    "Interrupted recording" : {
+
+    },
+    "Interrupted reprocessing — current results have been kept." : {
+
+    },
+    "Invalid AI endpoint URL." : {
+
+    },
+    "Invalid URL: %@" : {
+
+    },
     "Invalid pattern" : {
+
+    },
+    "Invalid profiles JSON format." : {
+
+    },
+    "Invalid response from AI server." : {
+
+    },
+    "Invalid response from transcription server." : {
+
+    },
+    "Invalid transcription endpoint URL." : {
 
     },
     "It is downloaded again the next time it's needed, which can take a while." : {
@@ -3665,6 +4341,9 @@
 
     },
     "Japanese" : {
+
+    },
+    "Japanese (Japan)" : {
 
     },
     "Japanese uses its own voice model (about 217 MB), downloaded on first use, then works offline." : {
@@ -3709,7 +4388,20 @@
     "Key points" : {
 
     },
+    "Keychain operation failed (%d): %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Keychain operation failed (%1$d): %2$@"
+          }
+        }
+      }
+    },
     "Korean" : {
+
+    },
+    "Korean (South Korea)" : {
 
     },
     "Labels who said what. Adds processing time and about 500 MB of memory." : {
@@ -3891,10 +4583,28 @@
         }
       }
     },
+    "Loaded saved transcript" : {
+
+    },
     "Loaded, but could not save the cache." : {
 
     },
+    "Loading Gemma model…" : {
+
+    },
     "Loading Gemma…" : {
+
+    },
+    "Loading Kokoro voice model…" : {
+
+    },
+    "Loading Parakeet model…" : {
+
+    },
+    "Loading TTS model…" : {
+
+    },
+    "Loading WhisperKit model…" : {
 
     },
     "Loading evidence…" : {
@@ -3907,6 +4617,12 @@
 
     },
     "Loading recordings…" : {
+
+    },
+    "Loading saved analysis" : {
+
+    },
+    "Loading saved transcript" : {
 
     },
     "Loading settings…" : {
@@ -3930,6 +4646,12 @@
     "Local %@ model cache removed." : {
 
     },
+    "Local AI plugin not available" : {
+
+    },
+    "Local AI plugin not available." : {
+
+    },
     "Local CLI" : {
 
     },
@@ -3939,16 +4661,31 @@
     "Local CLI can't stream, so chat uses this engine." : {
 
     },
+    "Local CLI cannot generate a spoken summary. Choose a chat fallback engine in Settings → AI analysis." : {
+
+    },
     "Local CLI command" : {
 
     },
+    "Local CLI command timed out after %llds." : {
+
+    },
     "Local CLI configuration" : {
+
+    },
+    "Local CLI does not support chat. Choose a chat fallback engine in Settings → AI analysis." : {
+
+    },
+    "Local CLI output exceeded the length limit. Request a shorter result." : {
 
     },
     "Local Whisper" : {
 
     },
     "Local model" : {
+
+    },
+    "Long recordings take longer to analyze" : {
 
     },
     "Low" : {
@@ -3988,6 +4725,9 @@
 
     },
     "Markdown export" : {
+
+    },
+    "Markdown export failed" : {
 
     },
     "Markup and hallucination artifacts are always removed" : {
@@ -4119,7 +4859,16 @@
     "Microphone" : {
 
     },
+    "Microphone access was denied." : {
+
+    },
     "Microphone input" : {
+
+    },
+    "Microphone isn't delivering audio — check input device" : {
+
+    },
+    "Microphone switch failed" : {
 
     },
     "Microphone, shortcut and what you see while recording." : {
@@ -4306,6 +5055,9 @@
     "Never" : {
 
     },
+    "New audio detected" : {
+
+    },
     "New files use the active profile's After recording choices, engine and folders, and are picked up once they finish copying." : {
 
     },
@@ -4325,6 +5077,12 @@
 
     },
     "Next speaker" : {
+
+    },
+    "No AI endpoint configured. Add one in Settings → AI analysis." : {
+
+    },
+    "No AI engine available for vocabulary correction." : {
 
     },
     "No AI providers configured." : {
@@ -4354,10 +5112,19 @@
     "No attendees or saved voices yet — type this person’s name above." : {
 
     },
+    "No audio file was produced after download." : {
+
+    },
+    "No audio was written. The recovery session was kept so this failure can be investigated." : {
+
+    },
     "No calendars" : {
 
     },
     "No calendars available" : {
+
+    },
+    "No chunks were produced from audio." : {
 
     },
     "No clear stretch of this voice to play." : {
@@ -4372,6 +5139,9 @@
     "No custom terms" : {
 
     },
+    "No display found for audio capture." : {
+
+    },
     "No endpoint configured" : {
 
     },
@@ -4381,7 +5151,16 @@
     "No folders yet" : {
 
     },
+    "No input tracks to finalize." : {
+
+    },
+    "No integrations were enabled for this processing job." : {
+
+    },
     "No invitees" : {
+
+    },
+    "No mailbox is configured for the Claude CLI calendar source." : {
 
     },
     "No matches for this search." : {
@@ -4423,10 +5202,16 @@
     "No performance data yet" : {
 
     },
+    "No previous result set is available to restore." : {
+
+    },
     "No processing attempts are available. Missing evidence does not mean processing stayed on this Mac." : {
 
     },
     "No profile selected" : {
+
+    },
+    "No profiles found in the import file." : {
 
     },
     "No queued or interrupted work." : {
@@ -4447,6 +5232,9 @@
     "No recordings with status %@." : {
 
     },
+    "No reminders list available" : {
+
+    },
     "No remote AI endpoint is configured. Add one in Settings → AI analysis." : {
 
     },
@@ -4459,16 +5247,28 @@
     "No sample" : {
 
     },
+    "No saved Claude calendar occurrence is available for this recording." : {
+
+    },
+    "No saved integration deliveries" : {
+
+    },
     "No saved prompts yet. In the chat, right-click a question and choose Save as Prompt." : {
 
     },
     "No settings found. Try another word." : {
 
     },
+    "No speakers were detected. Current results have been kept." : {
+
+    },
     "No speakers were identified in the transcript." : {
 
     },
     "No speech found in this recording" : {
+
+    },
+    "No spoken summary is ready to save." : {
 
     },
     "No suggestions for %@ on this Mac" : {
@@ -4490,6 +5290,9 @@
 
     },
     "No unfinished actions." : {
+
+    },
+    "No usable track for fallback." : {
 
     },
     "No voiceprints" : {
@@ -4546,6 +5349,12 @@
     "Not run yet." : {
 
     },
+    "Not sent" : {
+
+    },
+    "Not sent — integration settings changed or are disabled" : {
+
+    },
     "Not set" : {
 
     },
@@ -4585,7 +5394,22 @@
     "Notion" : {
 
     },
+    "Notion can't see that page or database. Connect it to your integration (••• → Connections)." : {
+
+    },
     "Notion destination" : {
+
+    },
+    "Notion is limiting requests right now. Try again in a minute." : {
+
+    },
+    "Notion rejected the integration secret. Paste a new one in Settings → Integrations → Notion." : {
+
+    },
+    "Notion returned a response dBrief couldn't read." : {
+
+    },
+    "Notion returned an error (%lld)." : {
 
     },
     "Numbers & dates" : {
@@ -4657,7 +5481,13 @@
     "On-device and private. Requires macOS 26 on Apple Silicon." : {
 
     },
+    "On-device speech recognition is not available." : {
+
+    },
     "On-device speech with macOS-managed language downloads. Supported macOS 26 locales use SpeechAnalyzer; other cases use the classic recognizer." : {
+
+    },
+    "One or more requested analysis outputs failed." : {
 
     },
     "One page per meeting, under a page or in a database" : {
@@ -4676,6 +5506,12 @@
 
     },
     "One voiceprint. Name them in another recording to recognise them more reliably." : {
+
+    },
+    "OneNote returned invalid response" : {
+
+    },
+    "OneNote token is required" : {
 
     },
     "Only action items are sent, one reminder each" : {
@@ -4861,7 +5697,26 @@
     "Parakeet model" : {
 
     },
+    "Parakeet v2 supports English only. Choose v3 for multilingual speech." : {
+
+    },
+    "Part %lld of %lld · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Part %1$lld of %2$lld · %3$@"
+          }
+        }
+      }
+    },
     "Participant" : {
+
+    },
+    "Paste your Notion integration secret first." : {
+
+    },
+    "Paste your Todoist API token first." : {
 
     },
     "Pause" : {
@@ -4957,6 +5812,9 @@
     "Playing sample" : {
 
     },
+    "Please enter a valid URL." : {
+
+    },
     "Polish" : {
 
     },
@@ -4984,6 +5842,9 @@
     "Prepare your models" : {
 
     },
+    "Preparing Gemma model…" : {
+
+    },
     "Preparing Gemma…" : {
 
     },
@@ -4996,7 +5857,13 @@
     "Preparing chat…" : {
 
     },
+    "Preparing language…" : {
+
+    },
     "Preparing live transcription…" : {
+
+    },
+    "Preparing speakers" : {
 
     },
     "Preparing transcript…" : {
@@ -5101,6 +5968,21 @@
     "Processing destinations" : {
 
     },
+    "Processing didn't finish" : {
+
+    },
+    "Processing failed" : {
+
+    },
+    "Processing finished with issues" : {
+
+    },
+    "Processing finished, but dBrief couldn't save that it finished. If it shows up in Queue & Recovery, remove it from the list." : {
+
+    },
+    "Processing finished, but the library's processed date couldn't be saved. dBrief will try again later." : {
+
+    },
     "Processing in %lld seconds" : {
       "localizations" : {
         "en" : {
@@ -5141,6 +6023,18 @@
         }
       }
     },
+    "Processing is stopping. Try again in a moment." : {
+
+    },
+    "Processing job could not be verified after saving." : {
+
+    },
+    "Processing job identity did not match its storage location." : {
+
+    },
+    "Processing job version %lld is not supported." : {
+
+    },
     "Processing may slow down. Closing other apps helps." : {
 
     },
@@ -5153,7 +6047,16 @@
     "Processing settings" : {
 
     },
+    "Processing stopped, but it couldn't be added back to the queue. The queue is paused for now; check storage, then resume the queue." : {
+
+    },
+    "Processing stopped, but its saved progress couldn't be updated. The queue is paused for now; check storage, then resume the queue." : {
+
+    },
     "Processing warnings" : {
+
+    },
+    "Processing was cancelled before it started. You can try again." : {
 
     },
     "Processing “%@”" : {
@@ -5290,6 +6193,9 @@
 
     },
     "Queued / Interrupted" : {
+
+    },
+    "Queued recording unavailable" : {
 
     },
     "Queueing in %lld seconds" : {
@@ -5494,10 +6400,16 @@
     "Recording folder" : {
 
     },
+    "Recording from %@" : {
+
+    },
     "Recording indicators" : {
 
     },
     "Recording library" : {
+
+    },
+    "Recording processed" : {
 
     },
     "Recording recovery needs attention" : {
@@ -5515,6 +6427,9 @@
     "Recording title" : {
 
     },
+    "Recording unavailable" : {
+
+    },
     "Recording — live transcript" : {
 
     },
@@ -5524,10 +6439,35 @@
     "Recordings" : {
 
     },
+    "Recordings queued" : {
+
+    },
     "Recording…" : {
 
     },
     "Recover Audio" : {
+
+    },
+    "Recovered %lld interrupted recordings. They're in the recording library." : {
+
+    },
+    "Recovered %lld of %lld interrupted recordings. The original capture files of the others were kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Recovered %1$lld of %2$lld interrupted recordings. The original capture files of the others were kept."
+          }
+        }
+      }
+    },
+    "Recovered an interrupted recording. It's in the recording library." : {
+
+    },
+    "Recovered processing up to the Markdown note. Integrations weren't sent automatically; send them with Integrations…." : {
+
+    },
+    "Recovered recording" : {
 
     },
     "Recovery files" : {
@@ -5596,6 +6536,9 @@
     "Regenerate Spoken Summary" : {
 
     },
+    "Regenerating AI results" : {
+
+    },
     "Relative folder in vault" : {
 
     },
@@ -5609,6 +6552,9 @@
 
     },
     "Reminders" : {
+
+    },
+    "Reminders permission denied" : {
 
     },
     "Remote" : {
@@ -5728,13 +6674,37 @@
     "Reprocess" : {
 
     },
+    "Reprocess needs attention" : {
+
+    },
     "Reprocess pending" : {
+
+    },
+    "Reprocess queued" : {
 
     },
     "Reprocess this recording" : {
 
     },
     "Reprocessing" : {
+
+    },
+    "Reprocessing cannot use a symbolic link or non-regular file: %@." : {
+
+    },
+    "Reprocessing couldn't start: %@" : {
+
+    },
+    "Reprocessing didn't finish" : {
+
+    },
+    "Reprocessing didn't finish: %@ Current results were kept." : {
+
+    },
+    "Reprocessing does not own the file type %@." : {
+
+    },
+    "Reprocessing finished" : {
 
     },
     "Reprocessing is in progress. Your draft has been kept." : {
@@ -5752,7 +6722,30 @@
     "Reprocessing pending — current results are read-only." : {
 
     },
+    "Reprocessing “%@” didn't finish: %@ Current results were kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reprocessing “%1$@” didn't finish: %2$@ Current results were kept."
+          }
+        }
+      }
+    },
     "Request" : {
+
+    },
+    "Request failed (%lld): %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Request failed (%1$lld): %2$@"
+          }
+        }
+      }
+    },
+    "Request returned invalid response" : {
 
     },
     "Required to record." : {
@@ -5815,10 +6808,16 @@
     "Resume recording" : {
 
     },
+    "Resuming interrupted processing." : {
+
+    },
     "Retranscribe" : {
 
     },
     "Retranscribe…" : {
+
+    },
+    "Retranscribing audio" : {
 
     },
     "Retries" : {
@@ -5827,10 +6826,19 @@
     "Retry" : {
 
     },
+    "Retry %@?" : {
+
+    },
+    "Retry Anyway" : {
+
+    },
     "Retry Download" : {
 
     },
     "Retry Recovery" : {
+
+    },
+    "Retrying language download…" : {
 
     },
     "Return confirms all voices" : {
@@ -5857,7 +6865,13 @@
     "Review this work, then continue when you are ready." : {
 
     },
+    "Review who's who to finish processing this recording." : {
+
+    },
     "Reviewed" : {
+
+    },
+    "Rich transcript version %lld is not supported." : {
 
     },
     "Rosters are never loaded. Invite bodies are never saved." : {
@@ -5938,7 +6952,25 @@
     "Saved as a prompt. Manage your prompts in Settings → AI analysis." : {
 
     },
+    "Saved integration deliveries could not be read. Their files were left untouched." : {
+
+    },
     "Saved model is absent from the catalog; availability is unverified." : {
+
+    },
+    "Saved queue or delivery records could not be read. Their files were left untouched." : {
+
+    },
+    "Saved queue settings could not be read. Automatic recovery is paused." : {
+
+    },
+    "Saved queue settings could not be read. No queued work was started." : {
+
+    },
+    "Saved recovery work could not be fully read. The previous search results have been kept." : {
+
+    },
+    "Saved reprocessing results can't be opened yet: %@ Retry Recovery, or check storage." : {
 
     },
     "Saved results are not ready to open." : {
@@ -5956,6 +6988,9 @@
     "Saved, but not applicable to the selected Haiku model." : {
 
     },
+    "Saving analysis" : {
+
+    },
     "Saving recording" : {
 
     },
@@ -5963,6 +6998,9 @@
 
     },
     "Screen recording" : {
+
+    },
+    "Screen recording permission is required for system audio capture." : {
 
     },
     "Script prompt, voice style" : {
@@ -6004,6 +7042,15 @@
     "Seeking unavailable" : {
 
     },
+    "Segmentation failed. %@" : {
+
+    },
+    "Segmentation produced no output files." : {
+
+    },
+    "Segmentation skipped because ffmpeg is unavailable." : {
+
+    },
     "Select All" : {
 
     },
@@ -6038,6 +7085,12 @@
 
     },
     "Selected provider is unavailable; using the app default." : {
+
+    },
+    "Send" : {
+
+    },
+    "Send %@?" : {
 
     },
     "Send audio to your own Whisper server or API." : {
@@ -6088,7 +7141,16 @@
     "Send to a webhook" : {
 
     },
+    "Send with Current Settings" : {
+
+    },
+    "Send: %@" : {
+
+    },
     "Sends the selected text to this endpoint." : {
+
+    },
+    "Sent" : {
 
     },
     "Sentiment" : {
@@ -6220,6 +7282,9 @@
     "Shows the processing activity recorded for this meeting." : {
 
     },
+    "Sign in to TickTick first." : {
+
+    },
     "Sign in with Microsoft" : {
 
     },
@@ -6227,6 +7292,9 @@
 
     },
     "Sign out" : {
+
+    },
+    "Skipped — no content to send" : {
 
     },
     "Slow" : {
@@ -6250,10 +7318,25 @@
     "Some attempts or outcomes are missing. This history cannot establish all processing that occurred." : {
 
     },
+    "Some deliveries still need attention. Use Integrations… to review them." : {
+
+    },
     "Some evidence could not be read. It may be damaged, unavailable, or from an unsupported version." : {
 
     },
+    "Some integrations need attention. Use Integrations… to review or retry individual sends." : {
+
+    },
     "Some long evidence was shortened." : {
+
+    },
+    "Some saved processing records can't be read. Move them aside in Queue & Recovery first." : {
+
+    },
+    "Some saved processing records can't be read. They were left untouched; move them aside in Queue & Recovery." : {
+
+    },
+    "Some saved processing records can't be read. They were left untouched; move them aside to continue." : {
 
     },
     "Sort by %@" : {
@@ -6271,19 +7354,43 @@
     "Spanish" : {
 
     },
+    "Spanish (Mexico)" : {
+
+    },
+    "Spanish (Spain)" : {
+
+    },
+    "Spanish (United States)" : {
+
+    },
     "Speaker Names" : {
 
     },
     "Speaker analysis" : {
 
     },
+    "Speaker changes could not be saved. Processing remains retryable." : {
+
+    },
     "Speaker details are unavailable because no transcript is attached." : {
+
+    },
+    "Speaker detection failed" : {
 
     },
     "Speaker detection runs on this Mac. Integration delivery and exports are separate actions." : {
 
     },
     "Speaker names changed — regenerate analysis?" : {
+
+    },
+    "Speaker names were saved, but processing couldn't save its progress. Resume it from Queue & Recovery." : {
+
+    },
+    "Speaker review needed" : {
+
+    },
+    "Speaker review needs attention" : {
 
     },
     "Speaker timeline" : {
@@ -6293,6 +7400,12 @@
 
     },
     "Speech recognition" : {
+
+    },
+    "Speech recognition not available for this language." : {
+
+    },
+    "Speech recognition timed out. Try a shorter clip or external transcription." : {
 
     },
     "Speech synthesis" : {
@@ -6436,10 +7549,22 @@
     "Stop watching this folder" : {
 
     },
+    "Stopped" : {
+
+    },
+    "Stopped because the response reached the length limit." : {
+
+    },
+    "Stopped because the response was repeating itself." : {
+
+    },
     "Stopped checking the whole recording." : {
 
     },
     "Stopped generating." : {
+
+    },
+    "Stopped — current results have been kept." : {
 
     },
     "Storage" : {
@@ -6527,6 +7652,9 @@
     "Swedish" : {
 
     },
+    "Switched to %@" : {
+
+    },
     "Symbol" : {
 
     },
@@ -6540,6 +7668,9 @@
 
     },
     "System audio" : {
+
+    },
+    "System audio capture stopped unexpectedly" : {
 
     },
     "System clipboard" : {
@@ -6617,19 +7748,137 @@
     "Text size and font" : {
 
     },
+    "The AI did not return a complete, valid prompt suggestion. Try again or adjust your request." : {
+
+    },
+    "The AI response exceeded the length limit. Ask for a shorter revision and try again." : {
+
+    },
+    "The AI response was incomplete, too long, or repetitive. Ask for a shorter response and try again." : {
+
+    },
+    "The AI returned an empty script." : {
+
+    },
+    "The AI returned an invalid response. Check the endpoint and model, then try again." : {
+
+    },
+    "The AI returned no text. Try again or check the configured model." : {
+
+    },
+    "The Apple Intelligence model is still downloading or not ready yet. Try again shortly." : {
+
+    },
     "The Keep API may need Google Workspace setup" : {
+
+    },
+    "The Keychain item could not be decoded as text." : {
+
+    },
+    "The Keychain write could not be verified." : {
+
+    },
+    "The Local CLI command could not be launched. Check its executable path and permissions in Settings → AI analysis." : {
+
+    },
+    "The Local CLI command or timeout has changed. Restore the saved configuration to resume, or start a new attempt." : {
+
+    },
+    "The Local CLI command returned an invalid response. Check that it supports the requested output format." : {
+
+    },
+    "The Local CLI command timed out after %lld seconds. Allow more time or try a shorter request." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The Local CLI command timed out after %lld second. Allow more time or try a shorter request."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The Local CLI command timed out after %lld seconds. Allow more time or try a shorter request."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "De Local CLI-opdracht reageerde niet binnen %lld seconde. Geef meer tijd of probeer een korter verzoek."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "De Local CLI-opdracht reageerde niet binnen %lld seconden. Geef meer tijd of probeer een korter verzoek."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "The Markdown destination contains another file or edited note. It was left untouched." : {
+
+    },
+    "The Markdown note was saved, but dBrief couldn't save that it finished. Check it in Queue & Recovery." : {
+
+    },
+    "The TickTick sign-in response didn't match this request. Try again." : {
+
+    },
+    "The TickTick sign-in wasn't finished in time. Try again." : {
 
     },
     "The action may have changed or its recording may be unavailable. Reload the recording and try again." : {
 
     },
+    "The advanced calendar CLI command contains flags that conflict with the managed invocation." : {
+
+    },
     "The answer is still available in this conversation." : {
+
+    },
+    "The app is shutting down." : {
 
     },
     "The audio file is permanently removed from disk. This can’t be undone." : {
 
     },
+    "The audio file's size could not be read. Check that the recording is still available and accessible." : {
+
+    },
+    "The audio processor could not be started." : {
+
+    },
     "The calendar CLI call failed. Check the claude command and its login." : {
+
+    },
+    "The calendar CLI call failed. Check the connection in Settings." : {
+
+    },
+    "The calendar CLI call timed out after %llds." : {
+
+    },
+    "The calendar CLI call was cancelled." : {
+
+    },
+    "The calendar CLI command exited with code %lld. Check its authentication and connection." : {
+
+    },
+    "The calendar CLI response was rejected: %@" : {
+
+    },
+    "The calendar list could not be refreshed." : {
 
     },
     "The command could not be launched. Check the executable path and permissions, then test it again." : {
@@ -6644,7 +7893,19 @@
     "The command returned invalid JSON. Check that its output matches the required format, then test it again." : {
 
     },
+    "The configured AI could not complete the request. Check the connection or local model, then try again." : {
+
+    },
+    "The connection test was cancelled." : {
+
+    },
     "The conversation is removed from this recording. This can't be undone." : {
+
+    },
+    "The current calendar month could not be determined. Try refreshing the library." : {
+
+    },
+    "The endpoint ‘%@’ has changed since this attempt was saved. Restore its configuration to resume, or start a new attempt." : {
 
     },
     "The error indicates a timeout. Check the connection or allow more time, then try again." : {
@@ -6656,6 +7917,9 @@
     "The error indicates an unavailable resource. Check the service address or required local model, then try again." : {
 
     },
+    "The fetched roster did not match the requested meeting." : {
+
+    },
     "The full calendar context is saved even when these fields are kept." : {
 
     },
@@ -6665,10 +7929,19 @@
     "The library is updating. Try again in a moment." : {
 
     },
+    "The local AI helper is unavailable. Install or enable the local AI component in Settings → AI analysis." : {
+
+    },
     "The meeting context is saved. Existing generated results are kept until you choose to regenerate them." : {
 
     },
+    "The model did not finish its answer within the output token limit. Reasoning can use this allowance too. Increase the provider's Output token limit in AI settings if the model supports it, or request a shorter answer." : {
+
+    },
     "The model needs to download to this Mac before it can run. Generation starts automatically." : {
+
+    },
+    "The model returned an empty answer." : {
 
     },
     "The new results appear here when reprocessing finishes." : {
@@ -6677,10 +7950,19 @@
     "The new transcript appears here when reprocessing finishes. Manage it in the menu bar's Queue & Recovery." : {
 
     },
+    "The original recording is missing. Locate it before resuming." : {
+
+    },
     "The original recording stays unchanged." : {
 
     },
+    "The previous attempt to %@ may already have created a note, reminders, or a webhook event. Check the destination first. Retrying may create duplicates. Webhook deduplication depends on the receiver honoring the idempotency key." : {
+
+    },
     "The profile and default endpoints are unavailable. Using the first configured endpoint." : {
+
+    },
+    "The prompt and request exceed %@ characters. Shorten them and try again." : {
 
     },
     "The prompt, request, or AI configuration changed. Generate a new suggestion." : {
@@ -6692,13 +7974,67 @@
     "The provider limited the request (HTTP 429). Check account quota or wait before testing again." : {
 
     },
+    "The provider limited this request. Wait and try again, or check your account quota." : {
+
+    },
     "The provider rejected access (HTTP %lld). Check the API key and account permissions, then test the connection again." : {
+
+    },
+    "The provider rejected access. Check the API key and account permissions in Settings → AI analysis." : {
+
+    },
+    "The provider returned HTTP %lld. Check its configuration and service status, then try again." : {
 
     },
     "The provider returned HTTP %lld. Check the provider configuration and service status, then test the connection again." : {
 
     },
+    "The queue is updating. Try again in a moment." : {
+
+    },
+    "The recording is unavailable. Its processing completion date could not be saved." : {
+
+    },
+    "The recording is unavailable. Reconnect its storage and refresh the library." : {
+
+    },
+    "The recording is unavailable. Reconnect its storage, then try Resume again." : {
+
+    },
+    "The recording metadata could not be read. Its recovery journal has been kept." : {
+
+    },
+    "The recording metadata could not be verified." : {
+
+    },
     "The recording's current results stay. The unfinished reprocess can't be resumed afterwards." : {
+
+    },
+    "The recordings folder could not be fully read. The previous search results have been kept." : {
+
+    },
+    "The request exceeds the model’s context size. Shorten the prompt or sample and try again." : {
+
+    },
+    "The rich transcript could not be verified after saving." : {
+
+    },
+    "The sample exceeds the model’s context size. Choose a shorter sample or a model with a larger context, then try again." : {
+
+    },
+    "The saved %@ endpoint is unavailable. Restore its configuration to resume, or start a new attempt." : {
+      "comment" : "The placeholder is what the endpoint is used for, e.g. transcription or AI analysis."
+    },
+    "The saved Markdown destination is invalid." : {
+
+    },
+    "The saved Markdown export version is not supported." : {
+
+    },
+    "The saved Parakeet model is unavailable. Choose another Parakeet model." : {
+
+    },
+    "The saved audio is unavailable. Reconnect its storage or restore the audio file, then retry." : {
 
     },
     "The saved default endpoint is unavailable. Using the first configured endpoint." : {
@@ -6707,10 +8043,28 @@
     "The saved language is unavailable with Apple Speech. Choose a supported language or change the transcription engine." : {
 
     },
+    "The saved processing job is no longer active." : {
+
+    },
+    "The saved reprocessing attempt is incomplete or damaged." : {
+
+    },
     "The saved summary and action items exceed Apple Intelligence’s input budget. The preview keeps the beginning and end." : {
 
     },
+    "The saved transcript could not be read. Choose Retranscribe to create a replacement from the audio." : {
+
+    },
+    "The saved transcript is unavailable. Restore it before sending integrations." : {
+
+    },
+    "The search index could not be read or updated. Try rebuilding it. Your recordings are unchanged." : {
+
+    },
     "The selected transcript exceeds this engine’s input budget. The production preview keeps the beginning and end." : {
+
+    },
+    "The settings for %@ have changed. Using current settings may send this saved content to a different account, folder, or URL, or include different selected fields." : {
 
     },
     "The summary is written and spoken in this language." : {
@@ -6719,10 +8073,19 @@
     "The summary was regenerated while you were editing. Copy your text, cancel, and edit the new summary." : {
 
     },
+    "The transcript changed during speaker review. Reload it and review the speakers again." : {
+
+    },
+    "The transcript is larger than the model's context window. Increase your server's context size (e.g. llama.cpp --ctx-size / vLLM --max-model-len) or use an endpoint with a larger context." : {
+
+    },
     "The transcript text is saved. Rebuild the view from it." : {
 
     },
     "The update is stored in dBrief's support folder." : {
+
+    },
+    "The upload byte budget must be positive." : {
 
     },
     "The voiceprints of %@ move into “%@”, and that person is removed. This cannot be undone." : {
@@ -6763,13 +8126,43 @@
     "Thinking…" : {
 
     },
+    "This CLI does not support the selected effort. Update Claude CLI or choose CLI default in Settings → AI analysis." : {
+
+    },
+    "This CLI does not support the selected effort. Update Claude CLI or choose CLI default." : {
+
+    },
+    "This Claude CLI does not support the selected effort. Update Claude CLI or choose CLI default." : {
+
+    },
     "This Mac" : {
+
+    },
+    "This Whisper model supports English only. Choose a multilingual model for this language." : {
+
+    },
+    "This action changed. Reload the summary before updating its status." : {
+
+    },
+    "This answer is no longer available to export. Wait for it to finish, or reopen the current conversation." : {
+
+    },
+    "This attempt cannot be changed in its current state." : {
 
     },
     "This engine’s current transcription pass uses the app language setting. The profile override is kept." : {
 
     },
+    "This integration is not available" : {
+
+    },
+    "This interrupted recording could not be recovered. Reconnect its storage and try again." : {
+
+    },
     "This is me" : {
+
+    },
+    "This language is not available with Apple Speech. Choose a supported spoken language or another transcription engine." : {
 
     },
     "This permanently deletes matching files in %@. This can't be undone." : {
@@ -6781,7 +8174,34 @@
     "This profile and its overrides will be removed. This can’t be undone." : {
 
     },
+    "This profile was deleted. Copy your draft before closing the editor." : {
+
+    },
+    "This profile was deleted. Your draft is still available to copy." : {
+
+    },
     "This profile’s endpoint is unavailable. Using the app’s default endpoint." : {
+
+    },
+    "This prompt changed elsewhere. Reload the saved version or keep editing and copy your draft." : {
+
+    },
+    "This prompt is only available in app defaults." : {
+
+    },
+    "This prompt only supports app defaults." : {
+
+    },
+    "This question needs more of the recording than Apple Intelligence can hold at once. Try a narrower question, or use “Check the whole recording”." : {
+
+    },
+    "This question needs more of the recording than Apple Intelligence can hold at once. Try a narrower question." : {
+
+    },
+    "This queued recording could not be started. Refresh the queue and try again." : {
+
+    },
+    "This queued recording’s profile was deleted. Choose a profile and retry from the recording." : {
 
     },
     "This receipt covers recorded attempts, including retries. It makes no claims about earlier activity or provider retention. Externally managed apps and processes may sync or send data elsewhere. A start without a completion does not prove whether data was received." : {
@@ -6790,10 +8210,25 @@
     "This recording" : {
 
     },
+    "This recording already has a pending reprocessing attempt." : {
+
+    },
+    "This recording has an unfinished processing run in Queue & Recovery. Resume it, or discard it to start again." : {
+
+    },
+    "This recording has an unfinished reprocess in Queue & Recovery. Resume or discard it first." : {
+
+    },
     "This recording has no notes or transcript yet." : {
 
     },
+    "This recording has no saved summary. Choose the example or a recording with saved insights." : {
+
+    },
     "This recording has no saved summary. Use the example or choose a recording with saved insights." : {
+
+    },
+    "This recording has no tracked sends. Older app versions did not record delivery outcomes, so dBrief cannot safely retry them here." : {
 
     },
     "This recording has other analysis, but no action items were saved." : {
@@ -6802,10 +8237,31 @@
     "This recording has other analysis, but no summary text was saved." : {
 
     },
+    "This recording has unfinished reprocessing. Resume or discard that attempt first." : {
+
+    },
     "This recording is no longer available. Choose the example." : {
 
     },
+    "This recording is open in the review form. Process, queue or delete it there first." : {
+
+    },
+    "This recording is processing now. Wait for it to finish, or stop it." : {
+
+    },
+    "This recording is waiting for you to confirm its speakers." : {
+
+    },
+    "This recording is waiting in the queue. Process it or remove it from Queue & Recovery first." : {
+
+    },
     "This recording · On-device" : {
+
+    },
+    "This recording’s saved profile was deleted. Choose a profile and retry from the recording." : {
+
+    },
+    "This recovery item could not be resumed. Refresh the library and try again." : {
 
     },
     "This term changed or was removed. Cancel and choose the term again." : {
@@ -6817,13 +8273,28 @@
     "This week" : {
 
     },
+    "This work has changed or is no longer pending. Refresh the library to see its current state." : {
+
+    },
     "TickTick" : {
 
     },
     "TickTick account" : {
 
     },
+    "TickTick didn't return a sign-in code. Try again." : {
+
+    },
+    "TickTick isn't available in this build." : {
+
+    },
     "TickTick list" : {
+
+    },
+    "TickTick returned a response dBrief couldn't read." : {
+
+    },
+    "TickTick returned an error (%lld)." : {
 
     },
     "Timeout" : {
@@ -6853,10 +8324,22 @@
     "Todoist project" : {
 
     },
+    "Todoist rejected the token. Paste a new one in Settings → Integrations → Todoist." : {
+
+    },
+    "Todoist returned a response dBrief couldn't read." : {
+
+    },
+    "Todoist returned an error (%lld)." : {
+
+    },
     "Todoist → Settings → Integrations → Developer" : {
 
     },
     "Token" : {
+
+    },
+    "Token is required" : {
 
     },
     "Topics: %@\nSentiment: %@" : {
@@ -6890,7 +8373,61 @@
     "Transcribe…" : {
 
     },
+    "Transcribing %@ from a watched folder…" : {
+
+    },
+    "Transcribing (Apple Speech)" : {
+
+    },
+    "Transcribing (Local Whisper)" : {
+
+    },
+    "Transcribing (Local WhisperKit)" : {
+
+    },
+    "Transcribing (Parakeet)" : {
+
+    },
+    "Transcribing audio" : {
+
+    },
+    "Transcribing audio (chunk %lld/%lld)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Transcribing audio (chunk %1$lld/%2$lld)"
+          }
+        }
+      }
+    },
+    "Transcribing audio (segment %lld/%lld)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Transcribing audio (segment %1$lld/%2$lld)"
+          }
+        }
+      }
+    },
+    "Transcribing segment %lld/%lld (chunk %lld/%lld)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Transcribing segment %1$lld/%2$lld (chunk %3$lld/%4$lld)"
+          }
+        }
+      }
+    },
+    "Transcribing…" : {
+
+    },
     "Transcript" : {
+
+    },
+    "Transcript checkpoint verification failed." : {
 
     },
     "Transcript cleanup" : {
@@ -6921,6 +8458,9 @@
 
     },
     "Transcription engine" : {
+
+    },
+    "Transcription failed" : {
 
     },
     "Transcription folder" : {
@@ -6960,6 +8500,9 @@
 
     },
     "Transcription task" : {
+
+    },
+    "Transcription warnings" : {
 
     },
     "Transcripts" : {
@@ -7007,6 +8550,9 @@
     "Ukrainian" : {
 
     },
+    "Unable to create AVAssetExportSession." : {
+
+    },
     "Unavailable" : {
 
     },
@@ -7040,6 +8586,9 @@
     "Unknown" : {
 
     },
+    "Unknown Keychain error" : {
+
+    },
     "Unknown language" : {
 
     },
@@ -7049,7 +8598,13 @@
     "Unsaved changes" : {
 
     },
+    "Unsupported profile import version: %lld." : {
+
+    },
     "Untitled" : {
+
+    },
+    "Untitled database" : {
 
     },
     "Untitled meeting" : {
@@ -7229,6 +8784,18 @@
     "Vocabulary correction" : {
 
     },
+    "Vocabulary correction skipped" : {
+
+    },
+    "Vocabulary correction skipped: no AI engine is available. Choose one in Settings → AI analysis." : {
+
+    },
+    "Vocabulary correction skipped: the AI engine didn't respond. The transcript is unchanged." : {
+
+    },
+    "Vocabulary correction skipped: the AI engine's answer couldn't be read. The transcript is unchanged." : {
+
+    },
     "Vocabulary fix" : {
 
     },
@@ -7254,6 +8821,9 @@
 
     },
     "Voice style" : {
+
+    },
+    "Voice style requires the Qwen 1.7B voice model. Your prompt is preserved." : {
 
     },
     "Voiceprints" : {
@@ -7283,7 +8853,28 @@
     "Wait for processing to finish to review integration deliveries" : {
 
     },
+    "Wait for recording cleanup to finish before recording." : {
+
+    },
+    "Wait for recording, processing or recovery to finish, then try again." : {
+
+    },
+    "Wait for the active processing job to finish before retrying integrations." : {
+
+    },
+    "Wait for the current recording to finish saving before recording again." : {
+
+    },
+    "Wait for “%@” to finish processing before deleting a recording." : {
+
+    },
+    "Wait for “%@” to finish processing." : {
+
+    },
     "Waiting" : {
+
+    },
+    "Waiting for speaker confirmation" : {
 
     },
     "Waiting to download" : {
@@ -7301,6 +8892,16 @@
     "Watch folders for new audio" : {
 
     },
+    "Watched folder: couldn't read %@. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Watched folder: couldn't read %1$@. %2$@"
+          }
+        }
+      }
+    },
     "Weak" : {
 
     },
@@ -7308,6 +8909,9 @@
 
     },
     "Webhook fields: %@" : {
+
+    },
+    "Webhook returned invalid response" : {
 
     },
     "Website" : {
@@ -7406,6 +9010,9 @@
     "Write results in" : {
 
     },
+    "Writing Markdown" : {
+
+    },
     "Writing the answer from what was found…" : {
 
     },
@@ -7420,6 +9027,46 @@
     },
     "You can set this up later in Settings. These features need their models before use." : {
 
+    },
+    "You have %lld recordings queued for processing. You're now on AC power." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "You have %lld recording queued for processing. You're now on AC power."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "You have %lld recordings queued for processing. You're now on AC power."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Er staat %lld opname klaar om te verwerken. Je Mac is nu aangesloten op de stroom."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Er staan %lld opnamen klaar om te verwerken. Je Mac is nu aangesloten op de stroom."
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "YouTube or video link" : {
 
@@ -7443,6 +9090,12 @@
 
     },
     "Your own prompts in Ask dBrief AI" : {
+
+    },
+    "Your previous recording was saved to the queue so the new recording could start. Process it from Queue & Recovery." : {
+
+    },
+    "Your previous recording will be processed in the background while you record." : {
 
     },
     "Your prompts" : {
@@ -7476,11 +9129,26 @@
     "^[%lld voiceprint](inflect: true)" : {
 
     },
+    "about %lld min left" : {
+
+    },
     "about %lld minutes" : {
+
+    },
+    "about %llds left" : {
+
+    },
+    "about 1 min left" : {
 
     },
     "about a minute" : {
 
+    },
+    "almost done" : {
+
+    },
+    "audio finalization" : {
+      "comment" : "Mid-sentence: “Title”: audio finalization failed."
     },
     "checking download" : {
 
@@ -7497,7 +9165,16 @@
     "dBrief" : {
 
     },
+    "dBrief couldn't listen for the TickTick sign-in on port 47213. Quit the app using it and try again." : {
+
+    },
     "dBrief does not notify participants or obtain consent on your behalf." : {
+
+    },
+    "dBrief is saving a recording. Try again in a moment." : {
+
+    },
+    "dBrief is still checking saved work. Try again in a moment." : {
 
     },
     "dBrief keeps recognising %@ from their other voiceprints." : {
@@ -7539,10 +9216,31 @@
     "expanded" : {
 
     },
+    "ffmpeg command failed." : {
+
+    },
+    "ffmpeg command failed: %@" : {
+
+    },
+    "ffmpeg is required to transcribe .ogg/.opus files. Install ffmpeg and try again." : {
+
+    },
+    "ffmpeg merge failed; using one raw CAF as the master. %@" : {
+
+    },
+    "ffmpeg not found. Skipped merge and AAC encode; master is raw CAF." : {
+
+    },
+    "ffmpeg not found. The app bundle ships ffmpeg; run the built app rather than `swift run`." : {
+
+    },
     "https://youtube.com/watch?v=…" : {
 
     },
     "iCal matching will return no meetings." : {
+
+    },
+    "microphone" : {
 
     },
     "model %@ · +overhead %@" : {
@@ -7567,11 +9265,17 @@
     "no participants" : {
 
     },
+    "no result was returned" : {
+
+    },
     "not downloaded" : {
 
     },
     "or drop audio on the menu bar icon" : {
 
+    },
+    "processing" : {
+      "comment" : "Mid-sentence: “Title”: processing failed."
     },
     "recordings" : {
 
@@ -7582,8 +9286,53 @@
     "slower than usual" : {
 
     },
+    "smaller than 5 GB" : {
+
+    },
+    "speaker detection" : {
+      "comment" : "Mid-sentence: “Title”: speaker detection failed."
+    },
     "takes a few minutes" : {
 
+    },
+    "the CLI reported an error instead of a result" : {
+
+    },
+    "the attendee count was invalid" : {
+
+    },
+    "the command produced no output" : {
+
+    },
+    "the output was not a valid result envelope" : {
+
+    },
+    "the payload version is unsupported" : {
+
+    },
+    "the response did not match the requested occurrence" : {
+
+    },
+    "the response did not match this request" : {
+
+    },
+    "the response status was unrecognized" : {
+
+    },
+    "the response was for a different date window" : {
+
+    },
+    "the response was for a different mailbox" : {
+
+    },
+    "the roster exceeded the configured attendee limit" : {
+
+    },
+    "the structured output payload was missing" : {
+
+    },
+    "transcription" : {
+      "comment" : "Mid-sentence: “Title”: transcription failed."
     },
     "transcripts" : {
 
@@ -7592,6 +9341,9 @@
 
     },
     "v%@" : {
+
+    },
+    "vocabulary correction" : {
 
     },
     "yt-dlp %@ is up to date" : {
@@ -7608,6 +9360,9 @@
       }
     },
     "yt-dlp not found" : {
+
+    },
+    "yt-dlp not found. Use the \"Download yt-dlp\" button below." : {
 
     },
     "~%.1f GiB RAM" : {
@@ -7638,7 +9393,7 @@
 
     },
     "“%@”" : {
-
+      "comment" : "A meeting title in quotation marks"
     },
     "•" : {
 

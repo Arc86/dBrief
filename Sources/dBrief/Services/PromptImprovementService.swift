@@ -23,10 +23,10 @@ enum PromptImprovementError: Error, LocalizedError {
     case inputTooLong(limit: Int), invalidResponse, responseTooLong, emptyPrompt
     var errorDescription: String? {
         switch self {
-        case .inputTooLong(let limit): "The prompt and request exceed \(limit.formatted()) characters. Shorten them and try again."
-        case .invalidResponse: "The AI did not return a complete, valid prompt suggestion. Try again or adjust your request."
-        case .responseTooLong: "The AI response exceeded the length limit. Ask for a shorter revision and try again."
-        case .emptyPrompt: "Enter a prompt before asking for improvements."
+        case .inputTooLong(let limit): String(localized: "The prompt and request exceed \(limit.formatted()) characters. Shorten them and try again.")
+        case .invalidResponse: String(localized: "The AI did not return a complete, valid prompt suggestion. Try again or adjust your request.")
+        case .responseTooLong: String(localized: "The AI response exceeded the length limit. Ask for a shorter revision and try again.")
+        case .emptyPrompt: String(localized: "Enter a prompt before asking for improvements.")
         }
     }
 }

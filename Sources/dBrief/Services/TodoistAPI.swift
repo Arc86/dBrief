@@ -9,10 +9,10 @@ enum TodoistError: LocalizedError, Equatable, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .missingToken: "Paste your Todoist API token first."
-        case .unauthorized: "Todoist rejected the token. Paste a new one in Settings → Integrations → Todoist."
-        case .invalidResponse: "Todoist returned a response dBrief couldn't read."
-        case .http(let code): "Todoist returned an error (\(code))."
+        case .missingToken: String(localized: "Paste your Todoist API token first.")
+        case .unauthorized: String(localized: "Todoist rejected the token. Paste a new one in Settings → Integrations → Todoist.")
+        case .invalidResponse: String(localized: "Todoist returned a response dBrief couldn't read.")
+        case .http(let code): String(localized: "Todoist returned an error (\(code)).")
         }
     }
 }

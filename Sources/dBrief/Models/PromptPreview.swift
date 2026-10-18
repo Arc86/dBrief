@@ -75,10 +75,10 @@ enum PromptPreviewError: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyTranscript: "Choose a recording with a transcript, or use the example."
-        case .missingInsights: "This recording has no saved summary. Choose the example or a recording with saved insights."
-        case .contextLimit: "The sample exceeds the model’s context size. Choose a shorter sample or a model with a larger context, then try again."
-        case .unsupportedVoice: "Voice style requires the Qwen 1.7B voice model. Your prompt is preserved."
+        case .emptyTranscript: String(localized: "Choose a recording with a transcript, or use the example.")
+        case .missingInsights: String(localized: "This recording has no saved summary. Choose the example or a recording with saved insights.")
+        case .contextLimit: String(localized: "The sample exceeds the model’s context size. Choose a shorter sample or a model with a larger context, then try again.")
+        case .unsupportedVoice: String(localized: "Voice style requires the Qwen 1.7B voice model. Your prompt is preserved.")
         case .failed(let message), .analysisFailure(let message): message
         }
     }

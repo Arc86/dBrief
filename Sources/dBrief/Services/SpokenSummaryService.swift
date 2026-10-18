@@ -118,14 +118,14 @@ final class SpokenSummaryService: Identifiable {
             guard !invalidated else { return }
             let cleaned = SpokenSummaryScript.clean(raw)
             guard !cleaned.isEmpty else {
-                phase = .failed(message: "The AI returned an empty script.")
+                phase = .failed(message: String(localized: "The AI returned an empty script."))
                 return
             }
             self.script = cleaned
 
             // Verify plugin before starting state observation.
             guard let plugin else {
-                phase = .failed(message: "Local AI plugin not available.")
+                phase = .failed(message: String(localized: "Local AI plugin not available."))
                 return
             }
 
@@ -236,10 +236,10 @@ final class SpokenSummaryService: Identifiable {
 
         switch engine {
         case .localCLI:
-            throw SpokenSummaryError.engineUnavailable("Local CLI cannot generate a spoken summary. Choose a chat fallback engine in Settings → AI analysis.")
+            throw SpokenSummaryError.engineUnavailable(String(localized: "Local CLI cannot generate a spoken summary. Choose a chat fallback engine in Settings → AI analysis."))
 
         case .qwenLocal:
-            guard let plugin else { throw SpokenSummaryError.engineUnavailable("Local AI plugin not available.") }
+            guard let plugin else { throw SpokenSummaryError.engineUnavailable(String(localized: "Local AI plugin not available.")) }
             let stream = await plugin.chatStream(systemPrompt: systemPrompt, userMessage: userMessage, stage: .spokenSummaryScript)
             return try await collect(stream)
 
@@ -254,11 +254,11 @@ final class SpokenSummaryService: Identifiable {
                 return response.content
             }
             #endif
-            throw SpokenSummaryError.engineUnavailable("Apple Intelligence requires macOS 26 or later.")
+            throw SpokenSummaryError.engineUnavailable(String(localized: "Apple Intelligence requires macOS 26 or later."))
 
         case .remoteEndpoint:
             guard let endpoint = appSettings.effectiveDefaultAIEndpoint else {
-                throw SpokenSummaryError.engineUnavailable("No AI endpoint configured. Add one in Settings → AI analysis.")
+                throw SpokenSummaryError.engineUnavailable(String(localized: "No AI endpoint configured. Add one in Settings → AI analysis."))
             }
             return try await collect(aiService.streamChat(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint, stage: .spokenSummaryScript))
         }
@@ -321,7 +321,7 @@ final class SpokenSummaryService: Identifiable {
             try process.run()
             process.waitUntilExit()
         } catch {
-            throw SpokenSummaryError.transcodeFailed("ffmpeg not found. The app bundle ships ffmpeg; run the built app rather than `swift run`.")
+            throw SpokenSummaryError.transcodeFailed(String(localized: "ffmpeg not found. The app bundle ships ffmpeg; run the built app rather than `swift run`."))
         }
         guard process.terminationStatus == 0 else {
             let data = stdErr.fileHandleForReading.readDataToEndOfFile()
@@ -340,8 +340,8 @@ enum SpokenSummaryError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .engineUnavailable(let m): return m
-        case .notReady: return "No spoken summary is ready to save."
-        case .transcodeFailed(let m): return "Could not save audio: \(m)"
+        case .notReady: return String(localized: "No spoken summary is ready to save.")
+        case .transcodeFailed(let m): return String(localized: "Could not save audio: \(m)")
         }
     }
 }

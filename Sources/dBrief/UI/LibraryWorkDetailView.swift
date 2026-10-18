@@ -27,8 +27,8 @@ struct LibraryWorkDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(item.title).uiFont(.title).textSelection(.enabled)
-                LabeledContent("Status", value: item.status)
+                Text(item.displayTitle).uiFont(.title).textSelection(.enabled)
+                LabeledContent("Status", value: item.displayStatus)
                 LabeledContent("Date", value: item.date.formatted(date: .abbreviated, time: .shortened))
                 if !item.associatedApp.isEmpty {
                     LabeledContent("Application", value: item.associatedApp)

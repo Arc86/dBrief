@@ -21,11 +21,11 @@ enum ProcessRunError: Error, LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .launchFailed:
-            "The audio processor could not be started."
+            String(localized: "The audio processor could not be started.")
         case .stalled:
-            "Audio finalization stopped making progress and was terminated. The original recording tracks were preserved."
+            String(localized: "Audio finalization stopped making progress and was terminated. The original recording tracks were preserved.")
         case .cancelled:
-            "Audio finalization was cancelled. The original recording tracks were preserved."
+            String(localized: "Audio finalization was cancelled. The original recording tracks were preserved.")
         }
     }
 

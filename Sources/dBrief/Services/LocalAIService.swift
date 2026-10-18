@@ -400,7 +400,7 @@ actor LocalAIService {
 
     private static func partFailure(_ part: TranscriptChunk, _ error: Error) -> LocalAIError {
         diagnostic("part \(part.index)/\(part.total) failed after splitting (\(AppleGenerationFailure.classify(error).map { "\($0)" } ?? "unknown"))")
-        return .generation("Apple Intelligence could not analyze part \(part.index) of \(part.total) of this recording, even after splitting it. \(describe(error))")
+        return .generation(String(localized: "Apple Intelligence could not analyze part \(part.index) of \(part.total) of this recording, even after splitting it. \(describe(error))"))
     }
 
     /// Map-reduce diagnostics: unified log plus stderr, so the eval harness sees them.
@@ -424,9 +424,9 @@ actor LocalAIService {
         } catch let error as LanguageModelSession.GenerationError {
             switch error {
             case .exceededContextWindowSize: throw PromptAIError.contextLimit
-            case .guardrailViolation: throw LocalAIError.generation("Apple Intelligence could not process this request because of its safety guardrails.")
-            case .unsupportedLanguageOrLocale: throw LocalAIError.generation("Apple Intelligence does not support this language. Choose a different engine.")
-            default: throw LocalAIError.generation("Apple Intelligence could not complete the request. Try again or choose a different engine.")
+            case .guardrailViolation: throw LocalAIError.generation(String(localized: "Apple Intelligence could not process this request because of its safety guardrails."))
+            case .unsupportedLanguageOrLocale: throw LocalAIError.generation(String(localized: "Apple Intelligence does not support this language. Choose a different engine."))
+            default: throw LocalAIError.generation(String(localized: "Apple Intelligence could not complete the request. Try again or choose a different engine."))
             }
         }
     }
@@ -456,13 +456,13 @@ actor LocalAIService {
     static func message(for reason: SystemLanguageModel.Availability.UnavailableReason) -> String {
         switch reason {
         case .deviceNotEligible:
-            return "Apple Intelligence is not supported on this Mac."
+            return String(localized: "Apple Intelligence is not supported on this Mac.")
         case .appleIntelligenceNotEnabled:
-            return "Apple Intelligence is turned off. Enable it in System Settings → Apple Intelligence & Siri, then try again."
+            return String(localized: "Apple Intelligence is turned off. Enable it in System Settings → Apple Intelligence & Siri, then try again.")
         case .modelNotReady:
-            return "The Apple Intelligence model is still downloading or not ready yet. Try again shortly."
+            return String(localized: "The Apple Intelligence model is still downloading or not ready yet. Try again shortly.")
         @unknown default:
-            return "Apple Intelligence is currently unavailable."
+            return String(localized: "Apple Intelligence is currently unavailable.")
         }
     }
 
@@ -534,10 +534,10 @@ enum AppleGenerationFailure: Equatable, CustomStringConvertible {
     var message: String? {
         switch self {
         case .overflow: "Part of this recording was too dense for Apple Intelligence even after splitting. Try a different AI engine."
-        case .refusal: "Apple Intelligence declined to analyze this content. Try again or choose a different AI engine."
-        case .guardrail: "Apple Intelligence blocked this content with its safety guardrails."
-        case .decoding: "Apple Intelligence returned an incomplete result. Try again or choose a different AI engine."
-        case .unsupportedLanguage: "Apple Intelligence does not support this language. Choose a different output language or AI engine."
+        case .refusal: String(localized: "Apple Intelligence declined to analyze this content. Try again or choose a different AI engine.")
+        case .guardrail: String(localized: "Apple Intelligence blocked this content with its safety guardrails.")
+        case .decoding: String(localized: "Apple Intelligence returned an incomplete result. Try again or choose a different AI engine.")
+        case .unsupportedLanguage: String(localized: "Apple Intelligence does not support this language. Choose a different output language or AI engine.")
         case .other: nil
         }
     }

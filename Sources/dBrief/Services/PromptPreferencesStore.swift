@@ -4,10 +4,10 @@ enum PromptPreferencesError: Error, LocalizedError, Equatable {
     case profileMissing, unsupportedScope, emptyPrompt, conflict
     var errorDescription: String? {
         switch self {
-        case .profileMissing: "This profile was deleted. Your draft is still available to copy."
-        case .unsupportedScope: "This prompt is only available in app defaults."
-        case .emptyPrompt: "Enter instructions or restore the default prompt."
-        case .conflict: "This prompt changed elsewhere. Reload the saved version or keep editing and copy your draft."
+        case .profileMissing: String(localized: "This profile was deleted. Your draft is still available to copy.")
+        case .unsupportedScope: String(localized: "This prompt is only available in app defaults.")
+        case .emptyPrompt: String(localized: "Enter instructions or restore the default prompt.")
+        case .conflict: String(localized: "This prompt changed elsewhere. Reload the saved version or keep editing and copy your draft.")
         }
     }
 }

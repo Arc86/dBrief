@@ -32,7 +32,7 @@ extension IntegrationDispatchService {
             try Task.checkCancellation()
             guard try IntegrationDeliveryBatch.configurationDigests(config, available: available)[.tickTick]
                     == delivery.configurationDigest else {
-                throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
+                throw IntegrationError.executionFailed(String(localized: "Integration settings changed. Restore the original destination before retrying."))
             }
             let token = try tickTickToken()
             guard !token.isEmpty else { throw TickTickError.notSignedIn }

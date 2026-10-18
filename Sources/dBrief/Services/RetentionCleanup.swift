@@ -36,6 +36,29 @@ struct RetentionCleanupResult: Sendable {
     }
 }
 
+/// "Last clean-up" is saved as a small code, not a sentence, so it reads in the
+/// language the app shows now rather than the one it had when the sweep ran.
+/// Older saved sentences are shown as they are.
+enum RetentionCleanupSummary {
+    static let deferred = "deferred"
+
+    static func stored(_ result: RetentionCleanupResult) -> String {
+        "result:\(result.filesDeleted):\(result.bytesFreed):\(result.privacyCleanupFailures)"
+    }
+
+    static func display(_ stored: String) -> String {
+        if stored == deferred {
+            return String(localized: "Cleanup deferred: recovery data could not be safely cleaned, or recording/processing is active.")
+        }
+        let parts = stored.split(separator: ":", omittingEmptySubsequences: false)
+        if parts.count == 4, parts[0] == "result", let files = Int(parts[1]), let bytes = Int64(parts[2]),
+           let failures = Int(parts[3]) {
+            return RetentionCleanupResult(filesDeleted: files, bytesFreed: bytes, privacyCleanupFailures: failures).summary
+        }
+        return stored
+    }
+}
+
 /// Pure cadence decision used by the long-running menu-bar scheduler. Keeping the
 /// date arithmetic separate makes clock-edge behavior deterministic in tests.
 enum RetentionSchedule {

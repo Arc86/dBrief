@@ -8,9 +8,9 @@ enum LibraryWorkNavigation {
         case changed, unavailable, busy
         var errorDescription: String? {
             switch self {
-            case .changed: "This work has changed or is no longer pending. Refresh the library to see its current state."
-            case .unavailable: "The recording is unavailable. Reconnect its storage and refresh the library."
-            case .busy: "Wait for recording, processing or recovery to finish, then try again."
+            case .changed: String(localized: "This work has changed or is no longer pending. Refresh the library to see its current state.")
+            case .unavailable: String(localized: "The recording is unavailable. Reconnect its storage and refresh the library.")
+            case .busy: String(localized: "Wait for recording, processing or recovery to finish, then try again.")
             }
         }
     }
