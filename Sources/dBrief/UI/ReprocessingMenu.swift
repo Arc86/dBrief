@@ -55,7 +55,7 @@ struct ReprocessingMenu: View {
                 operations
             }
         } label: {
-            let title = label ?? (hasTranscript ? "Reprocess" : "Transcribe")
+            let title = label ?? (hasTranscript ? String(localized: "Reprocess") : String(localized: "Transcribe"))
             if stacksLabel {
                 RecordingListTileLabel(title: title, systemImage: "arrow.trianglehead.2.clockwise")
             } else {

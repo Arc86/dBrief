@@ -261,7 +261,7 @@ struct TranscriptDetailView: View, Equatable {
                 ViewerDocumentLayout {
                     viewerHeader(tabs: [], showsAssistantToggle: false, assistantOpen: false,
                                  onToggleAssistant: {}) {
-                        ReprocessingMenu(recording: recording, hasTranscript: false, label: "Transcribe")
+                        ReprocessingMenu(recording: recording, hasTranscript: false, label: String(localized: "Transcribe"))
                             .environment(context.appSettings)
                             .environment(context.recordingManager)
                             .environment(context.appState)
@@ -591,7 +591,7 @@ struct TranscriptDetailView: View, Equatable {
     }
 
     @ViewBuilder private var processingCommands: some View {
-        ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil, label: "Reprocess")
+        ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil, label: String(localized: "Reprocess"))
             .environment(context.appSettings)
             .environment(context.recordingManager)
             .environment(context.appState)

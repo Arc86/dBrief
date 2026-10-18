@@ -1,7 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {},
+    "" : {
+
+    },
     "%.1f / %.0f GB" : {
       "localizations" : {
         "en" : {
@@ -22,7 +24,9 @@
         }
       }
     },
-    "%@  All day" : {},
+    "%@  All day" : {
+
+    },
     "%@ (%lld)" : {
       "localizations" : {
         "en" : {
@@ -33,9 +37,15 @@
         }
       }
     },
-    "%@ (unavailable)" : {},
-    "%@ Details" : {},
-    "%@ accent" : {},
+    "%@ (unavailable)" : {
+
+    },
+    "%@ Details" : {
+
+    },
+    "%@ accent" : {
+
+    },
     "%@ and all %@ voiceprints will be removed. This cannot be undone." : {
       "localizations" : {
         "en" : {
@@ -46,7 +56,9 @@
         }
       }
     },
-    "%@ didn’t finish" : {},
+    "%@ didn’t finish" : {
+
+    },
     "%@ profile · %lld task%@ selected" : {
       "localizations" : {
         "en" : {
@@ -57,7 +69,9 @@
         }
       }
     },
-    "%@ recordings" : {},
+    "%@ recordings" : {
+
+    },
     "%@ requires %@ GB but only %@ GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps%@ if it stalls." : {
       "localizations" : {
         "en" : {
@@ -68,8 +82,12 @@
         }
       }
     },
-    "%@ theme mode" : {},
-    "%@ words" : {},
+    "%@ theme mode" : {
+
+    },
+    "%@ words" : {
+
+    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
@@ -140,7 +158,9 @@
         }
       }
     },
-    "%lld" : {},
+    "%lld" : {
+
+    },
     "%lld %@" : {
       "localizations" : {
         "en" : {
@@ -151,7 +171,9 @@
         }
       }
     },
-    "%lld MB" : {},
+    "%lld MB" : {
+
+    },
     "%lld attendees loaded" : {
       "localizations" : {
         "en" : {
@@ -192,10 +214,18 @@
         }
       }
     },
-    "%lld completed" : {},
-    "%lld min" : {},
-    "%lld minutes" : {},
-    "%lld models · nothing downloads until first use" : {},
+    "%lld completed" : {
+
+    },
+    "%lld min" : {
+
+    },
+    "%lld minutes" : {
+
+    },
+    "%lld models · nothing downloads until first use" : {
+
+    },
     "%lld need attention" : {
       "localizations" : {
         "en" : {
@@ -316,20 +346,48 @@
         }
       }
     },
-    "%lld people selected" : {},
-    "%lld percent" : {},
-    "%lld permissions need attention." : {},
-    "%lld points" : {},
-    "%lld pt" : {},
-    "%lld queued" : {},
-    "%lld s" : {},
-    "%lld seconds" : {},
-    "%lld segments" : {},
-    "%lld selected" : {},
-    "%lld unfinished" : {},
-    "%lld%%" : {},
-    "%lld/5" : {},
-    "(untitled)" : {},
+    "%lld people selected" : {
+
+    },
+    "%lld percent" : {
+
+    },
+    "%lld permissions need attention." : {
+
+    },
+    "%lld points" : {
+
+    },
+    "%lld pt" : {
+
+    },
+    "%lld queued" : {
+
+    },
+    "%lld s" : {
+
+    },
+    "%lld seconds" : {
+
+    },
+    "%lld segments" : {
+
+    },
+    "%lld selected" : {
+
+    },
+    "%lld unfinished" : {
+
+    },
+    "%lld%%" : {
+
+    },
+    "%lld/5" : {
+
+    },
+    "(untitled)" : {
+
+    },
     "**%@** overrides %lld setting%@ on this page." : {
       "localizations" : {
         "en" : {
@@ -340,77 +398,219 @@
         }
       }
     },
-    "1 permission needs attention." : {},
-    "1.7B sounds most natural and follows the voice style. 0.6B uses less memory but ignores the style." : {},
-    "10 seconds" : {},
-    "15 seconds" : {},
-    "30 seconds" : {},
-    "60 seconds" : {},
-    "A clear view of your meeting." : {},
-    "A profile can use its own list instead of this one." : {},
-    "A quick on-device preview (and live chat). The final transcript still comes from the engine above." : {},
-    "A stale list refreshes when you open the meeting picker or start recording." : {},
-    "A voice is added when you name a speaker in a transcript, or with “Save voice to library” from the speaker menu." : {},
-    "AI analysis" : {},
-    "AI analysis is off in Settings → AI analysis." : {},
-    "AI analysis models" : {},
-    "AI chat & summaries" : {},
-    "AI engine" : {},
-    "AI output language" : {},
-    "API key" : {},
-    "Accent" : {},
-    "Access" : {},
-    "Access blocked — check the Claude login and connector permission, then retest." : {},
-    "Accuracy 4/5 (5/5 for Ultra, which FluidAudio measures ahead of v3 on all 24 FLEURS languages and on LibriSpeech) and speed 5/5 (4/5 for Redux) are estimates. NVIDIA reports average English WER of 6.05% for v2 and 6.34% for v3; v3 results vary by language. FluidAudio reports multilingual (FLEURS) WER of 11.67% for Ultra and 13.06% for Redux versus 14.81% for v3, with Redux slightly worse on English. For English-only Phonon-2, FluidAudio reports LibriSpeech test-clean WER of 2.47% versus 2.27% for v3, with the fastest v3-family encoder on the Neural Engine. FluidAudio documents fast Apple Silicon inference. Core ML conversion, audio and hardware affect results." : {},
-    "Accuracy 4/5 and speed 4/5 apply only to SpeechAnalyzer on macOS 26 with a supported locale. Older systems and unsupported-locale fallback remain unscored. RAM and language assets are managed by macOS; assets may download on first use." : {},
-    "Action" : {},
-    "Action items" : {},
-    "Action items (%lld)" : {},
-    "Action status could not be saved" : {},
-    "Actions" : {},
-    "Actions are read-only during reprocessing" : {},
-    "Actions collapsed" : {},
-    "Actions expanded" : {},
-    "Actions for %@" : {},
-    "Active profile" : {},
-    "Add" : {},
-    "Add %@" : {},
-    "Add %lld Items" : {},
-    "Add 1 Item" : {},
-    "Add Conversation to Recording Note" : {},
-    "Add a folder" : {},
-    "Add a header" : {},
-    "Add a mailbox in Settings → Meetings to load meetings." : {},
-    "Add a name" : {},
-    "Add a name, acronym or product…" : {},
-    "Add a phrase to ignore" : {},
-    "Add a question you ask often" : {},
-    "Add action" : {},
-    "Add action items" : {},
-    "Add as Action Items…" : {},
-    "Add company" : {},
-    "Add condition" : {},
-    "Add folder…" : {},
-    "Add header" : {},
-    "Add one from a preset or enter your own server." : {},
-    "Add one to start watching for new audio." : {},
-    "Add profile" : {},
-    "Add this answer to the recording, copy it, or save it" : {},
-    "Add this name (or press Return)" : {},
-    "Add to Summary" : {},
-    "Add to queue" : {},
-    "Add to this recording" : {},
-    "Add your server URL and key in Settings before recording." : {},
-    "Adds the rest of the day to the meeting picker." : {},
-    "Add…" : {},
-    "Advanced" : {},
-    "After %@" : {},
-    "After recording" : {},
-    "All calendars" : {},
-    "All changes saved" : {},
-    "All companies" : {},
-    "All integrations" : {},
-    "All models" : {},
+    "1 permission needs attention." : {
+
+    },
+    "1.7B sounds most natural and follows the voice style. 0.6B uses less memory but ignores the style." : {
+
+    },
+    "10 seconds" : {
+
+    },
+    "15 seconds" : {
+
+    },
+    "30 seconds" : {
+
+    },
+    "60 seconds" : {
+
+    },
+    "A clear view of your meeting." : {
+
+    },
+    "A profile can use its own list instead of this one." : {
+
+    },
+    "A quick on-device preview (and live chat). The final transcript still comes from the engine above." : {
+
+    },
+    "A stale list refreshes when you open the meeting picker or start recording." : {
+
+    },
+    "A voice is added when you name a speaker in a transcript, or with “Save voice to library” from the speaker menu." : {
+
+    },
+    "AI analysis" : {
+
+    },
+    "AI analysis is off in Settings → AI analysis." : {
+
+    },
+    "AI analysis models" : {
+
+    },
+    "AI chat & summaries" : {
+
+    },
+    "AI engine" : {
+
+    },
+    "AI output language" : {
+
+    },
+    "API key" : {
+
+    },
+    "Accent" : {
+
+    },
+    "Access" : {
+
+    },
+    "Access blocked — check the Claude login and connector permission, then retest." : {
+
+    },
+    "Accuracy 4/5 (5/5 for Ultra, which FluidAudio measures ahead of v3 on all 24 FLEURS languages and on LibriSpeech) and speed 5/5 (4/5 for Redux) are estimates. NVIDIA reports average English WER of 6.05% for v2 and 6.34% for v3; v3 results vary by language. FluidAudio reports multilingual (FLEURS) WER of 11.67% for Ultra and 13.06% for Redux versus 14.81% for v3, with Redux slightly worse on English. For English-only Phonon-2, FluidAudio reports LibriSpeech test-clean WER of 2.47% versus 2.27% for v3, with the fastest v3-family encoder on the Neural Engine. FluidAudio documents fast Apple Silicon inference. Core ML conversion, audio and hardware affect results." : {
+
+    },
+    "Accuracy 4/5 and speed 4/5 apply only to SpeechAnalyzer on macOS 26 with a supported locale. Older systems and unsupported-locale fallback remain unscored. RAM and language assets are managed by macOS; assets may download on first use." : {
+
+    },
+    "Action" : {
+
+    },
+    "Action items" : {
+
+    },
+    "Action items (%lld)" : {
+
+    },
+    "Action status could not be saved" : {
+
+    },
+    "Actions" : {
+
+    },
+    "Actions are read-only during reprocessing" : {
+
+    },
+    "Actions collapsed" : {
+
+    },
+    "Actions expanded" : {
+
+    },
+    "Actions for %@" : {
+
+    },
+    "Active profile" : {
+
+    },
+    "Add" : {
+
+    },
+    "Add %@" : {
+
+    },
+    "Add %lld Items" : {
+
+    },
+    "Add 1 Item" : {
+
+    },
+    "Add Conversation to Recording Note" : {
+
+    },
+    "Add a folder" : {
+
+    },
+    "Add a header" : {
+
+    },
+    "Add a mailbox in Settings → Meetings to load meetings." : {
+
+    },
+    "Add a name" : {
+
+    },
+    "Add a name, acronym or product…" : {
+
+    },
+    "Add a phrase to ignore" : {
+
+    },
+    "Add a question you ask often" : {
+
+    },
+    "Add action" : {
+
+    },
+    "Add action items" : {
+
+    },
+    "Add as Action Items…" : {
+
+    },
+    "Add company" : {
+
+    },
+    "Add condition" : {
+
+    },
+    "Add folder…" : {
+
+    },
+    "Add header" : {
+
+    },
+    "Add one from a preset or enter your own server." : {
+
+    },
+    "Add one to start watching for new audio." : {
+
+    },
+    "Add profile" : {
+
+    },
+    "Add this answer to the recording, copy it, or save it" : {
+
+    },
+    "Add this name (or press Return)" : {
+
+    },
+    "Add to Summary" : {
+
+    },
+    "Add to queue" : {
+
+    },
+    "Add to this recording" : {
+
+    },
+    "Add your server URL and key in Settings before recording." : {
+
+    },
+    "Adds the rest of the day to the meeting picker." : {
+
+    },
+    "Add…" : {
+
+    },
+    "Advanced" : {
+
+    },
+    "After %@" : {
+
+    },
+    "After recording" : {
+
+    },
+    "All calendars" : {
+
+    },
+    "All changes saved" : {
+
+    },
+    "All companies" : {
+
+    },
+    "All integrations" : {
+
+    },
+    "All models" : {
+
+    },
     "All of %@’s voiceprints move into the person you pick, and “%@” is removed." : {
       "localizations" : {
         "en" : {
@@ -421,13 +621,27 @@
         }
       }
     },
-    "All voices reviewed" : {},
-    "Allowed" : {},
-    "Allow…" : {},
-    "Already recording" : {},
-    "Analysis" : {},
-    "Analyze tags & sentiment" : {},
-    "Analyzed" : {},
+    "All voices reviewed" : {
+
+    },
+    "Allowed" : {
+
+    },
+    "Allow…" : {
+
+    },
+    "Already recording" : {
+
+    },
+    "Analysis" : {
+
+    },
+    "Analyze tags & sentiment" : {
+
+    },
+    "Analyzed" : {
+
+    },
     "Another person is already named “%@”. Merge “%@” into them?" : {
       "localizations" : {
         "en" : {
@@ -438,189 +652,555 @@
         }
       }
     },
-    "Another recording is processing. Process saves this recording and queues it to run automatically." : {},
-    "Answers cite timestamps you can click to jump to that moment." : {},
-    "Any status" : {},
-    "App default: %@" : {},
-    "App, storage, recovery and recording-lifecycle events. Audio, transcripts, meeting titles, names, file paths and credentials are excluded." : {},
-    "Apple Intelligence" : {},
-    "Apple Notes" : {},
-    "Apple Reminders" : {},
-    "Apple Speech uses the system language when set to Auto." : {},
-    "Apple SpeechAnalyzer" : {},
-    "Application" : {},
-    "Applies to AI improvements. Audio uses your configured voice." : {},
-    "Applies to this child process. An inline environment assignment can override it." : {},
-    "Apply to" : {},
-    "Apps to watch" : {},
-    "Argmax benchmark and methodology" : {},
-    "Ascending" : {},
-    "Ask Again" : {},
-    "Ask a follow-up…" : {},
-    "Ask about this recording" : {},
-    "Ask about this recording…" : {},
-    "Ask anything about this recording" : {},
-    "Ask by voice" : {},
-    "Ask by voice (macOS Dictation)" : {},
-    "Ask dBrief AI" : {},
-    "Ask me" : {},
-    "Ask this question of every part of the recording, so nothing is missed. Stop cancels it." : {},
-    "Ask: %@" : {},
-    "Assistant" : {},
-    "Assistant width" : {},
-    "At least %lld attempts were omitted from the stored history." : {},
-    "Attendee load failed — try again" : {},
-    "Attendee loading is set to Never in Settings → Meetings." : {},
-    "Attendee roster unavailable" : {},
-    "Attendees" : {},
-    "Attendees (%lld)" : {},
-    "Attendees omitted: meeting exceeds your limit (%lld invitees)" : {},
-    "Audio file is unavailable" : {},
-    "Audio file not found" : {},
-    "Audio file…" : {},
-    "Audio position cannot be changed." : {},
-    "Audio quality" : {},
-    "Audio saving progress" : {},
-    "Audio unavailable" : {},
-    "Auto-delete" : {},
-    "Auto-detect" : {},
-    "Auto-detect works best for mixed-language meetings." : {},
-    "Auto-send destinations" : {},
-    "Automatic (system language)" : {},
-    "Automatic actions wait 10 seconds so you can choose Review instead. Queue saves the work for later." : {},
-    "Automatic actions wait 10 seconds so you can choose Review instead. Queued work waits until you process it." : {},
-    "Automatic detection" : {},
-    "Automatic selection" : {},
-    "Available even when AI analysis is off." : {},
-    "Avg. audio" : {},
-    "Avg. processing" : {},
-    "Base URL" : {},
-    "Based on the previous transcript" : {},
-    "Before you record" : {},
-    "Between 5 and 1440." : {},
-    "Blank is automatic (%@ tokens). Covers analysis and chat, including reasoning." : {},
-    "Blocked by a device management profile or Screen Time." : {},
-    "Brief ready" : {},
-    "CLI command" : {},
-    "Calendar" : {},
-    "Calendar access" : {},
-    "Calendar access blocked. Check Claude connector approval, then press Refresh." : {},
-    "Calendar app" : {},
-    "Calendar attendees" : {},
-    "Calendar attendees are already included with the selected meeting." : {},
-    "Calendar linked" : {},
-    "Calendar name" : {},
-    "Calendar requests use your Claude usage" : {},
-    "Calendars" : {},
-    "Call detection" : {},
-    "Call detection is off" : {},
-    "Cancel" : {},
-    "Capture" : {},
-    "Captures the other side of calls (system audio)." : {},
-    "Change model…" : {},
-    "Change symbol" : {},
-    "Changes apply to this profile" : {},
-    "Chat beside a transcript" : {},
-    "Chat paused" : {},
-    "Chat prompts" : {},
-    "Chat text size" : {},
-    "Chat uses" : {},
-    "Check" : {},
-    "Check again" : {},
-    "Check for updates" : {},
-    "Check for updates automatically" : {},
-    "Check now" : {},
-    "Check the whole recording (%@)" : {},
-    "Checking calendar context for profile selection…" : {},
-    "Checking models…" : {},
-    "Checking saved recording results…" : {},
-    "Checking yt-dlp for updates…" : {},
-    "Checking…" : {},
-    "Chip title" : {},
-    "Choose Claude Code for a Claude wrapper command. Other commands keep their own settings." : {},
-    "Choose Review instead to change this recording’s options." : {},
-    "Choose a Font" : {},
-    "Choose a meeting" : {},
-    "Choose a meeting to load its attendees." : {},
-    "Choose a page or database" : {},
-    "Choose a profile for this recording" : {},
-    "Choose a recording and run a test." : {},
-    "Choose a recording to view its transcript." : {},
-    "Choose a supported language…" : {},
-    "Choose a transcription model" : {},
-    "Choose a voice from the list to give it a name." : {},
-    "Choose…" : {},
-    "Chunks are transcribed in order and merged. Native cloud diarization uses one file." : {},
-    "Claude CLI" : {},
-    "Claude Code" : {},
-    "Claude default" : {},
-    "Claude launcher" : {},
-    "Cleanup" : {},
-    "Clear Chat" : {},
-    "Clear Chat…" : {},
-    "Clear cached meetings" : {},
-    "Clear filter" : {},
-    "Clear filters" : {},
-    "Clear performance stats" : {},
-    "Clear performance stats?" : {},
-    "Clear search" : {},
-    "Clear settings search" : {},
-    "Clear stats" : {},
-    "Clear this brief from the menu; the recording stays in your library" : {},
-    "Clear this chat?" : {},
-    "Clear “This is me”" : {},
-    "Clearer" : {},
-    "Click to edit this name" : {},
-    "Click to rename · used for file naming (YYYY-MM-DD_HHMM_[meeting-title].md)" : {},
-    "Clicking the prompt cancels the timer." : {},
-    "Close" : {},
-    "Close URL input" : {},
-    "Close inspector" : {},
-    "Close privacy receipt" : {},
-    "Close spoken summary" : {},
-    "Collapse %@" : {},
-    "Collapse recording controls" : {},
-    "Collapse summary" : {},
-    "Collapsed" : {},
-    "Colour" : {},
-    "Comma-separated tags" : {},
-    "Command" : {},
-    "Command default" : {},
-    "Command ran" : {},
-    "Company" : {},
-    "Completed" : {},
-    "Compute, warm-up, large files" : {},
-    "Conditions" : {},
-    "Configured endpoints" : {},
-    "Confirm speaker" : {},
-    "Confirm speakers" : {},
-    "Conflicts with managed options" : {},
-    "Connected" : {},
-    "Connected — partial data returned for the test window." : {},
-    "Connected — the connector answered the test window%@." : {},
-    "Connection" : {},
-    "Connection successful" : {},
-    "Contains text" : {},
-    "Continue" : {},
-    "Conversation options" : {},
-    "Copied" : {},
-    "Copy" : {},
-    "Copy %@" : {},
-    "Copy Conversation" : {},
-    "Copy Notes" : {},
-    "Copy Transcript" : {},
-    "Copy as Plain Text" : {},
-    "Copy the message" : {},
-    "Copy the summary and action items" : {},
-    "Copy the transcript (no summary yet)" : {},
-    "Core ML variants" : {},
-    "Could not check yt-dlp updates: %@" : {},
-    "Could not read aloud: %@" : {},
-    "Could not restore results" : {},
-    "Couldn't create the spoken summary" : {},
-    "Couldn’t export answer" : {},
-    "Couldn’t finish: %@ Try again, or choose another action." : {},
-    "Couldn’t refresh" : {},
+    "Another recording is processing. Process saves this recording and queues it to run automatically." : {
+
+    },
+    "Answers cite timestamps you can click to jump to that moment." : {
+
+    },
+    "Any status" : {
+
+    },
+    "App default: %@" : {
+
+    },
+    "App, storage, recovery and recording-lifecycle events. Audio, transcripts, meeting titles, names, file paths and credentials are excluded." : {
+
+    },
+    "Apple Intelligence" : {
+
+    },
+    "Apple Notes" : {
+
+    },
+    "Apple Reminders" : {
+
+    },
+    "Apple Speech uses the system language when set to Auto." : {
+
+    },
+    "Apple SpeechAnalyzer" : {
+
+    },
+    "Application" : {
+
+    },
+    "Applies to AI improvements. Audio uses your configured voice." : {
+
+    },
+    "Applies to this child process. An inline environment assignment can override it." : {
+
+    },
+    "Apply to" : {
+
+    },
+    "Apps to watch" : {
+
+    },
+    "Argmax benchmark and methodology" : {
+
+    },
+    "Ascending" : {
+
+    },
+    "Ask Again" : {
+
+    },
+    "Ask a follow-up…" : {
+
+    },
+    "Ask about this recording" : {
+
+    },
+    "Ask about this recording…" : {
+
+    },
+    "Ask anything about this recording" : {
+
+    },
+    "Ask by voice" : {
+
+    },
+    "Ask by voice (macOS Dictation)" : {
+
+    },
+    "Ask dBrief AI" : {
+
+    },
+    "Ask me" : {
+
+    },
+    "Ask this question of every part of the recording, so nothing is missed. Stop cancels it." : {
+
+    },
+    "Ask: %@" : {
+
+    },
+    "Assistant" : {
+
+    },
+    "Assistant width" : {
+
+    },
+    "At least %lld attempts were omitted from the stored history." : {
+
+    },
+    "Attendee load failed — try again" : {
+
+    },
+    "Attendee loading is set to Never in Settings → Meetings." : {
+
+    },
+    "Attendee roster unavailable" : {
+
+    },
+    "Attendees" : {
+
+    },
+    "Attendees (%lld)" : {
+
+    },
+    "Attendees omitted: meeting exceeds your limit (%lld invitees)" : {
+
+    },
+    "Audio file is unavailable" : {
+
+    },
+    "Audio file not found" : {
+
+    },
+    "Audio file…" : {
+
+    },
+    "Audio position cannot be changed." : {
+
+    },
+    "Audio quality" : {
+
+    },
+    "Audio saving progress" : {
+
+    },
+    "Audio unavailable" : {
+
+    },
+    "Auto-delete" : {
+
+    },
+    "Auto-detect" : {
+
+    },
+    "Auto-detect works best for mixed-language meetings." : {
+
+    },
+    "Auto-send destinations" : {
+
+    },
+    "Automatic (system language)" : {
+
+    },
+    "Automatic actions wait 10 seconds so you can choose Review instead. Queue saves the work for later." : {
+
+    },
+    "Automatic actions wait 10 seconds so you can choose Review instead. Queued work waits until you process it." : {
+
+    },
+    "Automatic detection" : {
+
+    },
+    "Automatic selection" : {
+
+    },
+    "Available even when AI analysis is off." : {
+
+    },
+    "Avg. audio" : {
+
+    },
+    "Avg. processing" : {
+
+    },
+    "Base URL" : {
+
+    },
+    "Based on the previous transcript" : {
+
+    },
+    "Before you record" : {
+
+    },
+    "Between 5 and 1440." : {
+
+    },
+    "Blank is automatic (%@ tokens). Covers analysis and chat, including reasoning." : {
+
+    },
+    "Blocked by a device management profile or Screen Time." : {
+
+    },
+    "Brief ready" : {
+
+    },
+    "CLI command" : {
+
+    },
+    "Calendar" : {
+
+    },
+    "Calendar access" : {
+
+    },
+    "Calendar access blocked. Check Claude connector approval, then press Refresh." : {
+
+    },
+    "Calendar app" : {
+
+    },
+    "Calendar attendees" : {
+
+    },
+    "Calendar attendees are already included with the selected meeting." : {
+
+    },
+    "Calendar linked" : {
+
+    },
+    "Calendar name" : {
+
+    },
+    "Calendar requests use your Claude usage" : {
+
+    },
+    "Calendars" : {
+
+    },
+    "Call detection" : {
+
+    },
+    "Call detection is off" : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Capture" : {
+
+    },
+    "Captures the other side of calls (system audio)." : {
+
+    },
+    "Change model…" : {
+
+    },
+    "Change symbol" : {
+
+    },
+    "Changes apply to this profile" : {
+
+    },
+    "Chat beside a transcript" : {
+
+    },
+    "Chat paused" : {
+
+    },
+    "Chat prompts" : {
+
+    },
+    "Chat text size" : {
+
+    },
+    "Chat uses" : {
+
+    },
+    "Check" : {
+
+    },
+    "Check again" : {
+
+    },
+    "Check for updates" : {
+
+    },
+    "Check for updates automatically" : {
+
+    },
+    "Check now" : {
+
+    },
+    "Check the whole recording (%@)" : {
+
+    },
+    "Checking calendar context for profile selection…" : {
+
+    },
+    "Checking models…" : {
+
+    },
+    "Checking saved recording results…" : {
+
+    },
+    "Checking yt-dlp for updates…" : {
+
+    },
+    "Checking…" : {
+
+    },
+    "Chip title" : {
+
+    },
+    "Choose Claude Code for a Claude wrapper command. Other commands keep their own settings." : {
+
+    },
+    "Choose Review instead to change this recording’s options." : {
+
+    },
+    "Choose a Font" : {
+
+    },
+    "Choose a meeting" : {
+
+    },
+    "Choose a meeting to load its attendees." : {
+
+    },
+    "Choose a page or database" : {
+
+    },
+    "Choose a profile for this recording" : {
+
+    },
+    "Choose a recording and run a test." : {
+
+    },
+    "Choose a recording to view its transcript." : {
+
+    },
+    "Choose a supported language…" : {
+
+    },
+    "Choose a transcription model" : {
+
+    },
+    "Choose a voice from the list to give it a name." : {
+
+    },
+    "Choose…" : {
+
+    },
+    "Chunks are transcribed in order and merged. Native cloud diarization uses one file." : {
+
+    },
+    "Claude CLI" : {
+
+    },
+    "Claude Code" : {
+
+    },
+    "Claude default" : {
+
+    },
+    "Claude launcher" : {
+
+    },
+    "Cleanup" : {
+
+    },
+    "Clear Chat" : {
+
+    },
+    "Clear Chat…" : {
+
+    },
+    "Clear cached meetings" : {
+
+    },
+    "Clear filter" : {
+
+    },
+    "Clear filters" : {
+
+    },
+    "Clear performance stats" : {
+
+    },
+    "Clear performance stats?" : {
+
+    },
+    "Clear search" : {
+
+    },
+    "Clear settings search" : {
+
+    },
+    "Clear stats" : {
+
+    },
+    "Clear this brief from the menu; the recording stays in your library" : {
+
+    },
+    "Clear this chat?" : {
+
+    },
+    "Clear “This is me”" : {
+
+    },
+    "Clearer" : {
+
+    },
+    "Click to edit this name" : {
+
+    },
+    "Click to rename · used for file naming (YYYY-MM-DD_HHMM_[meeting-title].md)" : {
+
+    },
+    "Clicking the prompt cancels the timer." : {
+
+    },
+    "Close" : {
+
+    },
+    "Close URL input" : {
+
+    },
+    "Close inspector" : {
+
+    },
+    "Close privacy receipt" : {
+
+    },
+    "Close spoken summary" : {
+
+    },
+    "Collapse %@" : {
+
+    },
+    "Collapse recording controls" : {
+
+    },
+    "Collapse summary" : {
+
+    },
+    "Collapsed" : {
+
+    },
+    "Colour" : {
+
+    },
+    "Comma-separated tags" : {
+
+    },
+    "Command" : {
+
+    },
+    "Command default" : {
+
+    },
+    "Command ran" : {
+
+    },
+    "Company" : {
+
+    },
+    "Completed" : {
+
+    },
+    "Compute, warm-up, large files" : {
+
+    },
+    "Conditions" : {
+
+    },
+    "Configured endpoints" : {
+
+    },
+    "Confirm speaker" : {
+
+    },
+    "Confirm speakers" : {
+
+    },
+    "Conflicts with managed options" : {
+
+    },
+    "Connected" : {
+
+    },
+    "Connected — partial data returned for the test window." : {
+
+    },
+    "Connected — the connector answered the test window%@." : {
+
+    },
+    "Connection" : {
+
+    },
+    "Connection successful" : {
+
+    },
+    "Contains text" : {
+
+    },
+    "Continue" : {
+
+    },
+    "Conversation options" : {
+
+    },
+    "Copied" : {
+
+    },
+    "Copy" : {
+
+    },
+    "Copy %@" : {
+
+    },
+    "Copy Conversation" : {
+
+    },
+    "Copy Notes" : {
+
+    },
+    "Copy Transcript" : {
+
+    },
+    "Copy as Plain Text" : {
+
+    },
+    "Copy the message" : {
+
+    },
+    "Copy the summary and action items" : {
+
+    },
+    "Copy the transcript (no summary yet)" : {
+
+    },
+    "Core ML variants" : {
+
+    },
+    "Could not check yt-dlp updates: %@" : {
+
+    },
+    "Could not read aloud: %@" : {
+
+    },
+    "Could not restore results" : {
+
+    },
+    "Couldn't create the spoken summary" : {
+
+    },
+    "Couldn’t export answer" : {
+
+    },
+    "Couldn’t finish: %@ Try again, or choose another action." : {
+
+    },
+    "Couldn’t refresh" : {
+
+    },
     "Covers %@. Choose Whisper for %@." : {
       "localizations" : {
         "en" : {
@@ -631,14 +1211,30 @@
         }
       }
     },
-    "Current model" : {},
-    "Currently using %@" : {},
-    "Custom" : {},
-    "Custom accent color" : {},
-    "Custom language code" : {},
-    "Custom minutes" : {},
-    "Custom model ID" : {},
-    "Custom name…" : {},
+    "Current model" : {
+
+    },
+    "Currently using %@" : {
+
+    },
+    "Custom" : {
+
+    },
+    "Custom accent color" : {
+
+    },
+    "Custom language code" : {
+
+    },
+    "Custom minutes" : {
+
+    },
+    "Custom model ID" : {
+
+    },
+    "Custom name…" : {
+
+    },
     "Custom phrases (%lld) · %lld built-in" : {
       "localizations" : {
         "en" : {
@@ -649,178 +1245,522 @@
         }
       }
     },
-    "Custom profile" : {},
-    "Custom prompts" : {},
-    "Custom…" : {},
-    "Dark mode" : {},
-    "Date" : {},
-    "Decrease prompt text size" : {},
-    "Default" : {},
-    "Default calendar" : {},
-    "Default profile" : {},
-    "Default tasks" : {},
-    "Delete" : {},
-    "Delete %@" : {},
-    "Delete Recording" : {},
-    "Delete Recording…" : {},
-    "Delete after" : {},
-    "Delete old recordings…" : {},
-    "Delete old transcripts…" : {},
-    "Delete profile?" : {},
-    "Delete recording" : {},
-    "Delete selected profile" : {},
-    "Delete this prompt" : {},
-    "Delete this recording" : {},
-    "Delete this recording?" : {},
-    "Delete “%@”?" : {},
-    "Delete…" : {},
-    "Deletion could not finish. Some files may remain; check storage before retrying." : {},
-    "Denied" : {},
-    "Descending" : {},
-    "Detect Speakers Again…" : {},
-    "Detect speakers" : {},
-    "Detected speakers" : {},
-    "Diagnostics" : {},
-    "Discard" : {},
-    "Discard Attempt" : {},
-    "Discard Changes" : {},
-    "Discard Run and Retranscribe…" : {},
-    "Discard Run and Transcribe…" : {},
-    "Discard changes to the summary?" : {},
-    "Discard spoken summary" : {},
-    "Discard this reprocess?" : {},
-    "Discard your changes?" : {},
-    "Discards this reprocess. The recording's current results stay." : {},
-    "Dismiss" : {},
-    "Dismiss speaker-name prompt" : {},
-    "Dismiss the prompt after" : {},
-    "Display options" : {},
-    "Done" : {},
-    "Done with a warning" : {},
-    "Download" : {},
-    "Download model" : {},
-    "Download models" : {},
-    "Download the models for your selected transcription and AI features. Once downloaded, these models run on your Mac." : {},
-    "Download yt-dlp (~15 MB)" : {},
-    "Downloaded" : {},
-    "Downloading audio…" : {},
-    "Downloading yt-dlp…" : {},
-    "Downloading…" : {},
-    "Drag to move recording controls" : {},
-    "Drop silence hallucinations" : {},
-    "Duplicate" : {},
-    "Duration %@" : {},
-    "Duration in the menu bar" : {},
-    "Duration unavailable" : {},
-    "Dutch" : {},
-    "Each delivery has an Idempotency-Key; retry unconfirmed sends with Integrations… on the recording" : {},
-    "Edit" : {},
-    "Edit %@" : {},
-    "Edit %@ prompt" : {},
-    "Edit Question" : {},
-    "Edit actions and tags" : {},
-    "Edit in Profiles" : {},
-    "Edit profile" : {},
-    "Edit to rename the recording" : {},
-    "Editing" : {},
-    "Editing **%@**. It is selected automatically right now; your saved selection is unchanged." : {},
-    "Editing **%@**. Opening this editor doesn't select it for recording." : {},
-    "Editing “%@”" : {},
-    "Editor" : {},
-    "Editor section" : {},
-    "Editorial estimates, reviewed 13 September 2026. These are broad selection bands, not dBrief benchmarks or guaranteed Mac performance." : {},
-    "Edit…" : {},
-    "Effort provider" : {},
-    "Elapsed time %@" : {},
-    "Enable Microphone, Screen Recording, or both to continue." : {},
-    "Enable at least one audio source. Use Microphone for your voice, Screen Recording for system audio, or both for calls." : {},
-    "End-to-end" : {},
-    "Endpoint" : {},
-    "Engine" : {},
-    "English" : {},
-    "English only" : {},
-    "English only. Choose a multilingual model for %@." : {},
-    "Enter a mailbox to connect" : {},
-    "Enter a positive whole number, or leave blank for automatic." : {},
-    "Error details" : {},
-    "Estimated %@; higher is better" : {},
-    "Estimated share of installed RAM" : {},
-    "Estimated share of installed memory" : {},
-    "Evernote" : {},
-    "Every condition must match. Email domains match exactly. Empty conditions never match." : {},
-    "Evidence varies by workload: an independent LibriSpeech evaluation found accuracy close to large v3; Argmax's earlier macOS 26 beta earnings-call benchmark placed it between Whisper Base and Small. The conservative band reflects that uncertainty." : {},
-    "Exact domain, e.g. acme.com" : {},
-    "Examples" : {},
-    "Execution evidence for this recording. No audio, transcript text, prompts, or credentials are stored in the receipt." : {},
-    "Exit Focus Reader" : {},
-    "Exit Focus Reader (Esc)" : {},
-    "Expand %@" : {},
-    "Expand a row to see where the time went" : {},
-    "Expand recording controls" : {},
-    "Expand summary" : {},
-    "Expanded" : {},
-    "Export All…" : {},
-    "Export Selected…" : {},
-    "Export diagnostics…" : {},
-    "Exported Markdown and integrations don't keep this font." : {},
-    "Extract action items" : {},
-    "Failed" : {},
-    "Families follow Claude's current aliases; versions stay pinned. Availability depends on your Claude account." : {},
-    "Fastest model" : {},
-    "Fetch invitees during processing; you can start immediately." : {},
-    "Fetched from Hugging Face." : {},
-    "Field" : {},
-    "Files dropped in a folder are copied into dBrief and processed like a recording. The original stays where it is." : {},
-    "Filter by recording status" : {},
-    "Finish or discard the pending reprocessing attempt to use chat." : {},
-    "Finished with issues" : {},
-    "Finishing save… Please keep dBrief open." : {},
-    "Floating recording window" : {},
-    "FluidAudio Apple Silicon implementation" : {},
-    "Focus Reader" : {},
-    "Folders" : {},
-    "Follow System switches between your light and dark theme with macOS." : {},
-    "Follows the macOS default unless you pick one." : {},
-    "Font" : {},
-    "For on-device and Local CLI analysis" : {},
-    "For remote analysis and chat" : {},
-    "For remote transcription" : {},
-    "For this window only · app settings stay unchanged" : {},
-    "Forget" : {},
-    "Forget %lld" : {},
-    "Forget %lld voices" : {},
-    "Forget Voiceprint" : {},
-    "Forget this voiceprint" : {},
-    "Forget this voiceprint?" : {},
-    "Forget voice" : {},
-    "Forget voiceprint from %@" : {},
-    "Gemma 4 E4B Local" : {},
-    "Generate Spoken Summary" : {},
-    "Generate summary" : {},
-    "Generate summary, actions, and tags" : {},
-    "Generating summary and analysis…" : {},
-    "Get Started" : {},
-    "Go" : {},
-    "Google Keep" : {},
-    "Granted" : {},
-    "Group by company" : {},
-    "Header" : {},
-    "Headers" : {},
-    "Hidden" : {},
-    "Hide %@ recordings" : {},
-    "Hide actions for %@" : {},
-    "Hide assistant" : {},
-    "Hide dBrief AI" : {},
-    "Hide dBrief AI assistant" : {},
-    "Hide recording sidebar" : {},
-    "Hide sidebar" : {},
-    "Hide symbols" : {},
-    "Hides the details of this attempt." : {},
-    "Hides this run. The recording and its current results stay; the unfinished run can't be resumed afterwards." : {},
-    "How automation works" : {},
-    "I understand my responsibility to use dBrief lawfully and obtain any required consent." : {},
-    "Identify speakers" : {},
-    "Import Audio File…" : {},
+    "Custom profile" : {
+
+    },
+    "Custom prompts" : {
+
+    },
+    "Custom…" : {
+
+    },
+    "Dark mode" : {
+
+    },
+    "Date" : {
+
+    },
+    "Decrease prompt text size" : {
+
+    },
+    "Default" : {
+
+    },
+    "Default calendar" : {
+
+    },
+    "Default profile" : {
+
+    },
+    "Default tasks" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Delete %@" : {
+
+    },
+    "Delete Recording" : {
+
+    },
+    "Delete Recording…" : {
+
+    },
+    "Delete after" : {
+
+    },
+    "Delete old recordings…" : {
+
+    },
+    "Delete old transcripts…" : {
+
+    },
+    "Delete profile?" : {
+
+    },
+    "Delete recording" : {
+
+    },
+    "Delete selected profile" : {
+
+    },
+    "Delete this prompt" : {
+
+    },
+    "Delete this recording" : {
+
+    },
+    "Delete this recording?" : {
+
+    },
+    "Delete “%@”?" : {
+
+    },
+    "Delete…" : {
+
+    },
+    "Deletion could not finish. Some files may remain; check storage before retrying." : {
+
+    },
+    "Denied" : {
+
+    },
+    "Descending" : {
+
+    },
+    "Detect Speakers Again…" : {
+
+    },
+    "Detect speakers" : {
+
+    },
+    "Detected speakers" : {
+
+    },
+    "Diagnostics" : {
+
+    },
+    "Discard" : {
+
+    },
+    "Discard Attempt" : {
+
+    },
+    "Discard Changes" : {
+
+    },
+    "Discard Run and Retranscribe…" : {
+
+    },
+    "Discard Run and Transcribe…" : {
+
+    },
+    "Discard changes to the summary?" : {
+
+    },
+    "Discard spoken summary" : {
+
+    },
+    "Discard this reprocess?" : {
+
+    },
+    "Discard your changes?" : {
+
+    },
+    "Discards this reprocess. The recording's current results stay." : {
+
+    },
+    "Dismiss" : {
+
+    },
+    "Dismiss speaker-name prompt" : {
+
+    },
+    "Dismiss the prompt after" : {
+
+    },
+    "Display options" : {
+
+    },
+    "Done" : {
+
+    },
+    "Done with a warning" : {
+
+    },
+    "Download" : {
+
+    },
+    "Download model" : {
+
+    },
+    "Download models" : {
+
+    },
+    "Download the models for your selected transcription and AI features. Once downloaded, these models run on your Mac." : {
+
+    },
+    "Download yt-dlp (~15 MB)" : {
+
+    },
+    "Downloaded" : {
+
+    },
+    "Downloading audio…" : {
+
+    },
+    "Downloading yt-dlp…" : {
+
+    },
+    "Downloading…" : {
+
+    },
+    "Drag to move recording controls" : {
+
+    },
+    "Drop silence hallucinations" : {
+
+    },
+    "Duplicate" : {
+
+    },
+    "Duration %@" : {
+
+    },
+    "Duration in the menu bar" : {
+
+    },
+    "Duration unavailable" : {
+
+    },
+    "Dutch" : {
+
+    },
+    "Each delivery has an Idempotency-Key; retry unconfirmed sends with Integrations… on the recording" : {
+
+    },
+    "Edit" : {
+
+    },
+    "Edit %@" : {
+
+    },
+    "Edit %@ prompt" : {
+
+    },
+    "Edit Question" : {
+
+    },
+    "Edit actions and tags" : {
+
+    },
+    "Edit in Profiles" : {
+
+    },
+    "Edit profile" : {
+
+    },
+    "Edit to rename the recording" : {
+
+    },
+    "Editing" : {
+
+    },
+    "Editing **%@**. It is selected automatically right now; your saved selection is unchanged." : {
+
+    },
+    "Editing **%@**. Opening this editor doesn't select it for recording." : {
+
+    },
+    "Editing “%@”" : {
+
+    },
+    "Editor" : {
+
+    },
+    "Editor section" : {
+
+    },
+    "Editorial estimates, reviewed 13 September 2026. These are broad selection bands, not dBrief benchmarks or guaranteed Mac performance." : {
+
+    },
+    "Edit…" : {
+
+    },
+    "Effort provider" : {
+
+    },
+    "Elapsed time %@" : {
+
+    },
+    "Enable Microphone, Screen Recording, or both to continue." : {
+
+    },
+    "Enable at least one audio source. Use Microphone for your voice, Screen Recording for system audio, or both for calls." : {
+
+    },
+    "End-to-end" : {
+
+    },
+    "Endpoint" : {
+
+    },
+    "Engine" : {
+
+    },
+    "English" : {
+
+    },
+    "English only" : {
+
+    },
+    "English only. Choose a multilingual model for %@." : {
+
+    },
+    "Enter a mailbox to connect" : {
+
+    },
+    "Enter a positive whole number, or leave blank for automatic." : {
+
+    },
+    "Error details" : {
+
+    },
+    "Estimated %@; higher is better" : {
+
+    },
+    "Estimated share of installed RAM" : {
+
+    },
+    "Estimated share of installed memory" : {
+
+    },
+    "Evernote" : {
+
+    },
+    "Every condition must match. Email domains match exactly. Empty conditions never match." : {
+
+    },
+    "Evidence varies by workload: an independent LibriSpeech evaluation found accuracy close to large v3; Argmax's earlier macOS 26 beta earnings-call benchmark placed it between Whisper Base and Small. The conservative band reflects that uncertainty." : {
+
+    },
+    "Exact domain, e.g. acme.com" : {
+
+    },
+    "Examples" : {
+
+    },
+    "Execution evidence for this recording. No audio, transcript text, prompts, or credentials are stored in the receipt." : {
+
+    },
+    "Exit Focus Reader" : {
+
+    },
+    "Exit Focus Reader (Esc)" : {
+
+    },
+    "Expand %@" : {
+
+    },
+    "Expand a row to see where the time went" : {
+
+    },
+    "Expand recording controls" : {
+
+    },
+    "Expand summary" : {
+
+    },
+    "Expanded" : {
+
+    },
+    "Export All…" : {
+
+    },
+    "Export Selected…" : {
+
+    },
+    "Export diagnostics…" : {
+
+    },
+    "Exported Markdown and integrations don't keep this font." : {
+
+    },
+    "Extract action items" : {
+
+    },
+    "Failed" : {
+
+    },
+    "Families follow Claude's current aliases; versions stay pinned. Availability depends on your Claude account." : {
+
+    },
+    "Fastest model" : {
+
+    },
+    "Fetch invitees during processing; you can start immediately." : {
+
+    },
+    "Fetched from Hugging Face." : {
+
+    },
+    "Field" : {
+
+    },
+    "Files dropped in a folder are copied into dBrief and processed like a recording. The original stays where it is." : {
+
+    },
+    "Filter by recording status" : {
+
+    },
+    "Finish or discard the pending reprocessing attempt to use chat." : {
+
+    },
+    "Finished with issues" : {
+
+    },
+    "Finishing save… Please keep dBrief open." : {
+
+    },
+    "Floating recording window" : {
+
+    },
+    "FluidAudio Apple Silicon implementation" : {
+
+    },
+    "Focus Reader" : {
+
+    },
+    "Folders" : {
+
+    },
+    "Follow System switches between your light and dark theme with macOS." : {
+
+    },
+    "Follows the macOS default unless you pick one." : {
+
+    },
+    "Font" : {
+
+    },
+    "For on-device and Local CLI analysis" : {
+
+    },
+    "For remote analysis and chat" : {
+
+    },
+    "For remote transcription" : {
+
+    },
+    "For this window only · app settings stay unchanged" : {
+
+    },
+    "Forget" : {
+
+    },
+    "Forget %lld" : {
+
+    },
+    "Forget %lld voices" : {
+
+    },
+    "Forget Voiceprint" : {
+
+    },
+    "Forget this voiceprint" : {
+
+    },
+    "Forget this voiceprint?" : {
+
+    },
+    "Forget voice" : {
+
+    },
+    "Forget voiceprint from %@" : {
+
+    },
+    "Gemma 4 E4B Local" : {
+
+    },
+    "Generate Spoken Summary" : {
+
+    },
+    "Generate summary" : {
+
+    },
+    "Generate summary, actions, and tags" : {
+
+    },
+    "Generating summary and analysis…" : {
+
+    },
+    "Get Started" : {
+
+    },
+    "Go" : {
+
+    },
+    "Google Keep" : {
+
+    },
+    "Granted" : {
+
+    },
+    "Group by company" : {
+
+    },
+    "Header" : {
+
+    },
+    "Headers" : {
+
+    },
+    "Hidden" : {
+
+    },
+    "Hide %@ recordings" : {
+
+    },
+    "Hide actions for %@" : {
+
+    },
+    "Hide assistant" : {
+
+    },
+    "Hide dBrief AI" : {
+
+    },
+    "Hide dBrief AI assistant" : {
+
+    },
+    "Hide recording sidebar" : {
+
+    },
+    "Hide sidebar" : {
+
+    },
+    "Hide symbols" : {
+
+    },
+    "Hides the details of this attempt." : {
+
+    },
+    "Hides this run. The recording and its current results stay; the unfinished run can't be resumed afterwards." : {
+
+    },
+    "How automation works" : {
+
+    },
+    "I understand my responsibility to use dBrief lawfully and obtain any required consent." : {
+
+    },
+    "Identify speakers" : {
+
+    },
+    "Import Audio File…" : {
+
+    },
     "Import…" : {
       "localizations" : {
         "nl" : {
@@ -831,57 +1771,159 @@
         }
       }
     },
-    "Improve" : {},
-    "Improve clarity while preserving intent" : {},
-    "Improvement request" : {},
-    "In progress" : {},
-    "In this meeting" : {},
-    "Inbox" : {},
-    "Include all available Whisper variants, not only the curated set" : {},
-    "Include in the page" : {},
-    "Include the transcript" : {},
-    "Includes approximately 0.5 GiB for speaker identification." : {},
-    "Incomplete" : {},
-    "Increase prompt text size" : {},
-    "Independent on-device evaluation" : {},
-    "Input device" : {},
-    "Input level" : {},
-    "Instructions" : {},
-    "Integrations" : {},
-    "Integrations…" : {},
-    "Interface text" : {},
-    "It is downloaded again the next time it's needed, which can take a while." : {},
-    "Its saved API key is deleted too. Profiles that use it switch to the default provider." : {},
-    "Jump to latest message" : {},
-    "Jump to this point" : {},
-    "Keep" : {},
-    "Keep %@" : {},
-    "Keep Editing" : {},
-    "Keep as %@" : {},
-    "Keep audio only" : {},
-    "Keep current profile" : {},
-    "Keep recording" : {},
-    "Keep the audio and stop here" : {},
-    "Keep the model warm" : {},
-    "Labels who said what. Adds processing time and about 500 MB of memory." : {},
-    "Language" : {},
-    "Language code" : {},
-    "Languages" : {},
-    "Large files" : {},
-    "Larger Text" : {},
-    "Larger text" : {},
-    "Last checked %@." : {},
-    "Leave on Automatic unless large models fail." : {},
-    "Leave this voice unnamed and keep its speaker label." : {},
-    "Let everyone know before recording a meeting or call." : {},
-    "Library unavailable" : {},
-    "Light mode" : {},
-    "Line spacing" : {},
-    "Link Calendar Meeting…" : {},
-    "Link meeting" : {},
-    "Links" : {},
-    "Live" : {},
-    "Live preview" : {},
+    "Improve" : {
+
+    },
+    "Improve clarity while preserving intent" : {
+
+    },
+    "Improvement request" : {
+
+    },
+    "In progress" : {
+
+    },
+    "In this meeting" : {
+
+    },
+    "Inbox" : {
+
+    },
+    "Include all available Whisper variants, not only the curated set" : {
+
+    },
+    "Include in the page" : {
+
+    },
+    "Include the transcript" : {
+
+    },
+    "Includes approximately 0.5 GiB for speaker identification." : {
+
+    },
+    "Incomplete" : {
+
+    },
+    "Increase prompt text size" : {
+
+    },
+    "Independent on-device evaluation" : {
+
+    },
+    "Input device" : {
+
+    },
+    "Input level" : {
+
+    },
+    "Instructions" : {
+
+    },
+    "Integrations" : {
+
+    },
+    "Integrations…" : {
+
+    },
+    "Interface text" : {
+
+    },
+    "It is downloaded again the next time it's needed, which can take a while." : {
+
+    },
+    "Its saved API key is deleted too. Profiles that use it switch to the default provider." : {
+
+    },
+    "Jump to latest message" : {
+
+    },
+    "Jump to this point" : {
+
+    },
+    "Keep" : {
+
+    },
+    "Keep %@" : {
+
+    },
+    "Keep Editing" : {
+
+    },
+    "Keep as %@" : {
+
+    },
+    "Keep audio only" : {
+
+    },
+    "Keep current profile" : {
+
+    },
+    "Keep recording" : {
+
+    },
+    "Keep the audio and stop here" : {
+
+    },
+    "Keep the model warm" : {
+
+    },
+    "Labels who said what. Adds processing time and about 500 MB of memory." : {
+
+    },
+    "Language" : {
+
+    },
+    "Language code" : {
+
+    },
+    "Languages" : {
+
+    },
+    "Large files" : {
+
+    },
+    "Larger Text" : {
+
+    },
+    "Larger text" : {
+
+    },
+    "Last checked %@." : {
+
+    },
+    "Leave on Automatic unless large models fail." : {
+
+    },
+    "Leave this voice unnamed and keep its speaker label." : {
+
+    },
+    "Let everyone know before recording a meeting or call." : {
+
+    },
+    "Library unavailable" : {
+
+    },
+    "Light mode" : {
+
+    },
+    "Line spacing" : {
+
+    },
+    "Link Calendar Meeting…" : {
+
+    },
+    "Link meeting" : {
+
+    },
+    "Links" : {
+
+    },
+    "Live" : {
+
+    },
+    "Live preview" : {
+
+    },
     "Live preview, %@, %lld points" : {
       "localizations" : {
         "en" : {
@@ -892,12 +1934,24 @@
         }
       }
     },
-    "Load / overhead" : {},
-    "Load calendar attendees" : {},
-    "Load during processing" : {},
-    "Load now" : {},
-    "Load on demand" : {},
-    "Load template" : {},
+    "Load / overhead" : {
+
+    },
+    "Load calendar attendees" : {
+
+    },
+    "Load during processing" : {
+
+    },
+    "Load now" : {
+
+    },
+    "Load on demand" : {
+
+    },
+    "Load template" : {
+
+    },
     "Loaded %lld model%@ from the server." : {
       "localizations" : {
         "en" : {
@@ -908,257 +1962,759 @@
         }
       }
     },
-    "Loaded, but could not save the cache." : {},
-    "Loading evidence…" : {},
-    "Loading library…" : {},
-    "Loading recordings…" : {},
-    "Loading settings…" : {},
-    "Loading speakers…" : {},
-    "Loading transcript…" : {},
-    "Loading…" : {},
-    "Loads after launch and wake to start faster. Keeps memory in use while idle." : {},
-    "Local CLI" : {},
-    "Local CLI can't stream, so chat uses this engine with the default provider below." : {},
-    "Local CLI can't stream, so chat uses this engine." : {},
-    "Low available memory" : {},
-    "Mailbox" : {},
-    "Managed Claude command" : {},
-    "Managed by macOS" : {},
-    "Manual mode: press Refresh for the latest meetings." : {},
-    "Manual only" : {},
-    "Mark this action complete" : {},
-    "Mark this action unfinished" : {},
-    "Markup and hallucination artifacts are always removed" : {},
-    "Master output" : {},
-    "Match field" : {},
-    "Match transcript" : {},
-    "Match window" : {},
-    "Max upload size" : {},
-    "Maximum attendees" : {},
-    "Meeting" : {},
-    "Meeting attendees" : {},
-    "Meeting details" : {},
-    "Meeting list" : {},
-    "Meeting list unavailable. Press Refresh to retry." : {},
-    "Meeting matching" : {},
-    "Meeting title" : {},
-    "Meetings load only when you press Refresh." : {},
-    "Memory and language downloads are managed by macOS." : {},
-    "Memory and sources" : {},
-    "Memory estimate unavailable" : {},
-    "Memory guidance unavailable." : {},
-    "Memory is running low" : {},
-    "Memory while transcribing" : {},
-    "Menus, transcripts and settings throughout dBrief." : {},
-    "Merge" : {},
-    "Merge %lld people" : {},
-    "Merge %lld people…" : {},
-    "Merge %lld…" : {},
-    "Merge into" : {},
-    "Merge into…" : {},
-    "Merge “%@” into…" : {},
-    "Mic" : {},
-    "Microphone" : {},
-    "Microphone input" : {},
-    "Microsoft OneNote" : {},
-    "Model" : {},
-    "Model download" : {},
-    "Model download actions" : {},
-    "Model download progress" : {},
-    "Model families" : {},
-    "Model list" : {},
-    "Model list unavailable" : {},
-    "Model variant size label; not runtime RAM" : {},
-    "Monitor %@" : {},
-    "More actions" : {},
-    "More calendar actions" : {},
-    "More model actions" : {},
-    "More specific" : {},
-    "Move Aside" : {},
-    "Move all “%@” to" : {},
-    "Move down" : {},
-    "Move this record into an Unreadable folder next to it. Nothing is deleted." : {},
-    "Move this turn to" : {},
-    "Move to" : {},
-    "Move to first" : {},
-    "Move up" : {},
-    "Multilingual" : {},
-    "Must print a JSON object (title_concept, summary, action_items, tags, sentiment). Runs with your login shell's PATH." : {},
-    "NVIDIA model evaluation" : {},
-    "Name" : {},
-    "Name already exists" : {},
-    "Name or search" : {},
-    "Needs AI analysis." : {},
-    "Needs attention" : {},
-    "Needs setup" : {},
-    "Needs the 1.7B model. Your instruction is kept for when you switch back." : {},
-    "Never" : {},
-    "New files use the active profile's After recording choices, engine and folders, and are picked up once they finish copying." : {},
-    "New term" : {},
-    "Next match (⌘G)" : {},
-    "Next search match" : {},
-    "Next speaker" : {},
-    "No %@s yet" : {},
-    "No Markdown file was written for this recording" : {},
-    "No action items found" : {},
-    "No analysis or processing details are available." : {},
-    "No analysis yet" : {},
-    "No calendars available" : {},
-    "No clear stretch of this voice to play." : {},
-    "No custom phrases. Built-in phrases always apply while this is on." : {},
-    "No endpoint configured" : {},
-    "No folders yet" : {},
-    "No invitees" : {},
-    "No matching models" : {},
-    "No meeting linked" : {},
-    "No meetings for this day." : {},
-    "No meetings loaded yet" : {},
-    "No pending work" : {},
-    "No people match your search." : {},
-    "No performance data yet" : {},
-    "No processing attempts are available. Missing evidence does not mean processing stayed on this Mac." : {},
-    "No profile selected" : {},
-    "No recordings found" : {},
-    "No recordings in this time range" : {},
-    "No sample" : {},
-    "No saved prompts yet. In the chat, right-click a question and choose Save as Prompt." : {},
-    "No settings found. Try another word." : {},
-    "No speakers were identified in the transcript." : {},
-    "No suggestions for %@ on this Mac" : {},
-    "No summary text" : {},
-    "No terms yet" : {},
-    "No transcription endpoint is set up. Add one in Settings → Transcription." : {},
-    "No voices saved yet" : {},
-    "Non-neon" : {},
-    "None" : {},
-    "None selected" : {},
-    "Not applicable" : {},
-    "Not asked" : {},
-    "Not available with %@. Your choice is kept for other engines." : {},
-    "Not downloaded" : {},
-    "Not now" : {},
-    "Not processed" : {},
-    "Not rated" : {},
-    "Notes" : {},
-    "Nothing to read yet" : {},
-    "Notice when a call starts" : {},
-    "Noticed when the meeting app stops using the microphone. On older macOS, only when it quits." : {},
-    "Notifications" : {},
-    "Notify when a file is detected" : {},
-    "Notion" : {},
-    "OK" : {},
-    "Obsidian" : {},
-    "Obsidian output folder" : {},
-    "Off" : {},
-    "Off sends only the summary, action items and tags." : {},
-    "Off shows only the red record dot." : {},
-    "Off. You can still set it up here for later or for profiles that turn it on." : {},
-    "Offline" : {},
-    "On this Mac" : {},
-    "On-device Whisper only" : {},
-    "On-device and CLI engines merge these into one JSON result" : {},
-    "One page per meeting, under a page or in a database" : {},
-    "Only action items are sent, one reminder each" : {},
-    "Only action items are sent, one task each" : {},
-    "Only files added after a folder is watched are processed" : {},
-    "Only for Apple Speech and the live preview." : {},
-    "Only for the Apple Reminders integration." : {},
-    "Only overlapping" : {},
-    "Only these calendars are used for matching and the meeting picker." : {},
-    "Open" : {},
-    "Open %@" : {},
-    "Open Notion" : {},
-    "Open Recording" : {},
-    "Open System Settings" : {},
-    "Open Todoist" : {},
-    "Open file" : {},
-    "Open in the recording library" : {},
-    "Open the Markdown notes" : {},
-    "Open the live transcript" : {},
-    "Open the recording library (⌘L): every recording with its summary, transcript and assistant" : {},
-    "Opens %@ settings" : {},
-    "Opens again the next time you open the menu bar." : {},
-    "Opens the local transcription model picker" : {},
-    "Optional for local servers." : {},
-    "Optional. First use may ask for approval in Terminal." : {},
-    "Or install manually: brew install yt-dlp" : {},
-    "Other Font…" : {},
-    "Outdated preview — run another test" : {},
-    "Outlook" : {},
-    "Output folder · %@" : {},
-    "Output format" : {},
-    "Output token limit" : {},
-    "Overlap" : {},
-    "Overlapping meetings match automatically. The window also allows nearby starts." : {},
-    "Override %@" : {},
-    "Override Notion destination" : {},
-    "PLAYING" : {},
-    "Parakeet Phonon-2 model card" : {},
-    "Parakeet Redux model card" : {},
-    "Parakeet Ultra model card" : {},
-    "Parakeet detects the language itself. This choice is kept for other engines." : {},
-    "Pause" : {},
-    "Pause %@" : {},
-    "Pause Queue" : {},
-    "Pause prevents the next job from starting; the current job can finish. This setting survives a restart." : {},
-    "Pause recording" : {},
-    "Pause spoken summary" : {},
-    "Paused" : {},
-    "Permissions" : {},
-    "Pick how recordings are turned into text and summaries. The defaults run fully on-device — no account or server needed." : {},
-    "Pinch on the trackpad or press ⌘+ / ⌘− to resize." : {},
-    "Play" : {},
-    "Play %@" : {},
-    "Play %lld s" : {},
-    "Play Spoken Summary" : {},
-    "Play a sample of this voice (⌥Space)" : {},
-    "Play from here" : {},
-    "Play or pause recording" : {},
-    "Play recording" : {},
-    "Play sample" : {},
-    "Play spoken summary" : {},
-    "Play voice sample" : {},
-    "Playback position" : {},
-    "Playback speed" : {},
-    "Playing sample" : {},
-    "Possible voice match" : {},
-    "Post-processing" : {},
-    "Pre-fills meeting titles and attendees." : {},
-    "Pre-fills title, attendees and agenda" : {},
-    "Pre-selected after every recording" : {},
-    "Prepare your models" : {},
-    "Preparing chat…" : {},
-    "Preparing voice sample…" : {},
-    "Preparing voice…" : {},
-    "Preparing voice… %lld%%" : {},
-    "Preparing your audio. Longer recordings can take a few minutes. Please keep dBrief open." : {},
-    "Press **%@** anytime to start or stop recording." : {},
-    "Press Return to add each name · matched to speakers in order of first appearance." : {},
-    "Preview" : {},
-    "Preview result" : {},
-    "Previous match (⌘⇧G)" : {},
-    "Previous search match" : {},
-    "Previous speaker" : {},
-    "Priority" : {},
-    "Privacy receipt" : {},
-    "Process Now" : {},
-    "Process Queue" : {},
-    "Process Queue (%lld)" : {},
-    "Process next" : {},
-    "Process recording" : {},
-    "Process this recording now" : {},
-    "Process this recording now, even if the queue is paused" : {},
-    "Processed “%@”" : {},
-    "Processes this recording as soon as the current one finishes" : {},
-    "Processing" : {},
-    "Processing complete" : {},
-    "Processing in %lld seconds" : {},
-    "Processing may slow down. Closing other apps helps." : {},
-    "Processing origin" : {},
-    "Processing recording" : {},
-    "Processing settings" : {},
-    "Processing warnings" : {},
-    "Processing “%@”" : {},
+    "Loaded, but could not save the cache." : {
+
+    },
+    "Loading evidence…" : {
+
+    },
+    "Loading library…" : {
+
+    },
+    "Loading recordings…" : {
+
+    },
+    "Loading settings…" : {
+
+    },
+    "Loading speakers…" : {
+
+    },
+    "Loading transcript…" : {
+
+    },
+    "Loading…" : {
+
+    },
+    "Loads after launch and wake to start faster. Keeps memory in use while idle." : {
+
+    },
+    "Local CLI" : {
+
+    },
+    "Local CLI can't stream, so chat uses this engine with the default provider below." : {
+
+    },
+    "Local CLI can't stream, so chat uses this engine." : {
+
+    },
+    "Low available memory" : {
+
+    },
+    "Mailbox" : {
+
+    },
+    "Managed Claude command" : {
+
+    },
+    "Managed by macOS" : {
+
+    },
+    "Manual mode: press Refresh for the latest meetings." : {
+
+    },
+    "Manual only" : {
+
+    },
+    "Mark this action complete" : {
+
+    },
+    "Mark this action unfinished" : {
+
+    },
+    "Markup and hallucination artifacts are always removed" : {
+
+    },
+    "Master output" : {
+
+    },
+    "Match field" : {
+
+    },
+    "Match transcript" : {
+
+    },
+    "Match window" : {
+
+    },
+    "Max upload size" : {
+
+    },
+    "Maximum attendees" : {
+
+    },
+    "Meeting" : {
+
+    },
+    "Meeting attendees" : {
+
+    },
+    "Meeting details" : {
+
+    },
+    "Meeting list" : {
+
+    },
+    "Meeting list unavailable. Press Refresh to retry." : {
+
+    },
+    "Meeting matching" : {
+
+    },
+    "Meeting title" : {
+
+    },
+    "Meetings load only when you press Refresh." : {
+
+    },
+    "Memory and language downloads are managed by macOS." : {
+
+    },
+    "Memory and sources" : {
+
+    },
+    "Memory estimate unavailable" : {
+
+    },
+    "Memory guidance unavailable." : {
+
+    },
+    "Memory is running low" : {
+
+    },
+    "Memory while transcribing" : {
+
+    },
+    "Menus, transcripts and settings throughout dBrief." : {
+
+    },
+    "Merge" : {
+
+    },
+    "Merge %lld people" : {
+
+    },
+    "Merge %lld people…" : {
+
+    },
+    "Merge %lld…" : {
+
+    },
+    "Merge into" : {
+
+    },
+    "Merge into…" : {
+
+    },
+    "Merge “%@” into…" : {
+
+    },
+    "Mic" : {
+
+    },
+    "Microphone" : {
+
+    },
+    "Microphone input" : {
+
+    },
+    "Microsoft OneNote" : {
+
+    },
+    "Model" : {
+
+    },
+    "Model download" : {
+
+    },
+    "Model download actions" : {
+
+    },
+    "Model download progress" : {
+
+    },
+    "Model families" : {
+
+    },
+    "Model list" : {
+
+    },
+    "Model list unavailable" : {
+
+    },
+    "Model variant size label; not runtime RAM" : {
+
+    },
+    "Monitor %@" : {
+
+    },
+    "More actions" : {
+
+    },
+    "More calendar actions" : {
+
+    },
+    "More model actions" : {
+
+    },
+    "More specific" : {
+
+    },
+    "Move Aside" : {
+
+    },
+    "Move all “%@” to" : {
+
+    },
+    "Move down" : {
+
+    },
+    "Move this record into an Unreadable folder next to it. Nothing is deleted." : {
+
+    },
+    "Move this turn to" : {
+
+    },
+    "Move to" : {
+
+    },
+    "Move to first" : {
+
+    },
+    "Move up" : {
+
+    },
+    "Multilingual" : {
+
+    },
+    "Must print a JSON object (title_concept, summary, action_items, tags, sentiment). Runs with your login shell's PATH." : {
+
+    },
+    "NVIDIA model evaluation" : {
+
+    },
+    "Name" : {
+
+    },
+    "Name already exists" : {
+
+    },
+    "Name or search" : {
+
+    },
+    "Needs AI analysis." : {
+
+    },
+    "Needs attention" : {
+
+    },
+    "Needs setup" : {
+
+    },
+    "Needs the 1.7B model. Your instruction is kept for when you switch back." : {
+
+    },
+    "Never" : {
+
+    },
+    "New files use the active profile's After recording choices, engine and folders, and are picked up once they finish copying." : {
+
+    },
+    "New term" : {
+
+    },
+    "Next match (⌘G)" : {
+
+    },
+    "Next search match" : {
+
+    },
+    "Next speaker" : {
+
+    },
+    "No %@s yet" : {
+
+    },
+    "No Markdown file was written for this recording" : {
+
+    },
+    "No action items found" : {
+
+    },
+    "No analysis or processing details are available." : {
+
+    },
+    "No analysis yet" : {
+
+    },
+    "No calendars available" : {
+
+    },
+    "No clear stretch of this voice to play." : {
+
+    },
+    "No custom phrases. Built-in phrases always apply while this is on." : {
+
+    },
+    "No endpoint configured" : {
+
+    },
+    "No folders yet" : {
+
+    },
+    "No invitees" : {
+
+    },
+    "No matching models" : {
+
+    },
+    "No meeting linked" : {
+
+    },
+    "No meetings for this day." : {
+
+    },
+    "No meetings loaded yet" : {
+
+    },
+    "No pending work" : {
+
+    },
+    "No people match your search." : {
+
+    },
+    "No performance data yet" : {
+
+    },
+    "No processing attempts are available. Missing evidence does not mean processing stayed on this Mac." : {
+
+    },
+    "No profile selected" : {
+
+    },
+    "No recordings found" : {
+
+    },
+    "No recordings in this time range" : {
+
+    },
+    "No sample" : {
+
+    },
+    "No saved prompts yet. In the chat, right-click a question and choose Save as Prompt." : {
+
+    },
+    "No settings found. Try another word." : {
+
+    },
+    "No speakers were identified in the transcript." : {
+
+    },
+    "No suggestions for %@ on this Mac" : {
+
+    },
+    "No summary text" : {
+
+    },
+    "No terms yet" : {
+
+    },
+    "No transcription endpoint is set up. Add one in Settings → Transcription." : {
+
+    },
+    "No voices saved yet" : {
+
+    },
+    "Non-neon" : {
+
+    },
+    "None" : {
+
+    },
+    "None selected" : {
+
+    },
+    "Not applicable" : {
+
+    },
+    "Not asked" : {
+
+    },
+    "Not available with %@. Your choice is kept for other engines." : {
+
+    },
+    "Not downloaded" : {
+
+    },
+    "Not now" : {
+
+    },
+    "Not processed" : {
+
+    },
+    "Not rated" : {
+
+    },
+    "Notes" : {
+
+    },
+    "Nothing to read yet" : {
+
+    },
+    "Notice when a call starts" : {
+
+    },
+    "Noticed when the meeting app stops using the microphone. On older macOS, only when it quits." : {
+
+    },
+    "Notifications" : {
+
+    },
+    "Notify when a file is detected" : {
+
+    },
+    "Notion" : {
+
+    },
+    "OK" : {
+
+    },
+    "Obsidian" : {
+
+    },
+    "Obsidian output folder" : {
+
+    },
+    "Off" : {
+
+    },
+    "Off sends only the summary, action items and tags." : {
+
+    },
+    "Off shows only the red record dot." : {
+
+    },
+    "Off. You can still set it up here for later or for profiles that turn it on." : {
+
+    },
+    "Offline" : {
+
+    },
+    "On this Mac" : {
+
+    },
+    "On-device Whisper only" : {
+
+    },
+    "On-device and CLI engines merge these into one JSON result" : {
+
+    },
+    "One page per meeting, under a page or in a database" : {
+
+    },
+    "Only action items are sent, one reminder each" : {
+
+    },
+    "Only action items are sent, one task each" : {
+
+    },
+    "Only files added after a folder is watched are processed" : {
+
+    },
+    "Only for Apple Speech and the live preview." : {
+
+    },
+    "Only for the Apple Reminders integration." : {
+
+    },
+    "Only overlapping" : {
+
+    },
+    "Only these calendars are used for matching and the meeting picker." : {
+
+    },
+    "Open" : {
+
+    },
+    "Open %@" : {
+
+    },
+    "Open Notion" : {
+
+    },
+    "Open Recording" : {
+
+    },
+    "Open System Settings" : {
+
+    },
+    "Open Todoist" : {
+
+    },
+    "Open file" : {
+
+    },
+    "Open in the recording library" : {
+
+    },
+    "Open the Markdown notes" : {
+
+    },
+    "Open the live transcript" : {
+
+    },
+    "Open the recording library (⌘L): every recording with its summary, transcript and assistant" : {
+
+    },
+    "Opens %@ settings" : {
+
+    },
+    "Opens again the next time you open the menu bar." : {
+
+    },
+    "Opens the local transcription model picker" : {
+
+    },
+    "Optional for local servers." : {
+
+    },
+    "Optional. First use may ask for approval in Terminal." : {
+
+    },
+    "Or install manually: brew install yt-dlp" : {
+
+    },
+    "Other Font…" : {
+
+    },
+    "Outdated preview — run another test" : {
+
+    },
+    "Outlook" : {
+
+    },
+    "Output folder · %@" : {
+
+    },
+    "Output format" : {
+
+    },
+    "Output token limit" : {
+
+    },
+    "Overlap" : {
+
+    },
+    "Overlapping meetings match automatically. The window also allows nearby starts." : {
+
+    },
+    "Override %@" : {
+
+    },
+    "Override Notion destination" : {
+
+    },
+    "PLAYING" : {
+
+    },
+    "Parakeet Phonon-2 model card" : {
+
+    },
+    "Parakeet Redux model card" : {
+
+    },
+    "Parakeet Ultra model card" : {
+
+    },
+    "Parakeet detects the language itself. This choice is kept for other engines." : {
+
+    },
+    "Pause" : {
+
+    },
+    "Pause %@" : {
+
+    },
+    "Pause Queue" : {
+
+    },
+    "Pause prevents the next job from starting; the current job can finish. This setting survives a restart." : {
+
+    },
+    "Pause recording" : {
+
+    },
+    "Pause spoken summary" : {
+
+    },
+    "Paused" : {
+
+    },
+    "Permissions" : {
+
+    },
+    "Pick how recordings are turned into text and summaries. The defaults run fully on-device — no account or server needed." : {
+
+    },
+    "Pinch on the trackpad or press ⌘+ / ⌘− to resize." : {
+
+    },
+    "Play" : {
+
+    },
+    "Play %@" : {
+
+    },
+    "Play %lld s" : {
+
+    },
+    "Play Spoken Summary" : {
+
+    },
+    "Play a sample of this voice (⌥Space)" : {
+
+    },
+    "Play from here" : {
+
+    },
+    "Play or pause recording" : {
+
+    },
+    "Play recording" : {
+
+    },
+    "Play sample" : {
+
+    },
+    "Play spoken summary" : {
+
+    },
+    "Play voice sample" : {
+
+    },
+    "Playback position" : {
+
+    },
+    "Playback speed" : {
+
+    },
+    "Playing sample" : {
+
+    },
+    "Possible voice match" : {
+
+    },
+    "Post-processing" : {
+
+    },
+    "Pre-fills meeting titles and attendees." : {
+
+    },
+    "Pre-fills title, attendees and agenda" : {
+
+    },
+    "Pre-selected after every recording" : {
+
+    },
+    "Prepare your models" : {
+
+    },
+    "Preparing chat…" : {
+
+    },
+    "Preparing voice sample…" : {
+
+    },
+    "Preparing voice…" : {
+
+    },
+    "Preparing voice… %lld%%" : {
+
+    },
+    "Preparing your audio. Longer recordings can take a few minutes. Please keep dBrief open." : {
+
+    },
+    "Press **%@** anytime to start or stop recording." : {
+
+    },
+    "Press Return to add each name · matched to speakers in order of first appearance." : {
+
+    },
+    "Preview" : {
+
+    },
+    "Preview result" : {
+
+    },
+    "Previous match (⌘⇧G)" : {
+
+    },
+    "Previous search match" : {
+
+    },
+    "Previous speaker" : {
+
+    },
+    "Priority" : {
+
+    },
+    "Privacy receipt" : {
+
+    },
+    "Process Now" : {
+
+    },
+    "Process Queue" : {
+
+    },
+    "Process Queue (%lld)" : {
+
+    },
+    "Process next" : {
+
+    },
+    "Process recording" : {
+
+    },
+    "Process this recording now" : {
+
+    },
+    "Process this recording now, even if the queue is paused" : {
+
+    },
+    "Processed “%@”" : {
+
+    },
+    "Processes this recording as soon as the current one finishes" : {
+
+    },
+    "Processing" : {
+
+    },
+    "Processing complete" : {
+
+    },
+    "Processing in %lld seconds" : {
+
+    },
+    "Processing may slow down. Closing other apps helps." : {
+
+    },
+    "Processing origin" : {
+
+    },
+    "Processing recording" : {
+
+    },
+    "Processing settings" : {
+
+    },
+    "Processing warnings" : {
+
+    },
+    "Processing “%@”" : {
+
+    },
     "Profile" : {
       "localizations" : {
         "nl" : {
@@ -1169,45 +2725,123 @@
         }
       }
     },
-    "Profile changes wait for the current job to finish" : {},
-    "Profile chosen manually for this recording" : {},
-    "Profile for this recording" : {},
-    "Profile name" : {},
-    "Profile: %@" : {},
-    "Profiles can override each task" : {},
-    "Prompt question" : {},
-    "Prompt title" : {},
-    "Prompts" : {},
-    "Prompts arrive as DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT and DBRIEF_FULL_PROMPT, and on stdin. If a tool isn't found, use its absolute path (`which <tool>`)." : {},
-    "Providers" : {},
-    "Question" : {},
-    "Queue" : {},
-    "Queue & Recovery" : {},
-    "Queue a recording for later to add it here." : {},
-    "Queue for later" : {},
-    "Queue needs attention" : {},
-    "Queue position %lld" : {},
-    "Queued" : {},
-    "Queueing in %lld seconds" : {},
-    "Quick pick" : {},
-    "Quit dBrief" : {},
-    "RAM is installed, not currently free. Model memory is an estimate, not download size or peak whole-app use." : {},
-    "RAM values are planning estimates, not download size or peak app use. Speaker identification adds approximately 0.5 GiB. GPU batch-throughput figures are not Mac latency predictions." : {},
-    "RENAME SPEAKER" : {},
-    "Range" : {},
-    "Rating source" : {},
-    "Ratings are estimates, not measured on this Mac" : {},
-    "Re-download" : {},
-    "Re-run AI Analysis…" : {},
-    "Re-run AI analysis…" : {},
-    "Read Aloud" : {},
-    "Reading options" : {},
-    "Ready" : {},
-    "Ready when you are" : {},
-    "Reasoning" : {},
-    "Reasoning effort" : {},
-    "Rebuild Search Index" : {},
-    "Rebuild transcript" : {},
+    "Profile changes wait for the current job to finish" : {
+
+    },
+    "Profile chosen manually for this recording" : {
+
+    },
+    "Profile for this recording" : {
+
+    },
+    "Profile name" : {
+
+    },
+    "Profile: %@" : {
+
+    },
+    "Profiles can override each task" : {
+
+    },
+    "Prompt question" : {
+
+    },
+    "Prompt title" : {
+
+    },
+    "Prompts" : {
+
+    },
+    "Prompts arrive as DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT and DBRIEF_FULL_PROMPT, and on stdin. If a tool isn't found, use its absolute path (`which <tool>`)." : {
+
+    },
+    "Providers" : {
+
+    },
+    "Question" : {
+
+    },
+    "Queue" : {
+
+    },
+    "Queue & Recovery" : {
+
+    },
+    "Queue a recording for later to add it here." : {
+
+    },
+    "Queue for later" : {
+
+    },
+    "Queue needs attention" : {
+
+    },
+    "Queue position %lld" : {
+
+    },
+    "Queued" : {
+
+    },
+    "Queueing in %lld seconds" : {
+
+    },
+    "Quick pick" : {
+
+    },
+    "Quit dBrief" : {
+
+    },
+    "RAM is installed, not currently free. Model memory is an estimate, not download size or peak whole-app use." : {
+
+    },
+    "RAM values are planning estimates, not download size or peak app use. Speaker identification adds approximately 0.5 GiB. GPU batch-throughput figures are not Mac latency predictions." : {
+
+    },
+    "RENAME SPEAKER" : {
+
+    },
+    "Range" : {
+
+    },
+    "Rating source" : {
+
+    },
+    "Ratings are estimates, not measured on this Mac" : {
+
+    },
+    "Re-download" : {
+
+    },
+    "Re-run AI Analysis…" : {
+
+    },
+    "Re-run AI analysis…" : {
+
+    },
+    "Read Aloud" : {
+
+    },
+    "Reading options" : {
+
+    },
+    "Ready" : {
+
+    },
+    "Ready when you are" : {
+
+    },
+    "Reasoning" : {
+
+    },
+    "Reasoning effort" : {
+
+    },
+    "Rebuild Search Index" : {
+
+    },
+    "Rebuild transcript" : {
+
+    },
     "Recent recordings" : {
       "localizations" : {
         "nl" : {
@@ -1218,9 +2852,15 @@
         }
       }
     },
-    "Recognition %@" : {},
-    "Record automatically" : {},
-    "Record call" : {},
+    "Recognition %@" : {
+
+    },
+    "Record automatically" : {
+
+    },
+    "Record call" : {
+
+    },
     "Record meeting" : {
       "localizations" : {
         "nl" : {
@@ -1231,8 +2871,12 @@
         }
       }
     },
-    "Record, transcribe, and analyze meetings and voice notes — right from your menu bar." : {},
-    "Recording" : {},
+    "Record, transcribe, and analyze meetings and voice notes — right from your menu bar." : {
+
+    },
+    "Recording" : {
+
+    },
     "Recording Library" : {
       "localizations" : {
         "nl" : {
@@ -1243,231 +2887,684 @@
         }
       }
     },
-    "Recording completed" : {},
-    "Recording library" : {},
-    "Recording recovery needs attention" : {},
-    "Recording sidebar width" : {},
-    "Recording status" : {},
-    "Recording, transcripts, and settings" : {},
-    "Recordings" : {},
-    "Recovery files" : {},
-    "Reduce microphone echo" : {},
-    "Refresh" : {},
-    "Refresh blocked — check Claude connector approval, then retry." : {},
-    "Refresh device list" : {},
-    "Refresh failed — showing saved meetings if available. Press Refresh to retry." : {},
-    "Refresh incomplete; saved meetings remain available." : {},
-    "Refresh interval" : {},
-    "Refresh meeting list" : {},
-    "Refresh queue and recovery" : {},
-    "Refresh recent recordings" : {},
-    "Refresh selected calendar attendees" : {},
-    "Refresh this date" : {},
-    "Refresh today" : {},
-    "Refreshing…" : {},
-    "Regenerate" : {},
-    "Regenerate AI analysis" : {},
-    "Regenerate Spoken Summary" : {},
-    "Reload saved" : {},
-    "Reminders" : {},
-    "Remote service" : {},
-    "Remote services only" : {},
-    "Remote transcription" : {},
-    "Remove" : {},
-    "Remove %@" : {},
-    "Remove Downloaded Model…" : {},
-    "Remove Model" : {},
-    "Remove Provider" : {},
-    "Remove action" : {},
-    "Remove condition" : {},
-    "Remove filler words" : {},
-    "Remove from List" : {},
-    "Remove from Queue" : {},
-    "Remove from the queue without deleting the recording" : {},
-    "Remove header" : {},
-    "Remove the downloaded %@ model?" : {},
-    "Remove “%@”?" : {},
-    "Removes all per-model benchmark history. The total minutes transcribed is kept." : {},
-    "Removes meeting audio your microphone picks up from the speakers. Skipped automatically with headphones." : {},
-    "Removes whole lines such as “Thanks for watching”. Real speech that contains a phrase is kept." : {},
-    "Remove…" : {},
-    "Removing keeps the recording. Deferred items wait for Process Queue; automatic items may run first." : {},
-    "Rename" : {},
-    "Rename Voice" : {},
-    "Rename profile" : {},
-    "Rename recording" : {},
-    "Rename to" : {},
-    "Rename…" : {},
-    "Replace participants with meeting attendees" : {},
-    "Replaces `claude` in the managed command, e.g. `cswap run 1 --` for another account. Ignored when a CLI command is set." : {},
-    "Replaces the draft. Save when you’re ready." : {},
-    "Reprocess pending" : {},
-    "Reprocessing is in progress. Your draft is kept; editing is paused." : {},
-    "Reprocessing is in progress. Your draft is retained; editing is temporarily unavailable." : {},
-    "Reprocessing pending" : {},
-    "Reprocessing pending — current results are read-only." : {},
-    "Request" : {},
-    "Required to record." : {},
-    "Reset" : {},
-    "Reset reading options" : {},
-    "Reset to defaults" : {},
-    "Restore Previous Results" : {},
-    "Restore defaults" : {},
-    "Restore shared defaults?" : {},
-    "Restore shared defaults…" : {},
-    "Restores app-wide defaults and this profile's settings." : {},
-    "Restores shared language, vocabulary, AI prompts, post-recording task choices, recording and transcript folders, and Obsidian destination settings. Also resets the Default profile’s overrides, automation, matching rules, name, and icon. Other profiles keep their overrides, but inherited values change. Existing recordings and transcripts are kept. This can’t be undone." : {},
-    "Restricted" : {},
-    "Results language" : {},
-    "Resume" : {},
-    "Resume Queue" : {},
-    "Resume recording" : {},
-    "Retranscribe…" : {},
-    "Retries" : {},
-    "Retry" : {},
-    "Retry Download" : {},
-    "Retry Recovery" : {},
-    "Return confirms all voices" : {},
-    "Review delivery status and retry an individual integration" : {},
-    "Review instead" : {},
-    "Review saved delivery outcomes before choosing which destinations to retry." : {},
-    "Review speakers" : {},
-    "Review this work, then continue when you are ready." : {},
-    "Reviewed" : {},
-    "Rosters are never loaded. Invite bodies are never saved." : {},
-    "Rosters load only when requested for one meeting. Larger meetings omit the roster." : {},
-    "Run AI analysis again, with any engine or endpoint" : {},
-    "Run test" : {},
-    "Runs at launch and then daily while dBrief is open, in these folders and every profile's folders" : {},
-    "Runs your command once per recording" : {},
-    "Same as the viewer" : {},
-    "Same as transcript" : {},
-    "Sample audio is temporary. Your saved voice style stays unchanged." : {},
-    "Save" : {},
-    "Save Conversation as Markdown…" : {},
-    "Save as Markdown…" : {},
-    "Save as Prompt" : {},
-    "Save as Text…" : {},
-    "Save changes" : {},
-    "Save the audio and wait in the queue until you choose Process Queue" : {},
-    "Save “%@” voice to library" : {},
-    "Saved as Prompt" : {},
-    "Saved model is absent from the catalog; availability is unverified." : {},
-    "Saving recording" : {},
-    "Saving…" : {},
-    "Screen recording" : {},
-    "Script prompt, voice style" : {},
-    "Search fonts" : {},
-    "Search local transcription models" : {},
-    "Search models" : {},
-    "Search name or company" : {},
-    "Search recordings and transcripts" : {},
-    "Search recordings…" : {},
-    "Search settings" : {},
-    "Search transcript" : {},
-    "Select All" : {},
-    "Select None" : {},
-    "Select a Recording" : {},
-    "Select a person to see their voiceprints. Select several to merge or forget them together." : {},
-    "Select a speaker" : {},
-    "Select an Obsidian vault in Settings → Integrations." : {},
-    "Select this profile when all conditions match" : {},
-    "Selected" : {},
-    "Selected automatically for now. Controls on this page edit app defaults." : {},
-    "Selected automatically: %@" : {},
-    "Selected meeting changed or disappeared. Review your selection." : {},
-    "Send fields" : {},
-    "Send message" : {},
-    "Send message (Return)" : {},
-    "Send results to" : {},
-    "Sends the selected text to this endpoint." : {},
-    "Sentiment · %@" : {},
-    "Set as default" : {},
-    "Set up later" : {},
-    "Set your mailbox before refreshing." : {},
-    "Settings" : {},
-    "Settings always shows one while it's open." : {},
-    "Settings and app controls" : {},
-    "Settings…" : {},
-    "Setup" : {},
-    "Share or export this answer" : {},
-    "Shared defaults" : {},
-    "Shared with inheriting profiles" : {},
-    "Shortcut" : {},
-    "Shortcut %@" : {},
-    "Shorter" : {},
-    "Show" : {},
-    "Show %@ recordings" : {},
-    "Show Files" : {},
-    "Show Queue & Recovery" : {},
-    "Show actions for %@" : {},
-    "Show again" : {},
-    "Show all" : {},
-    "Show all in library" : {},
-    "Show all meetings from that day" : {},
-    "Show all models" : {},
-    "Show dock icon" : {},
-    "Show every Whisper variant" : {},
-    "Show in Finder" : {},
-    "Show in Queue & Recovery" : {},
-    "Show less" : {},
-    "Show recording sidebar" : {},
-    "Show sidebar" : {},
-    "Showing saved meetings; refresh failed. Press Refresh to retry." : {},
-    "Shown" : {},
-    "Shows meeting details and participants" : {},
-    "Shows recording status and audio levels." : {},
-    "Shows the details of this attempt." : {},
-    "Shows the processing activity recorded for this meeting." : {},
-    "Sign in with Microsoft" : {},
-    "Sign in with TickTick" : {},
-    "Sign out" : {},
-    "Smaller Text" : {},
-    "Smaller models are faster but less accurate. Larger models are more accurate but use more memory and time. Ratings are estimates." : {},
-    "Smaller text" : {},
-    "Some attempts or outcomes are missing. This history cannot establish all processing that occurred." : {},
-    "Some evidence could not be read. It may be damaged, unavailable, or from an unsupported version." : {},
-    "Sort by %@" : {},
-    "Source" : {},
-    "Sources" : {},
-    "Speaker Names" : {},
-    "Speaker details are unavailable because no transcript is attached." : {},
-    "Speaker names changed — regenerate analysis?" : {},
-    "Speaker timeline" : {},
-    "Speakers" : {},
-    "Speech recognition" : {},
-    "Speed and accuracy are estimates, not measured on this Mac." : {},
-    "Split large files" : {},
-    "Spoken Summary" : {},
-    "Spoken language" : {},
-    "Spoken summary" : {},
-    "Spoken summary progress" : {},
-    "Start" : {},
-    "Start a new recording" : {},
-    "Start at login" : {},
-    "Start from a template" : {},
-    "Start or stop recording" : {},
-    "Start recording (%@)" : {},
-    "Start using dBrief" : {},
-    "Starts or pauses audio playback" : {},
-    "Startup" : {},
-    "Status" : {},
-    "Status: %@" : {},
-    "Stop" : {},
-    "Stop Processing" : {},
-    "Stop Reading" : {},
-    "Stop generating" : {},
-    "Stop generating (Esc)" : {},
-    "Stop playback" : {},
-    "Stop processing" : {},
-    "Stop processing; saved progress remains available for recovery" : {},
-    "Stop recording" : {},
-    "Stop the voice sample (⌥Space)" : {},
-    "Stop voice sample" : {},
-    "Stop watching %@" : {},
-    "Stop watching this folder" : {},
-    "Strong voice match" : {},
-    "Suggest improvements" : {},
+    "Recording completed" : {
+
+    },
+    "Recording library" : {
+
+    },
+    "Recording recovery needs attention" : {
+
+    },
+    "Recording sidebar width" : {
+
+    },
+    "Recording status" : {
+
+    },
+    "Recording, transcripts, and settings" : {
+
+    },
+    "Recordings" : {
+
+    },
+    "Recovery files" : {
+
+    },
+    "Reduce microphone echo" : {
+
+    },
+    "Refresh" : {
+
+    },
+    "Refresh blocked — check Claude connector approval, then retry." : {
+
+    },
+    "Refresh device list" : {
+
+    },
+    "Refresh failed — showing saved meetings if available. Press Refresh to retry." : {
+
+    },
+    "Refresh incomplete; saved meetings remain available." : {
+
+    },
+    "Refresh interval" : {
+
+    },
+    "Refresh meeting list" : {
+
+    },
+    "Refresh queue and recovery" : {
+
+    },
+    "Refresh recent recordings" : {
+
+    },
+    "Refresh selected calendar attendees" : {
+
+    },
+    "Refresh this date" : {
+
+    },
+    "Refresh today" : {
+
+    },
+    "Refreshing…" : {
+
+    },
+    "Regenerate" : {
+
+    },
+    "Regenerate AI analysis" : {
+
+    },
+    "Regenerate Spoken Summary" : {
+
+    },
+    "Reload saved" : {
+
+    },
+    "Reminders" : {
+
+    },
+    "Remote service" : {
+
+    },
+    "Remote services only" : {
+
+    },
+    "Remote transcription" : {
+
+    },
+    "Remove" : {
+
+    },
+    "Remove %@" : {
+
+    },
+    "Remove Downloaded Model…" : {
+
+    },
+    "Remove Model" : {
+
+    },
+    "Remove Provider" : {
+
+    },
+    "Remove action" : {
+
+    },
+    "Remove condition" : {
+
+    },
+    "Remove filler words" : {
+
+    },
+    "Remove from List" : {
+
+    },
+    "Remove from Queue" : {
+
+    },
+    "Remove from the queue without deleting the recording" : {
+
+    },
+    "Remove header" : {
+
+    },
+    "Remove the downloaded %@ model?" : {
+
+    },
+    "Remove “%@”?" : {
+
+    },
+    "Removes all per-model benchmark history. The total minutes transcribed is kept." : {
+
+    },
+    "Removes meeting audio your microphone picks up from the speakers. Skipped automatically with headphones." : {
+
+    },
+    "Removes whole lines such as “Thanks for watching”. Real speech that contains a phrase is kept." : {
+
+    },
+    "Remove…" : {
+
+    },
+    "Removing keeps the recording. Deferred items wait for Process Queue; automatic items may run first." : {
+
+    },
+    "Rename" : {
+
+    },
+    "Rename Voice" : {
+
+    },
+    "Rename profile" : {
+
+    },
+    "Rename recording" : {
+
+    },
+    "Rename to" : {
+
+    },
+    "Rename…" : {
+
+    },
+    "Replace participants with meeting attendees" : {
+
+    },
+    "Replaces `claude` in the managed command, e.g. `cswap run 1 --` for another account. Ignored when a CLI command is set." : {
+
+    },
+    "Replaces the draft. Save when you’re ready." : {
+
+    },
+    "Reprocess" : {
+
+    },
+    "Reprocess pending" : {
+
+    },
+    "Reprocessing is in progress. Your draft is kept; editing is paused." : {
+
+    },
+    "Reprocessing is in progress. Your draft is retained; editing is temporarily unavailable." : {
+
+    },
+    "Reprocessing pending" : {
+
+    },
+    "Reprocessing pending — current results are read-only." : {
+
+    },
+    "Request" : {
+
+    },
+    "Required to record." : {
+
+    },
+    "Reset" : {
+
+    },
+    "Reset reading options" : {
+
+    },
+    "Reset to defaults" : {
+
+    },
+    "Restore Previous Results" : {
+
+    },
+    "Restore defaults" : {
+
+    },
+    "Restore shared defaults?" : {
+
+    },
+    "Restore shared defaults…" : {
+
+    },
+    "Restores app-wide defaults and this profile's settings." : {
+
+    },
+    "Restores shared language, vocabulary, AI prompts, post-recording task choices, recording and transcript folders, and Obsidian destination settings. Also resets the Default profile’s overrides, automation, matching rules, name, and icon. Other profiles keep their overrides, but inherited values change. Existing recordings and transcripts are kept. This can’t be undone." : {
+
+    },
+    "Restricted" : {
+
+    },
+    "Results language" : {
+
+    },
+    "Resume" : {
+
+    },
+    "Resume Queue" : {
+
+    },
+    "Resume recording" : {
+
+    },
+    "Retranscribe…" : {
+
+    },
+    "Retries" : {
+
+    },
+    "Retry" : {
+
+    },
+    "Retry Download" : {
+
+    },
+    "Retry Recovery" : {
+
+    },
+    "Return confirms all voices" : {
+
+    },
+    "Review delivery status and retry an individual integration" : {
+
+    },
+    "Review instead" : {
+
+    },
+    "Review saved delivery outcomes before choosing which destinations to retry." : {
+
+    },
+    "Review speakers" : {
+
+    },
+    "Review this work, then continue when you are ready." : {
+
+    },
+    "Reviewed" : {
+
+    },
+    "Rosters are never loaded. Invite bodies are never saved." : {
+
+    },
+    "Rosters load only when requested for one meeting. Larger meetings omit the roster." : {
+
+    },
+    "Run AI analysis again, with any engine or endpoint" : {
+
+    },
+    "Run test" : {
+
+    },
+    "Runs at launch and then daily while dBrief is open, in these folders and every profile's folders" : {
+
+    },
+    "Runs your command once per recording" : {
+
+    },
+    "Same as the viewer" : {
+
+    },
+    "Same as transcript" : {
+
+    },
+    "Sample audio is temporary. Your saved voice style stays unchanged." : {
+
+    },
+    "Save" : {
+
+    },
+    "Save Conversation as Markdown…" : {
+
+    },
+    "Save as Markdown…" : {
+
+    },
+    "Save as Prompt" : {
+
+    },
+    "Save as Text…" : {
+
+    },
+    "Save changes" : {
+
+    },
+    "Save the audio and wait in the queue until you choose Process Queue" : {
+
+    },
+    "Save “%@” voice to library" : {
+
+    },
+    "Saved as Prompt" : {
+
+    },
+    "Saved model is absent from the catalog; availability is unverified." : {
+
+    },
+    "Saving recording" : {
+
+    },
+    "Saving…" : {
+
+    },
+    "Screen recording" : {
+
+    },
+    "Script prompt, voice style" : {
+
+    },
+    "Search fonts" : {
+
+    },
+    "Search local transcription models" : {
+
+    },
+    "Search models" : {
+
+    },
+    "Search name or company" : {
+
+    },
+    "Search recordings and transcripts" : {
+
+    },
+    "Search recordings…" : {
+
+    },
+    "Search settings" : {
+
+    },
+    "Search transcript" : {
+
+    },
+    "Select All" : {
+
+    },
+    "Select None" : {
+
+    },
+    "Select a Recording" : {
+
+    },
+    "Select a person to see their voiceprints. Select several to merge or forget them together." : {
+
+    },
+    "Select a speaker" : {
+
+    },
+    "Select an Obsidian vault in Settings → Integrations." : {
+
+    },
+    "Select this profile when all conditions match" : {
+
+    },
+    "Selected" : {
+
+    },
+    "Selected automatically for now. Controls on this page edit app defaults." : {
+
+    },
+    "Selected automatically: %@" : {
+
+    },
+    "Selected meeting changed or disappeared. Review your selection." : {
+
+    },
+    "Send fields" : {
+
+    },
+    "Send message" : {
+
+    },
+    "Send message (Return)" : {
+
+    },
+    "Send results to" : {
+
+    },
+    "Sends the selected text to this endpoint." : {
+
+    },
+    "Sentiment · %@" : {
+
+    },
+    "Set as default" : {
+
+    },
+    "Set up later" : {
+
+    },
+    "Set your mailbox before refreshing." : {
+
+    },
+    "Settings" : {
+
+    },
+    "Settings always shows one while it's open." : {
+
+    },
+    "Settings and app controls" : {
+
+    },
+    "Settings…" : {
+
+    },
+    "Setup" : {
+
+    },
+    "Share or export this answer" : {
+
+    },
+    "Shared defaults" : {
+
+    },
+    "Shared with inheriting profiles" : {
+
+    },
+    "Shortcut" : {
+
+    },
+    "Shortcut %@" : {
+
+    },
+    "Shorter" : {
+
+    },
+    "Show" : {
+
+    },
+    "Show %@ recordings" : {
+
+    },
+    "Show Files" : {
+
+    },
+    "Show Queue & Recovery" : {
+
+    },
+    "Show actions for %@" : {
+
+    },
+    "Show again" : {
+
+    },
+    "Show all" : {
+
+    },
+    "Show all in library" : {
+
+    },
+    "Show all meetings from that day" : {
+
+    },
+    "Show all models" : {
+
+    },
+    "Show dock icon" : {
+
+    },
+    "Show every Whisper variant" : {
+
+    },
+    "Show in Finder" : {
+
+    },
+    "Show in Queue & Recovery" : {
+
+    },
+    "Show less" : {
+
+    },
+    "Show recording sidebar" : {
+
+    },
+    "Show sidebar" : {
+
+    },
+    "Showing saved meetings; refresh failed. Press Refresh to retry." : {
+
+    },
+    "Shown" : {
+
+    },
+    "Shows meeting details and participants" : {
+
+    },
+    "Shows recording status and audio levels." : {
+
+    },
+    "Shows the details of this attempt." : {
+
+    },
+    "Shows the processing activity recorded for this meeting." : {
+
+    },
+    "Sign in with Microsoft" : {
+
+    },
+    "Sign in with TickTick" : {
+
+    },
+    "Sign out" : {
+
+    },
+    "Smaller Text" : {
+
+    },
+    "Smaller models are faster but less accurate. Larger models are more accurate but use more memory and time. Ratings are estimates." : {
+
+    },
+    "Smaller text" : {
+
+    },
+    "Some attempts or outcomes are missing. This history cannot establish all processing that occurred." : {
+
+    },
+    "Some evidence could not be read. It may be damaged, unavailable, or from an unsupported version." : {
+
+    },
+    "Sort by %@" : {
+
+    },
+    "Source" : {
+
+    },
+    "Sources" : {
+
+    },
+    "Speaker Names" : {
+
+    },
+    "Speaker details are unavailable because no transcript is attached." : {
+
+    },
+    "Speaker names changed — regenerate analysis?" : {
+
+    },
+    "Speaker timeline" : {
+
+    },
+    "Speakers" : {
+
+    },
+    "Speech recognition" : {
+
+    },
+    "Speed and accuracy are estimates, not measured on this Mac." : {
+
+    },
+    "Split large files" : {
+
+    },
+    "Spoken Summary" : {
+
+    },
+    "Spoken language" : {
+
+    },
+    "Spoken summary" : {
+
+    },
+    "Spoken summary progress" : {
+
+    },
+    "Start" : {
+
+    },
+    "Start a new recording" : {
+
+    },
+    "Start at login" : {
+
+    },
+    "Start from a template" : {
+
+    },
+    "Start or stop recording" : {
+
+    },
+    "Start recording (%@)" : {
+
+    },
+    "Start using dBrief" : {
+
+    },
+    "Starts or pauses audio playback" : {
+
+    },
+    "Startup" : {
+
+    },
+    "Status" : {
+
+    },
+    "Status: %@" : {
+
+    },
+    "Stop" : {
+
+    },
+    "Stop Processing" : {
+
+    },
+    "Stop Reading" : {
+
+    },
+    "Stop generating" : {
+
+    },
+    "Stop generating (Esc)" : {
+
+    },
+    "Stop playback" : {
+
+    },
+    "Stop processing" : {
+
+    },
+    "Stop processing; saved progress remains available for recovery" : {
+
+    },
+    "Stop recording" : {
+
+    },
+    "Stop the voice sample (⌥Space)" : {
+
+    },
+    "Stop voice sample" : {
+
+    },
+    "Stop watching %@" : {
+
+    },
+    "Stop watching this folder" : {
+
+    },
+    "Strong voice match" : {
+
+    },
+    "Suggest improvements" : {
+
+    },
     "Suggested for %@ on this %lld GB Mac" : {
       "localizations" : {
         "en" : {
@@ -1478,45 +3575,123 @@
         }
       }
     },
-    "Suggested models" : {},
-    "Suggested prompt" : {},
-    "Suggested: %@ — waiting for the current job" : {},
-    "Summary" : {},
-    "Summary draft" : {},
-    "Summary editor" : {},
-    "Summary, action items, tags and sentiment. Profiles can override this." : {},
-    "Support depends on your Claude model." : {},
-    "Support report" : {},
-    "Symbol" : {},
-    "Synthesizing…" : {},
-    "System Default" : {},
-    "System audio" : {},
-    "System default" : {},
-    "System language" : {},
-    "Tags" : {},
-    "Tags and sentiment" : {},
-    "Tags draft" : {},
-    "Tags · %@" : {},
-    "Task defaults" : {},
-    "Term" : {},
-    "Terms" : {},
-    "Test command" : {},
-    "Test connection" : {},
-    "Test the command" : {},
-    "Test the connection" : {},
-    "Testing…" : {},
-    "Text size" : {},
-    "Text size and font" : {},
-    "The Keep API may need Google Workspace setup" : {},
-    "The action may have changed or its recording may be unavailable. Reload the recording and try again." : {},
-    "The audio file is permanently removed from disk. This can’t be undone." : {},
-    "The calendar CLI call failed. Check the claude command and its login." : {},
-    "The conversation is removed from this recording. This can't be undone." : {},
-    "The original recording stays unchanged." : {},
-    "The prompt, request, or AI configuration changed. Generate a new suggestion." : {},
-    "The recording's current results stay. The unfinished reprocess can't be resumed afterwards." : {},
-    "The saved language is unavailable with Apple Speech. Choose a supported language or change the transcription engine." : {},
-    "The update is stored in dBrief's support folder." : {},
+    "Suggested models" : {
+
+    },
+    "Suggested prompt" : {
+
+    },
+    "Suggested: %@ — waiting for the current job" : {
+
+    },
+    "Summary" : {
+
+    },
+    "Summary draft" : {
+
+    },
+    "Summary editor" : {
+
+    },
+    "Summary, action items, tags and sentiment. Profiles can override this." : {
+
+    },
+    "Support depends on your Claude model." : {
+
+    },
+    "Support report" : {
+
+    },
+    "Symbol" : {
+
+    },
+    "Synthesizing…" : {
+
+    },
+    "System Default" : {
+
+    },
+    "System audio" : {
+
+    },
+    "System default" : {
+
+    },
+    "System language" : {
+
+    },
+    "Tags" : {
+
+    },
+    "Tags and sentiment" : {
+
+    },
+    "Tags draft" : {
+
+    },
+    "Tags · %@" : {
+
+    },
+    "Task defaults" : {
+
+    },
+    "Term" : {
+
+    },
+    "Terms" : {
+
+    },
+    "Test command" : {
+
+    },
+    "Test connection" : {
+
+    },
+    "Test the command" : {
+
+    },
+    "Test the connection" : {
+
+    },
+    "Testing…" : {
+
+    },
+    "Text size" : {
+
+    },
+    "Text size and font" : {
+
+    },
+    "The Keep API may need Google Workspace setup" : {
+
+    },
+    "The action may have changed or its recording may be unavailable. Reload the recording and try again." : {
+
+    },
+    "The audio file is permanently removed from disk. This can’t be undone." : {
+
+    },
+    "The calendar CLI call failed. Check the claude command and its login." : {
+
+    },
+    "The conversation is removed from this recording. This can't be undone." : {
+
+    },
+    "The original recording stays unchanged." : {
+
+    },
+    "The prompt, request, or AI configuration changed. Generate a new suggestion." : {
+
+    },
+    "The recording's current results stay. The unfinished reprocess can't be resumed afterwards." : {
+
+    },
+    "The saved language is unavailable with Apple Speech. Choose a supported language or change the transcription engine." : {
+
+    },
+    "The update is stored in dBrief's support folder." : {
+
+    },
     "The voiceprints of %@ move into “%@”, and %@ removed. This cannot be undone." : {
       "localizations" : {
         "en" : {
@@ -1527,54 +3702,150 @@
         }
       }
     },
-    "Theme" : {},
-    "These choices apply when you turn it on." : {},
-    "They said: %@" : {},
-    "This Mac" : {},
-    "This is me" : {},
-    "This permanently deletes the recording, its transcript and notes in dBrief, and anything queued for it. Markdown notes exported elsewhere and content already sent to integrations are kept." : {},
-    "This profile and its overrides will be removed. This can’t be undone." : {},
-    "This receipt covers recorded attempts, including retries. It makes no claims about earlier activity or provider retention. Externally managed apps and processes may sync or send data elsewhere. A start without a completion does not prove whether data was received." : {},
-    "This recording" : {},
-    "This recording has no notes or transcript yet." : {},
-    "This recording has no saved summary. Use the example or choose a recording with saved insights." : {},
-    "This recording · On-device" : {},
-    "TickTick" : {},
-    "Timeout" : {},
-    "Timeout, launcher, command" : {},
-    "Timings appear after your next transcription." : {},
-    "Todoist" : {},
-    "Transcribe" : {},
-    "Transcribe an audio file or a YouTube or video link" : {},
-    "Transcribe audio" : {},
-    "Transcribe while recording" : {},
-    "Transcribed" : {},
-    "Transcribe…" : {},
-    "Transcript" : {},
-    "Transcript density" : {},
-    "Transcription" : {},
-    "Transcription & AI" : {},
-    "Transcription is required for AI analysis." : {},
-    "Transcription models" : {},
-    "Transcription speed relative to real-time (audio ÷ transcription time)" : {},
-    "Try a different name or company." : {},
-    "Two letters, for example DE or FR." : {},
-    "Type / to add a block · drag a block's handle to move it · ⌘S saves · Esc cancels" : {},
-    "Type a name, or search people…" : {},
-    "Type a name…" : {},
-    "Unavailable device (reconnect)" : {},
-    "Unavailable endpoint" : {},
-    "Unavailable while recording or processing" : {},
-    "Unfinished" : {},
-    "Unknown language" : {},
-    "Unsaved changes" : {},
-    "Update yt-dlp" : {},
-    "Updated %@" : {},
-    "Updated at %@" : {},
-    "Updates" : {},
-    "Updating yt-dlp…" : {},
-    "Use %@" : {},
-    "Use %@ as a new name" : {},
+    "Theme" : {
+
+    },
+    "These choices apply when you turn it on." : {
+
+    },
+    "They said: %@" : {
+
+    },
+    "This Mac" : {
+
+    },
+    "This is me" : {
+
+    },
+    "This permanently deletes the recording, its transcript and notes in dBrief, and anything queued for it. Markdown notes exported elsewhere and content already sent to integrations are kept." : {
+
+    },
+    "This profile and its overrides will be removed. This can’t be undone." : {
+
+    },
+    "This receipt covers recorded attempts, including retries. It makes no claims about earlier activity or provider retention. Externally managed apps and processes may sync or send data elsewhere. A start without a completion does not prove whether data was received." : {
+
+    },
+    "This recording" : {
+
+    },
+    "This recording has no notes or transcript yet." : {
+
+    },
+    "This recording has no saved summary. Use the example or choose a recording with saved insights." : {
+
+    },
+    "This recording · On-device" : {
+
+    },
+    "TickTick" : {
+
+    },
+    "Timeout" : {
+
+    },
+    "Timeout, launcher, command" : {
+
+    },
+    "Timings appear after your next transcription." : {
+
+    },
+    "Todoist" : {
+
+    },
+    "Transcribe" : {
+
+    },
+    "Transcribe an audio file or a YouTube or video link" : {
+
+    },
+    "Transcribe audio" : {
+
+    },
+    "Transcribe while recording" : {
+
+    },
+    "Transcribed" : {
+
+    },
+    "Transcribe…" : {
+
+    },
+    "Transcript" : {
+
+    },
+    "Transcript density" : {
+
+    },
+    "Transcription" : {
+
+    },
+    "Transcription & AI" : {
+
+    },
+    "Transcription is required for AI analysis." : {
+
+    },
+    "Transcription models" : {
+
+    },
+    "Transcription speed relative to real-time (audio ÷ transcription time)" : {
+
+    },
+    "Try a different name or company." : {
+
+    },
+    "Two letters, for example DE or FR." : {
+
+    },
+    "Type / to add a block · drag a block's handle to move it · ⌘S saves · Esc cancels" : {
+
+    },
+    "Type a name, or search people…" : {
+
+    },
+    "Type a name…" : {
+
+    },
+    "Unavailable device (reconnect)" : {
+
+    },
+    "Unavailable endpoint" : {
+
+    },
+    "Unavailable while recording or processing" : {
+
+    },
+    "Unfinished" : {
+
+    },
+    "Unknown language" : {
+
+    },
+    "Unsaved changes" : {
+
+    },
+    "Update yt-dlp" : {
+
+    },
+    "Updated %@" : {
+
+    },
+    "Updated at %@" : {
+
+    },
+    "Updates" : {
+
+    },
+    "Updating yt-dlp…" : {
+
+    },
+    "Use %@" : {
+
+    },
+    "Use %@ as a new name" : {
+
+    },
     "Use %@ when %@ mode is active" : {
       "localizations" : {
         "en" : {
@@ -1595,22 +3866,54 @@
         }
       }
     },
-    "Use Font" : {},
-    "Use an ID without spaces or shell characters. The previous selection is kept until the ID is valid." : {},
-    "Use as Default" : {},
-    "Use left and right arrow keys to seek." : {},
-    "Use meeting title" : {},
-    "Use settings" : {},
-    "Use suggestion" : {},
-    "Use “%@”" : {},
-    "Used to fix spelling after transcription and in AI prompts" : {},
-    "Uses the accent instead of the brand gradient on outlines and the AI sparkle." : {},
-    "Uses the configured voice on this Mac." : {},
-    "Uses the default provider below." : {},
-    "Uses this prompt and your request. No recording is sent." : {},
-    "Uses your Claude login and Microsoft 365 connector" : {},
-    "Uses your configured chat fallback, matching spoken-summary generation." : {},
-    "Value" : {},
+    "Use Font" : {
+
+    },
+    "Use an ID without spaces or shell characters. The previous selection is kept until the ID is valid." : {
+
+    },
+    "Use as Default" : {
+
+    },
+    "Use left and right arrow keys to seek." : {
+
+    },
+    "Use meeting title" : {
+
+    },
+    "Use settings" : {
+
+    },
+    "Use suggestion" : {
+
+    },
+    "Use “%@”" : {
+
+    },
+    "Used to fix spelling after transcription and in AI prompts" : {
+
+    },
+    "Uses the accent instead of the brand gradient on outlines and the AI sparkle." : {
+
+    },
+    "Uses the configured voice on this Mac." : {
+
+    },
+    "Uses the default provider below." : {
+
+    },
+    "Uses this prompt and your request. No recording is sent." : {
+
+    },
+    "Uses your Claude login and Microsoft 365 connector" : {
+
+    },
+    "Uses your configured chat fallback, matching spoken-summary generation." : {
+
+    },
+    "Value" : {
+
+    },
     "Version %@ (%@) · %@" : {
       "localizations" : {
         "en" : {
@@ -1621,56 +3924,156 @@
         }
       }
     },
-    "Versions" : {},
-    "Video URL" : {},
-    "View" : {},
-    "View privacy receipt" : {},
-    "View transcript" : {},
-    "Voice" : {},
-    "Voice engine" : {},
-    "Voice library" : {},
-    "Voice model" : {},
-    "Voice style" : {},
-    "Voiceprints stay on this Mac and are never uploaded" : {},
-    "Voices" : {},
-    "Voices %lld%% alike." : {},
-    "Voices %lld%% alike. Probably the same person." : {},
-    "Voices you skip keep the name shown in the list." : {},
-    "Wait for processing to finish to review integration deliveries" : {},
-    "Waiting" : {},
-    "Waiting to download" : {},
-    "Warning: %@" : {},
-    "Watch folders for new audio" : {},
-    "Webhook" : {},
-    "Webhook fields: %@" : {},
-    "Welcome and setup guide" : {},
-    "Welcome to dBrief" : {},
-    "What would you like to improve?" : {},
-    "When a call ends" : {},
-    "When a call starts" : {},
-    "When a voice is recognised" : {},
-    "Where it runs" : {},
-    "Where transcription runs" : {},
-    "While recording" : {},
-    "Whisper" : {},
-    "Width" : {},
-    "Works even when transcription and AI analysis are off." : {},
-    "Works from any app. Defaults to ⌃⌥⌘R." : {},
-    "Write a summary" : {},
-    "Write results in" : {},
-    "You are responsible for how you use dBrief, including informing participants, obtaining any required consent, and following applicable laws and your organisation’s policies." : {},
-    "You can set this up later in Settings. These features need their models before use." : {},
-    "YouTube or video link" : {},
-    "YouTube or video link…" : {},
-    "Your command determines where the selected text is processed." : {},
-    "Your edits to the action items and tags are lost." : {},
-    "Your meetings never leave your Mac. No telemetry, analytics or accounts." : {},
-    "Your own prompts in Ask dBrief AI" : {},
-    "Your prompts" : {},
-    "Your recent recordings will appear here." : {},
-    "Your recordings" : {},
-    "Your saved profile. Controls on this page edit app defaults." : {},
-    "Zoom, Teams, Meet and others" : {},
+    "Versions" : {
+
+    },
+    "Video URL" : {
+
+    },
+    "View" : {
+
+    },
+    "View privacy receipt" : {
+
+    },
+    "View transcript" : {
+
+    },
+    "Voice" : {
+
+    },
+    "Voice engine" : {
+
+    },
+    "Voice library" : {
+
+    },
+    "Voice model" : {
+
+    },
+    "Voice style" : {
+
+    },
+    "Voiceprints stay on this Mac and are never uploaded" : {
+
+    },
+    "Voices" : {
+
+    },
+    "Voices %lld%% alike." : {
+
+    },
+    "Voices %lld%% alike. Probably the same person." : {
+
+    },
+    "Voices you skip keep the name shown in the list." : {
+
+    },
+    "Wait for processing to finish to review integration deliveries" : {
+
+    },
+    "Waiting" : {
+
+    },
+    "Waiting to download" : {
+
+    },
+    "Warning: %@" : {
+
+    },
+    "Watch folders for new audio" : {
+
+    },
+    "Webhook" : {
+
+    },
+    "Webhook fields: %@" : {
+
+    },
+    "Welcome and setup guide" : {
+
+    },
+    "Welcome to dBrief" : {
+
+    },
+    "What would you like to improve?" : {
+
+    },
+    "When a call ends" : {
+
+    },
+    "When a call starts" : {
+
+    },
+    "When a voice is recognised" : {
+
+    },
+    "Where it runs" : {
+
+    },
+    "Where transcription runs" : {
+
+    },
+    "While recording" : {
+
+    },
+    "Whisper" : {
+
+    },
+    "Width" : {
+
+    },
+    "Works even when transcription and AI analysis are off." : {
+
+    },
+    "Works from any app. Defaults to ⌃⌥⌘R." : {
+
+    },
+    "Write a summary" : {
+
+    },
+    "Write results in" : {
+
+    },
+    "You are responsible for how you use dBrief, including informing participants, obtaining any required consent, and following applicable laws and your organisation’s policies." : {
+
+    },
+    "You can set this up later in Settings. These features need their models before use." : {
+
+    },
+    "YouTube or video link" : {
+
+    },
+    "YouTube or video link…" : {
+
+    },
+    "Your command determines where the selected text is processed." : {
+
+    },
+    "Your edits to the action items and tags are lost." : {
+
+    },
+    "Your meetings never leave your Mac. No telemetry, analytics or accounts." : {
+
+    },
+    "Your own prompts in Ask dBrief AI" : {
+
+    },
+    "Your prompts" : {
+
+    },
+    "Your recent recordings will appear here." : {
+
+    },
+    "Your recordings" : {
+
+    },
+    "Your saved profile. Controls on this page edit app defaults." : {
+
+    },
+    "Zoom, Teams, Meet and others" : {
+
+    },
     "^[%lld person](inflect: true) · ^[%lld voiceprint](inflect: true)" : {
       "localizations" : {
         "en" : {
@@ -1681,32 +4084,84 @@
         }
       }
     },
-    "claude" : {},
-    "collapsed" : {},
-    "dBrief" : {},
-    "dBrief does not notify participants or obtain consent on your behalf." : {},
-    "dBrief keeps recognising %@ from their other voiceprints." : {},
-    "dBrief needs calendar access to match meetings." : {},
-    "dBrief, %lld queued" : {},
-    "dBrief, paused" : {},
-    "dBrief, processing" : {},
-    "dBrief, ready" : {},
-    "dBrief, recording" : {},
-    "dBrief’s copy of this audio is removed. The original isn’t touched." : {},
-    "e.g. claude-opus-5-5" : {},
-    "end-to-end, faster than real-time" : {},
-    "expanded" : {},
-    "https://youtube.com/watch?v=…" : {},
-    "iCal matching will return no meetings." : {},
-    "model speed, faster than real-time" : {},
-    "name@company.com" : {},
-    "no participants" : {},
-    "or drop audio on the menu bar icon" : {},
-    "seconds" : {},
-    "slower than usual" : {},
-    "um, uh, you know. Off keeps transcripts verbatim." : {},
-    "v%@" : {},
-    "yt-dlp %@ is up to date" : {},
+    "claude" : {
+
+    },
+    "collapsed" : {
+
+    },
+    "dBrief" : {
+
+    },
+    "dBrief does not notify participants or obtain consent on your behalf." : {
+
+    },
+    "dBrief keeps recognising %@ from their other voiceprints." : {
+
+    },
+    "dBrief needs calendar access to match meetings." : {
+
+    },
+    "dBrief, %lld queued" : {
+
+    },
+    "dBrief, paused" : {
+
+    },
+    "dBrief, processing" : {
+
+    },
+    "dBrief, ready" : {
+
+    },
+    "dBrief, recording" : {
+
+    },
+    "dBrief’s copy of this audio is removed. The original isn’t touched." : {
+
+    },
+    "e.g. claude-opus-5-5" : {
+
+    },
+    "end-to-end, faster than real-time" : {
+
+    },
+    "expanded" : {
+
+    },
+    "https://youtube.com/watch?v=…" : {
+
+    },
+    "iCal matching will return no meetings." : {
+
+    },
+    "model speed, faster than real-time" : {
+
+    },
+    "name@company.com" : {
+
+    },
+    "no participants" : {
+
+    },
+    "or drop audio on the menu bar icon" : {
+
+    },
+    "seconds" : {
+
+    },
+    "slower than usual" : {
+
+    },
+    "um, uh, you know. Off keeps transcripts verbatim." : {
+
+    },
+    "v%@" : {
+
+    },
+    "yt-dlp %@ is up to date" : {
+
+    },
     "yt-dlp %@ · %@ available" : {
       "localizations" : {
         "en" : {
@@ -1717,20 +4172,48 @@
         }
       }
     },
-    "yt-dlp not found" : {},
-    "© 2026 dBrief · MIT License" : {},
-    "·" : {},
-    "· %@" : {},
-    "· Automatic" : {},
-    "· Deferred" : {},
-    "· You" : {},
-    "—" : {},
-    "“%@”" : {},
-    "•" : {},
-    "• %@" : {},
-    "↑↓ to choose · Return to assign · ⌘↓ next voice" : {},
-    "⌘F" : {},
-    "⌘↑ and ⌘↓ move between voices" : {}
+    "yt-dlp not found" : {
+
+    },
+    "© 2026 dBrief · MIT License" : {
+
+    },
+    "·" : {
+
+    },
+    "· %@" : {
+
+    },
+    "· Automatic" : {
+
+    },
+    "· Deferred" : {
+
+    },
+    "· You" : {
+
+    },
+    "—" : {
+
+    },
+    "“%@”" : {
+
+    },
+    "•" : {
+
+    },
+    "• %@" : {
+
+    },
+    "↑↓ to choose · Return to assign · ⌘↓ next voice" : {
+
+    },
+    "⌘F" : {
+
+    },
+    "⌘↑ and ⌘↓ move between voices" : {
+
+    }
   },
   "version" : "1.0"
 }
