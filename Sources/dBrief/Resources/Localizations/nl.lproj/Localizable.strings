@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Import…</key>
+	<string>Importeren…</string>
+	<key>Profile</key>
+	<string>Profiel</string>
+	<key>Recent recordings</key>
+	<string>Recente opnames</string>
+	<key>Record meeting</key>
+	<string>Vergadering opnemen</string>
+	<key>Recording Library</key>
+	<string>Opnamebibliotheek</string>
+</dict>
+</plist>

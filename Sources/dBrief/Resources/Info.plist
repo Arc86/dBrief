@@ -12,6 +12,13 @@
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.dbrief.app</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>nl</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>dBrief</string>
 	<key>CFBundlePackageType</key>

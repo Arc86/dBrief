@@ -52,7 +52,7 @@ NOTARY_PROFILE ?=
 DMG_STAGING = .build/dmg
 DMG_NAME = $(APP_NAME)-$(VERSION).dmg
 
-.PHONY: app run clean build sign dmg package-dmg notarize beta run-beta icons
+.PHONY: app run clean build sign dmg package-dmg notarize beta run-beta icons strings
 
 build:
 	# SwiftPM currently stamps the deployment target (14.0) as the linked SDK.
@@ -60,6 +60,12 @@ build:
 	swift build -c release --arch arm64 \
 		-Xlinker -platform_version -Xlinker macos \
 		-Xlinker 14.0 -Xlinker $(MACOS_SDK_VERSION)
+
+# Rescan the source for UI strings into Localizable.xcstrings and recompile the
+# tracked translations (needs Xcode). After editing only a translation:
+# `scripts/sync-strings.sh --compile-only`.
+strings:
+	./scripts/sync-strings.sh
 
 # Regenerate the Tahoe icon with Xcode 26+. Keep the compiled catalog tracked
 # so normal builds still work with Command Line Tools alone.
@@ -121,6 +127,10 @@ app: build
 	cp -R Sources/dBrief/Resources/Fonts $(RESOURCES)/Fonts
 	cp -R Sources/dBrief/Resources/3dPartyIcons $(RESOURCES)/3dPartyIcons
 	cp -R Sources/dBrief/Resources/MarkdownEditor $(RESOURCES)/MarkdownEditor
+	: 'UI translations, compiled from Localizable.xcstrings by `make strings`.'
+	: 'English is the source language: its strings are the keys, so en.lproj stays empty.'
+	mkdir -p $(RESOURCES)/en.lproj
+	if ls Sources/dBrief/Resources/Localizations/*.lproj >/dev/null 2>&1; then cp -R Sources/dBrief/Resources/Localizations/*.lproj $(RESOURCES)/; fi
 	@set -e; \
 	LOCAL_METALLIB="$$(find .build -type f -name 'default.metallib' | head -n 1)"; \
 	if [ -n "$$LOCAL_METALLIB" ]; then \
