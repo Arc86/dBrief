@@ -58,7 +58,7 @@ struct CalendarParticipantRequestConfiguration: Codable, Equatable, Sendable {
         timeoutSeconds = config.timeoutSeconds
         maxAttendees = config.maxAttendees
         self.scope = scope
-        commandDigest = Self.digest(config.command)
+        commandDigest = Self.digest(config)
     }
 
     func matches(config: CalendarCLIConfig, scope: CalendarCLIScope) -> Bool {
@@ -71,13 +71,16 @@ struct CalendarParticipantRequestConfiguration: Codable, Equatable, Sendable {
     func restoredConfig(using current: CalendarCLIConfig) -> CalendarCLIConfig? {
         guard current.attendeePolicy == .onDemand,
               CalendarCLIScope(config: current) == scope,
-              Self.digest(current.command) == commandDigest else { return nil }
+              Self.digest(current) == commandDigest else { return nil }
         return current.updating(modelID: .some(modelID), effort: effort,
             timeoutSeconds: timeoutSeconds, maxAttendees: min(maxAttendees, current.maxAttendees))
     }
 
-    private static func digest(_ command: String?) -> String {
-        let source = command ?? "managed-claude-calendar-command-v1"
+    /// The managed source without a launcher keeps its original value, so
+    /// journals written before launchers existed still match.
+    private static func digest(_ config: CalendarCLIConfig) -> String {
+        let managed = "managed-claude-calendar-command-v1" + (config.launcher.map { "|launcher:" + $0 } ?? "")
+        let source = config.command ?? managed
         return SHA256.hash(data: Data(source.utf8))
             .map { String(format: "%02x", $0) }.joined()
     }

@@ -71,7 +71,8 @@ extension ProcessingPipeline {
                 return SpeakerReviewItem(id: label.id, proposedName: label.displayName,
                     reason: decision?.reason ?? .noEmbedding, confidence: decision?.confidence ?? 0,
                     personId: label.personId, clusterEmbedding: embeddings[label.id] ?? [],
-                    snippet: SpeakerSnippet.representative(for: label.id, in: rich))
+                    snippet: SpeakerSnippet.representative(for: label.id, in: rich),
+                    quote: SpeakerSnippet.quote(for: label.id, in: rich))
             }.sorted { $0.id < $1.id }
             try await validateSpeakers(steps)
             try await steps.holdReview(items)

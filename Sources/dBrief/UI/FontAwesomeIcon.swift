@@ -7,7 +7,6 @@ enum FABrandIcon: String {
     case microsoft = "\u{f3ca}"
     case google = "\u{f1a0}"
     case apple = "\u{f179}"
-    case discord = "\u{f392}"
 
     /// Renders the brand icon as a SwiftUI Text view.
     func text(size: CGFloat) -> Text {

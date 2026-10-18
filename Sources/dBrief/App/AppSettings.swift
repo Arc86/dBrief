@@ -56,6 +56,7 @@ final class AppSettings {
         static let watchedFolderNotifyOnDetect = "watchedFolderNotifyOnDetect"
         static let removeIgnoredSegments = "removeIgnoredSegments"
         static let customIgnoredSegments = "customIgnoredSegments"
+        static let savedChatPrompts = "savedChatPrompts"
         static let transcriptionEndpoints = "transcriptionEndpoints"
         static let aiEndpoints = "aiEndpoints"
         static let defaultTranscriptionEndpointId = "defaultTranscriptionEndpointId"
@@ -81,7 +82,7 @@ final class AppSettings {
         static let showDockIcon = "showDockIcon"
         static let profiles = "profiles"
         static let activeProfileId = "activeProfileId"
-        static let powerUserMode = "powerUserMode"
+        // "powerUserMode" (removed 2026-10) may linger in UserDefaults; it is ignored.
         static let obsidianIncludeTranscript = "obsidianIncludeTranscript"
         static let whisperModelName = "whisperModelName"
         static let whisperComputeUnits = "whisperComputeUnits"
@@ -204,6 +205,10 @@ final class AppSettings {
         didSet { saveKeychainSecret(oneNoteToken, for: .oneNote) }
     }
 
+    var todoistToken: String {
+        didSet { saveKeychainSecret(todoistToken, for: .todoist) }
+    }
+
     // MARK: - Post-Recording Defaults
 
     var autoTranscribe: Bool {
@@ -322,6 +327,10 @@ final class AppSettings {
         case remoteEndpoint
         case localCLI
 
+        /// Unified engines write all results in one call and honour "Results language";
+        /// the remote endpoint follows its prompts instead.
+        var usesResultsLanguage: Bool { self != .remoteEndpoint }
+
         var displayName: String {
             switch self {
             case .appleIntelligence: "Apple Intelligence"
@@ -412,13 +421,15 @@ final class AppSettings {
     var showDockIcon: Bool {
         didSet {
             UserDefaults.standard.set(showDockIcon, forKey: Keys.showDockIcon)
-            NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
+            // Settings keeps its dock icon while open (keyboard focus needs it); the
+            // window applies the choice when it closes.
+            let settingsOpen = NSApp.windows.contains {
+                $0.isVisible && ($0.identifier?.rawValue.hasPrefix("settings") ?? false)
+            }
+            if showDockIcon || !settingsOpen {
+                NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
+            }
         }
-    }
-
-    /// Reveals advanced settings and features across all tabs
-    var powerUserMode: Bool {
-        didSet { UserDefaults.standard.set(powerUserMode, forKey: Keys.powerUserMode) }
     }
 
     /// Global keyboard shortcut for toggling recording (user-configurable in Settings → Recording → Shortcut)
@@ -482,6 +493,15 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(customIgnoredSegments, forKey: Keys.customIgnoredSegments) }
     }
 
+    /// Questions saved from Ask dBrief AI, offered as prompts in every recording's chat.
+    var savedChatPrompts: [SavedChatPrompt] {
+        didSet {
+            if let data = try? JSONEncoder().encode(savedChatPrompts) {
+                UserDefaults.standard.set(data, forKey: Keys.savedChatPrompts)
+            }
+        }
+    }
+
     /// WhisperKit model name to use for local transcription (e.g., "openai_whisper-small").
     var whisperModelName: String {
         didSet { UserDefaults.standard.set(whisperModelName, forKey: Keys.whisperModelName) }
@@ -543,6 +563,16 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(reduceNeon, forKey: Keys.reduceNeon) }
     }
 
+    /// App-wide viewer preferences. Existing reading keys remain the storage
+    /// authority; meeting profiles never override appearance or reading choices.
+    var viewerAppearance: ViewerAppearancePreferences {
+        didSet { viewerAppearance.save(to: .standard) }
+    }
+
+    var uiTypography: AppTypographyPreferences {
+        didSet { uiTypography.save(to: .standard) }
+    }
+
     /// Lifetime total of audio seconds dBrief has transcribed to text. A
     /// monotonically-increasing odometer that survives "Clear benchmark stats".
     var lifetimeTranscribedSeconds: Double {
@@ -598,7 +628,26 @@ final class AppSettings {
         Output valid JSON only. No markdown code fences, no explanation.
         """
 
+    /// The briefing language is appended at runtime from the Spoken Summary language
+    /// setting (`SpokenSummaryPrompt.systemPrompt`), so this stays language-neutral.
     static let defaultSpokenSummaryPrompt = """
+        You are an assistant that turns a meeting's written summary and action items \
+        into a short, natural-sounding spoken briefing to be read aloud by a \
+        text-to-speech voice. \
+        Produce flowing spoken prose only — no headings, bullet points, markdown, \
+        emoji, or list markers. \
+        Open with one sentence framing what the meeting was about, then narrate the \
+        key points and decisions conversationally, and finish by mentioning the most \
+        important action items and who owns them. \
+        Keep it concise (roughly 150-220 words), use complete sentences, and spell out \
+        abbreviations where it helps listening. \
+        Do not add meta commentary like "here is your summary" — start directly with \
+        the briefing.
+        """
+
+    /// The pre-language-setting default. A stored prompt equal to this is migrated
+    /// to `defaultSpokenSummaryPrompt`; customized prompts are left alone.
+    static let legacyDefaultSpokenSummaryPrompt = """
         You are an assistant that turns a meeting's written summary and action items \
         into a short, natural-sounding spoken briefing to be read aloud by a \
         text-to-speech voice. \
@@ -613,6 +662,11 @@ final class AppSettings {
         Do not add meta commentary like "here is your summary" — start directly with \
         the briefing.
         """
+
+    static func migratedSpokenSummaryPrompt(stored: String?) -> String {
+        guard let stored, stored != legacyDefaultSpokenSummaryPrompt else { return defaultSpokenSummaryPrompt }
+        return stored
+    }
 
     /// Default calm-delivery style instruction for the Spoken Summary TTS voice.
     /// Followed only by the 1.7B model.
@@ -703,43 +757,45 @@ final class AppSettings {
     }
 
     /// Prompt for the second AI pass that rewrites insights into a spoken script
-    /// for the Spoken Summary feature. User-editable in Settings → AI Analysis.
+    /// for the Spoken Summary feature. User-editable in Settings → AI analysis.
     var spokenSummaryPrompt: String {
         didSet { UserDefaults.standard.set(spokenSummaryPrompt, forKey: Keys.spokenSummaryPrompt) }
     }
 
     /// Style/delivery instruction fed to the Spoken Summary TTS voice. Only the
     /// 1.7B model follows it (the 0.6B variant ignores it). User-editable in
-    /// Settings → AI Analysis; an empty value sends no instruction.
+    /// Settings → AI analysis; an empty value sends no instruction.
     var ttsDeliveryInstruction: String {
         didSet { UserDefaults.standard.set(ttsDeliveryInstruction, forKey: Keys.ttsDeliveryInstruction) }
     }
 
     /// Qwen3-TTS model size used for spoken-summary synthesis. 1.7B is the most
     /// natural (and the only one that follows `ttsDeliveryInstruction`); 0.6B is
-    /// lighter for 16 GB Macs. Settings → AI Analysis.
+    /// lighter for 16 GB Macs. Settings → AI analysis.
     var ttsModelSize: TTSModelSize {
         didSet { UserDefaults.standard.set(ttsModelSize.rawValue, forKey: Keys.ttsModelSize) }
     }
 
-    /// Qwen3-TTS speaker voice used for spoken-summary synthesis. Settings → AI Analysis.
+    /// Qwen3-TTS speaker voice used for spoken-summary synthesis. Settings → AI analysis.
     var ttsVoice: TTSVoice {
         didSet { UserDefaults.standard.set(ttsVoice.rawValue, forKey: Keys.ttsVoice) }
     }
 
-    /// Qwen3-TTS output language used for spoken-summary synthesis. Settings → AI Analysis.
+    /// Chosen spoken-summary language (both engines). Use `spokenSummaryLanguage`
+    /// for the value in effect, which falls back to English when the selected engine
+    /// can't speak this one. Settings → Spoken summary.
     var ttsLanguage: TTSLanguage {
         didSet { UserDefaults.standard.set(ttsLanguage.rawValue, forKey: Keys.ttsLanguage) }
     }
 
     /// Which on-device TTS engine synthesizes spoken summaries. Default Kokoro
     /// (fast, ANE-resident); Qwen3 is the broader-multilingual alternative.
-    /// Settings → AI Analysis.
+    /// Settings → AI analysis.
     var ttsEngine: TTSEngine {
         didSet { UserDefaults.standard.set(ttsEngine.rawValue, forKey: Keys.ttsEngine) }
     }
 
-    /// Kokoro (FluidAudio) voice used when `ttsEngine == .kokoro`. Settings → AI Analysis.
+    /// Kokoro (FluidAudio) voice used when `ttsEngine == .kokoro`. Settings → AI analysis.
     var ttsKokoroVoice: KokoroVoice {
         didSet { UserDefaults.standard.set(ttsKokoroVoice.rawValue, forKey: Keys.ttsKokoroVoice) }
     }
@@ -748,12 +804,25 @@ final class AppSettings {
     /// TTS engine. Kokoro derives language from its voice id and has no style
     /// instruction or model-size control, so those are `nil` for it.
     var ttsSynthesisParams: (engine: String, voice: String?, language: String?, instruction: String?, model: String?) {
+        let language = spokenSummaryLanguage.rawValue
         switch ttsEngine {
         case .kokoro:
-            return (ttsEngine.rawValue, ttsKokoroVoice.rawValue, nil, nil, nil)
+            return (ttsEngine.rawValue, effectiveKokoroVoice.rawValue, language, nil, nil)
         case .qwen3:
-            return (ttsEngine.rawValue, ttsVoice.rawValue, ttsLanguage.rawValue, ttsDeliveryInstruction, ttsModelSize.rawValue)
+            return (ttsEngine.rawValue, ttsVoice.rawValue, language, ttsDeliveryInstruction, ttsModelSize.rawValue)
         }
+    }
+
+    /// The language the spoken summary is written and spoken in.
+    var spokenSummaryLanguage: TTSLanguage { ttsEngine.resolvedLanguage(ttsLanguage) }
+
+    /// The Kokoro voice actually used: the chosen one if it speaks the summary
+    /// language, otherwise that language's default voice.
+    var effectiveKokoroVoice: KokoroVoice { KokoroVoice.resolved(ttsKokoroVoice, for: spokenSummaryLanguage) }
+
+    /// The rewrite prompt with the summary language appended.
+    var spokenSummarySystemPrompt: String {
+        SpokenSummaryPrompt.systemPrompt(base: spokenSummaryPrompt, language: spokenSummaryLanguage)
     }
 
     var remoteChunkingEnabled: Bool {
@@ -914,6 +983,8 @@ final class AppSettings {
 
     init() {
         let defaults = UserDefaults.standard
+        self.viewerAppearance = ViewerAppearancePreferences.load(from: defaults)
+        self.uiTypography = AppTypographyPreferences.load(from: defaults)
 
         self.recordingFolderURL = Self.loadBookmarkURL(key: Keys.recordingFolderBookmark)
             ?? Self.defaultRecordingFolder()
@@ -938,6 +1009,7 @@ final class AppSettings {
         self.evernoteToken = Self.loadKeychainSecret(for: .evernote)
         self.googleKeepToken = Self.loadKeychainSecret(for: .googleKeep)
         self.oneNoteToken = Self.loadKeychainSecret(for: .oneNote)
+        self.todoistToken = Self.loadKeychainSecret(for: .todoist)
 
         self.autoTranscribe = defaults.object(forKey: Keys.autoTranscribe) as? Bool ?? true
         self.autoSummary = defaults.object(forKey: Keys.autoSummary) as? Bool ?? true
@@ -986,7 +1058,6 @@ final class AppSettings {
 
         self.audioInputDeviceUID = defaults.string(forKey: Keys.audioInputDeviceUID) ?? ""
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) as? Bool ?? false
-        self.powerUserMode = defaults.object(forKey: Keys.powerUserMode) as? Bool ?? false
         self.recordHotkey = {
             if let data = defaults.data(forKey: Keys.recordHotkey),
                let hotkey = try? JSONDecoder().decode(RecordHotkey.self, from: data)
@@ -1018,6 +1089,8 @@ final class AppSettings {
         self.watchedFolderNotifyOnDetect = defaults.object(forKey: Keys.watchedFolderNotifyOnDetect) as? Bool ?? true
         self.removeIgnoredSegments = defaults.object(forKey: Keys.removeIgnoredSegments) as? Bool ?? true
         self.customIgnoredSegments = defaults.stringArray(forKey: Keys.customIgnoredSegments) ?? []
+        self.savedChatPrompts = defaults.data(forKey: Keys.savedChatPrompts)
+            .flatMap { try? JSONDecoder().decode([SavedChatPrompt].self, from: $0) } ?? []
         self.whisperModelName = {
             // New key takes priority
             if let name = defaults.string(forKey: Keys.whisperModelName), !name.isEmpty {
@@ -1046,7 +1119,7 @@ final class AppSettings {
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt
         self.tagsPrompt = defaults.string(forKey: Keys.tagsPrompt) ?? Self.defaultTagsPrompt
-        self.spokenSummaryPrompt = defaults.string(forKey: Keys.spokenSummaryPrompt) ?? Self.defaultSpokenSummaryPrompt
+        self.spokenSummaryPrompt = Self.migratedSpokenSummaryPrompt(stored: defaults.string(forKey: Keys.spokenSummaryPrompt))
         self.ttsDeliveryInstruction = defaults.string(forKey: Keys.ttsDeliveryInstruction) ?? Self.defaultTTSDeliveryInstruction
         self.ttsModelSize = (defaults.string(forKey: Keys.ttsModelSize)).flatMap(TTSModelSize.init(rawValue:)) ?? .large
         self.ttsVoice = (defaults.string(forKey: Keys.ttsVoice)).flatMap(TTSVoice.init(rawValue:)) ?? .ryan

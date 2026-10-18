@@ -34,7 +34,8 @@ final class CaptureCoordinator {
         case liveEnded(UUID)
         case live(UUID, CaptureLivePreview.Event)
         case meter(UUID, Double, Float)
-        case status(UUID, String?)
+        /// `problem` notes (a silent or muted mic) stay until replaced; others clear after 4 s.
+        case status(UUID, String?, problem: Bool = false)
         /// The device the mic track is recording from right now (nil when none).
         case microphone(UUID, String?)
     }
@@ -49,7 +50,7 @@ final class CaptureCoordinator {
     }
     enum HardwareEvent: Sendable {
         case meter(Double, Float)
-        case status(String)
+        case status(String, problem: Bool = false)
         case microphone(String?)
     }
     typealias HardwareSink = @MainActor @Sendable (HardwareEvent) -> Void
@@ -85,7 +86,7 @@ final class CaptureCoordinator {
             result.bindEvents = { sink in
                 if let sink {
                     audio.stateTickHandler = { duration, peak in sink(.meter(duration, peak)) }
-                    audio.statusNoteHandler = { sink(.status($0)) }
+                    audio.statusNoteHandler = { sink(.status($0, problem: $1)) }
                     audio.microphoneHandler = { sink(.microphone($0)) }
                     if let name = audio.activeMicrophoneName { sink(.microphone(name)) }
                 } else {
@@ -271,15 +272,18 @@ final class CaptureCoordinator {
         case .meter(let duration, let peak):
             guard owned.isActive, !owned.isPaused else { return }
             onEvent(.meter(owned.request.id, duration, peak))
-        case .status(let message):
+        case .status(let message, let problem):
             owned.statusClear?.cancel()
-            let sleep = sleep
-            owned.statusClear = Task { @MainActor [weak self, weak owned] in
-                do { try await sleep(.seconds(4)) } catch { return }
-                guard !Task.isCancelled, let self, let owned, self.acceptsEvents(owned) else { return }
-                self.onEvent(.status(owned.request.id, nil))
+            owned.statusClear = nil
+            if !problem {
+                let sleep = sleep
+                owned.statusClear = Task { @MainActor [weak self, weak owned] in
+                    do { try await sleep(.seconds(4)) } catch { return }
+                    guard !Task.isCancelled, let self, let owned, self.acceptsEvents(owned) else { return }
+                    self.onEvent(.status(owned.request.id, nil))
+                }
             }
-            onEvent(.status(owned.request.id, message))
+            onEvent(.status(owned.request.id, message, problem: problem))
         case .microphone(let name):
             onEvent(.microphone(owned.request.id, name))
         }

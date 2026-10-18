@@ -6,23 +6,25 @@ struct SettingsErrorDetails: View {
     let summary: String
     let error: String
     @State private var isExpanded = false
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label {
                 Text(summary)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(palette.heading.color)
             } icon: {
                 Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(status.danger.color)
             }
-            .font(.callout)
+            .uiFont(.callout)
 
             DisclosureGroup("Error details", isExpanded: $isExpanded) {
                 ScrollView {
                     Text(SettingsErrorSanitizer.details(for: error))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .uiFont(.callout)
+                        .foregroundStyle(palette.secondary.color)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 4)
@@ -40,6 +42,11 @@ struct SettingsErrorDetails: View {
 /// JSON bodies, shell arguments, and secrets echoed without a recognizable label.
 enum SettingsErrorSanitizer {
     static func details(for error: String) -> String {
+        hint(for: error) + "\n\nRaw error text is omitted because provider responses and command output may contain credentials or private data."
+    }
+
+    /// The safe one-paragraph explanation, without the omitted-text note.
+    static func hint(for error: String) -> String {
         let message = error.lowercased()
         let hint: String
         if let code = captureCode(in: message, pattern: #"^server error \(([1-5][0-9]{2})\):"#) {
@@ -72,7 +79,7 @@ enum SettingsErrorSanitizer {
         } else {
             hint = "No additional diagnostic information can be displayed safely. Check the selected service or model and its configuration, then try again."
         }
-        return hint + "\n\nRaw error text is omitted because provider responses and command output may contain credentials or private data."
+        return hint
     }
 
     private static func captureCode(in message: String, pattern: String) -> Int? {
@@ -81,5 +88,20 @@ enum SettingsErrorSanitizer {
               let range = Range(match.range(at: 1), in: message)
         else { return nil }
         return Int(message[range])
+    }
+}
+
+/// Error text for processing steps and notices. Provider responses and command output
+/// can carry credentials, so the part from a server or command error onward is replaced
+/// by the same safe hint Settings shows; anything before it, and other messages, stay.
+enum UserFacingError {
+    private static let markers = ["Server error (", "Local CLI command exited with code", "Failed to launch local CLI command:"]
+
+    static func text(_ raw: String) -> String {
+        for marker in markers {
+            guard let range = raw.range(of: marker, options: .caseInsensitive) else { continue }
+            return String(raw[..<range.lowerBound]) + SettingsErrorSanitizer.hint(for: String(raw[range.lowerBound...]))
+        }
+        return raw
     }
 }

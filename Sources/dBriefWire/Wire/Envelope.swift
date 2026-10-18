@@ -12,9 +12,15 @@ public enum MLRequest: Sendable, Codable {
     case transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool)
     case diarize(path: String)
     case diarizeWithEmbeddings(path: String)
-    case analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
-    case analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
+    case analyze(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
+    case analyzeStream(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
     case chatStream(systemPrompt: String, userMessage: String)
+    /// One turn of a multi-turn transcript chat. The helper keeps the Gemma
+    /// session warm between turns (keyed on `systemPrompt` + the bare user
+    /// questions in `history`); `retrievedContext` applies to this turn only.
+    case chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String)
+    /// Retrieval vectors from `EmbeddingPrompt.current` (L2-normalized, model-defined width), one per text, in order.
+    case embed(texts: [String], role: EmbeddingRole)
     case parakeetTranscribe(path: String, modelVariant: String, diarize: Bool)
     case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?)
     case prepareModels
@@ -28,7 +34,6 @@ public enum MLRequest: Sendable, Codable {
     case fetchWhisperModels(repo: String)
     case purgeModels
     case purgeWhisper
-    case purgeSpeakerKit
     case purgeQwen
     case purgeParakeet
     case memoryPressurePurge
@@ -45,6 +50,7 @@ public enum MLEvent: Sendable, Codable {
     case diarizeWithEmbeddingsResult(turns: [DiarizedTurn], embeddings: [String: [Float]])
     case speechResult(SpeechSynthesisResult)
     case insightsResult(LocalInsightsResult)
+    case embeddingsResult([[Float]])
     case boolResult(Bool)
     case stringsResult([String])
     case voidResult                             // terminal success for no-value ops

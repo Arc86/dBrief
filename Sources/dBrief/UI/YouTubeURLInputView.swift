@@ -6,6 +6,8 @@ import SwiftUI
 struct YouTubeURLInputView: View {
     @Environment(AppState.self) private var appState
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
 
     @Binding var isVisible: Bool
 
@@ -24,29 +26,37 @@ struct YouTubeURLInputView: View {
     @State private var ytDlpUpdateCheckError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            MenuPanelHairline()
+                .padding(.bottom, 4)
             // Header
             HStack {
-                Image(systemName: "play.rectangle.fill")
-                    .foregroundStyle(.red)
-                Text("YouTube / Video URL")
-                    .font(.subheadline.weight(.medium))
+                Text("YouTube or video link")
+                    .uiFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
                 Spacer()
                 Button {
                     isVisible = false
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .medium))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 22))
                 .accessibilityLabel("Close URL input")
                 .disabled(isLoading || isDownloadingYtDlp)
             }
 
             // URL input row (only enabled when yt-dlp is ready)
-            HStack(spacing: 6) {
-                TextField("https://youtube.com/watch?v=…", text: $urlText)
-                    .textFieldStyle(.roundedBorder)
+            HStack(spacing: 8) {
+                TextField("Video URL", text: $urlText,
+                          prompt: Text("https://youtube.com/watch?v=…").foregroundStyle(palette.secondary.color))
+                    .textFieldStyle(.plain)
+                    .uiFont(.system(size: 12))
+                    .foregroundStyle(palette.heading.color)
+                    .padding(.horizontal, 10)
+                    .frame(height: 33)
+                    .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1))
                     .disabled(isLoading || isDownloadingYtDlp || !ytDlpAvailable)
                     .onSubmit { submitURL() }
 
@@ -56,14 +66,13 @@ struct YouTubeURLInputView: View {
                     if isLoading {
                         ProgressView()
                             .controlSize(.small)
-                            .frame(width: 40)
+                            .tint(palette.onPrimary.color)
                     } else {
                         Text("Go")
-                            .frame(width: 40)
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12))
+                .frame(width: 52)
                 .disabled(
                     !ytDlpAvailable
                     || urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -74,21 +83,19 @@ struct YouTubeURLInputView: View {
 
             if isLoading {
                 Label("Downloading audio…", systemImage: "arrow.down.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.secondary.color)
             }
 
             if let error = loadError {
                 Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(status.danger.color)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider()
             ytDlpSection
         }
-        .padding(.vertical, 4)
         .onAppear {
             ytDlpAvailable = YouTubeDownloadService.findYtDlp() != nil
         }
@@ -104,26 +111,26 @@ struct YouTubeURLInputView: View {
         if isDownloadingYtDlp {
             VStack(alignment: .leading, spacing: 4) {
                 Label(ytDlpAvailable ? "Updating yt-dlp…" : "Downloading yt-dlp…", systemImage: "arrow.down.circle")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .uiFont(.system(size: 11, weight: .medium))
+                    .foregroundStyle(palette.heading.color)
                 ProgressView(value: ytDlpDownloadProgress)
                     .progressViewStyle(.linear)
                 if ytDlpDownloadProgress > 0 {
                     Text("\(Int(ytDlpDownloadProgress * 100))%")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.secondary.color)
                 }
             }
         } else if !ytDlpAvailable {
             VStack(alignment: .leading, spacing: 6) {
                 Label("yt-dlp not found", systemImage: "exclamationmark.triangle")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.orange)
+                    .uiFont(.system(size: 11, weight: .medium))
+                    .foregroundStyle(status.warning.color)
 
                 if let error = ytDlpDownloadError {
                     Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(status.danger.color)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -136,56 +143,52 @@ struct YouTubeURLInputView: View {
                             systemImage: "arrow.down.circle"
                         )
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(ytDlpDownloadError == nil ? .accentColor : .orange)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 11, fillsWidth: false))
                 }
 
                 Text("Or install manually: brew install yt-dlp")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.secondary.color)
             }
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 if isCheckingYtDlpUpdate {
                     Label("Checking yt-dlp for updates…", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.secondary.color)
                 } else if let status = ytDlpUpdateStatus {
                     if status.updateAvailable {
                         Text("yt-dlp \(status.installedVersion) · \(status.latestVersion) available")
-                            .font(.caption)
+                            .uiFont(.system(size: 11))
                         Button {
                             downloadYtDlp(autoSubmit: false)
                         } label: {
                             Label("Update yt-dlp", systemImage: "arrow.down.circle")
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 28, fontSize: 11, fillsWidth: false))
                         .disabled(isLoading)
                         Text("The update is stored in dBrief's support folder.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.secondary.color)
                     } else {
                         Text("yt-dlp \(status.installedVersion) is up to date")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.secondary.color)
                     }
                 } else if let error = ytDlpUpdateCheckError {
                     Text("Could not check yt-dlp updates: \(error)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.secondary.color)
                     Button("Check again") {
                         Task { await checkYtDlpUpdate() }
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 28, fontSize: 11, fillsWidth: false))
                 }
 
                 if let error = ytDlpDownloadError {
                     Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(status.danger.color)
                 }
             }
         }

@@ -28,6 +28,10 @@ struct RemoteUploadPolicy: Sendable {
                 // Direct multipart attachments are 25 MB, even though the Dev
                 // tier's URL-based input supports 100 MB. We upload files.
                 hostedLimit = Limit(provider: "Groq", maximumBytes: 25_000_000, description: "25 MB or less")
+            case .openAICompatible where host == "openrouter.ai":
+                // Multipart uploads share OpenAI's 25 MB cap; only base64 JSON
+                // bodies bypass it, and we upload files.
+                hostedLimit = Limit(provider: "OpenRouter", maximumBytes: 25_000_000, description: "25 MB or less")
             case .deepgram where Self.deepgramHosts.contains(host):
                 hostedLimit = Limit(provider: "Deepgram", maximumBytes: 2_000_000_000, description: "2 GB or less")
             case .elevenLabs where Self.elevenLabsHosts.contains(host):
@@ -90,6 +94,7 @@ struct RemoteUploadPolicy: Sendable {
         "kr.api.openai.com", "gb.api.openai.com", "ae.api.openai.com",
     ]
     // https://console.groq.com/docs/speech-to-text
+    // https://openrouter.ai/docs/guides/overview/multimodal/stt (verified 2026-10-08)
     // https://developers.deepgram.com/docs/pre-recorded-audio
     // https://developers.deepgram.com/reference/custom-endpoints
     private static let deepgramHosts: Set<String> = [

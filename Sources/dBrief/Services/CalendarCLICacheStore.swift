@@ -143,11 +143,6 @@ final class CalendarCLICacheStore: @unchecked Sendable {
         directory.appendingPathComponent("lists").appendingPathComponent(scope.digest).appendingPathComponent(listName(window))
     }
 
-    internal func detailFileURL(scope: CalendarCLIScope, key: CalendarCLIOccurrenceKey) -> URL {
-        directory.appendingPathComponent("details").appendingPathComponent(scope.digest)
-            .appendingPathComponent(detailName(scope: scope, key: key))
-    }
-
     private func listName(_ window: CalendarCLIWindow) -> String {
         "\(Int(window.start.timeIntervalSince1970))-\(Int(window.end.timeIntervalSince1970)).json"
     }

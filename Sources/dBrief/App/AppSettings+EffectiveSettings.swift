@@ -17,6 +17,32 @@ extension AppSettings {
         return profiles[0]
     }
 
+    /// Integration settings as a given profile sees them: its TickTick list,
+    /// Todoist project and Notion destination overrides on top of the app's. Deliveries resolve with the
+    /// profile they were prepared under, never the currently active one, so a
+    /// later retry still goes where the meeting's profile sent it. A nil or
+    /// deleted profile resolves the app settings.
+    func resolvedIntegrations(for profileID: UUID?) -> IntegrationSettings {
+        var resolved = integrations
+        guard let profileID, let overrides = profiles.first(where: { $0.id == profileID })?.overrides else {
+            return resolved
+        }
+        if let id = overrides.tickTickProjectID {
+            resolved.tickTick.projectID = id.isEmpty ? nil : id
+            resolved.tickTick.projectName = id.isEmpty ? nil : overrides.tickTickProjectName
+        }
+        if let id = overrides.todoistProjectID {
+            resolved.todoist.projectID = id.isEmpty ? nil : id
+            resolved.todoist.projectName = id.isEmpty ? nil : overrides.todoistProjectName
+        }
+        if let id = overrides.notionParentID, !id.isEmpty {
+            resolved.notion.parentID = id
+            resolved.notion.parentType = overrides.notionParentType.flatMap(NotionParentType.init(rawValue:)) ?? .page
+            resolved.notion.parentName = overrides.notionParentName
+        }
+        return resolved
+    }
+
     /// `nil` explicitly resolves app defaults, for global tests and app-scope previews.
     func resolvedLocalCLIConfig(for profile: MeetingProfile?) -> LocalCLIConfig {
         var config = localCLIConfig
@@ -120,6 +146,13 @@ extension AppSettings {
         activeProfile.overrides.autoLoadCalendarParticipants ?? autoLoadCalendarParticipants
     }
 
+    /// Tasks for a file dropped into a watched folder: the active profile's After
+    /// recording choices, like the engine, folders and AI it is processed with.
+    var watchedFolderTasks: (transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool) {
+        let transcribe = effectiveAutoTranscribe
+        return (transcribe, effectiveAutoSummary && transcribe, effectiveAutoActionItems && transcribe, effectiveAutoTags && transcribe)
+    }
+
     func resolvedAutoLoadCalendarParticipants(for profile: MeetingProfile?) -> Bool {
         profile?.overrides.autoLoadCalendarParticipants ?? autoLoadCalendarParticipants
     }
@@ -129,6 +162,28 @@ extension AppSettings {
             overridePath: activeProfile.overrides.recordingFolderPath,
             fallback: recordingFolderURL
         )
+    }
+
+    /// The app default or any profile uses `engine`, so its setup card must stay visible.
+    func usesTranscriptionEngineAnywhere(_ engine: TranscriptionEngine) -> Bool {
+        transcriptionEngine == engine || profiles.contains { $0.overrides.transcriptionEngine == engine }
+    }
+
+    func usesAIEngineAnywhere(_ engine: AIEngine) -> Bool {
+        aiEngine == engine || profiles.contains { $0.overrides.aiEngine == engine }
+    }
+
+    /// Every folder auto-delete must sweep: the app's folders plus each profile's
+    /// folder overrides, so recordings saved under a non-active profile also age out.
+    func retentionFolders(for category: RetentionCategory) -> [URL] {
+        var folders = [recordingFolderURL]
+        folders += profiles.map { resolvedFolderURL(overridePath: $0.overrides.recordingFolderPath, fallback: recordingFolderURL) }
+        if category == .transcripts {
+            folders.append(transcriptionFolderURL)
+            folders += profiles.map { resolvedFolderURL(overridePath: $0.overrides.transcriptionFolderPath, fallback: transcriptionFolderURL) }
+        }
+        var seen = Set<String>()
+        return folders.filter { seen.insert($0.standardizedFileURL.path).inserted }
     }
 
     var effectiveTranscriptionFolderURL: URL {
@@ -155,14 +210,14 @@ extension AppSettings {
         activeProfile.overrides.obsidianDefaultFolderRelativePath ?? obsidianDefaultFolderRelativePath
     }
 
-    /// The Whisper helper config for the *current raw* settings, built identically
-    /// to the transcription path so a prewarmed model satisfies `loadedConfig ==
-    /// config` in the helper and is reused (not reloaded). Mirrors the construction
-    /// in `RecordingManager.transcribeRecordingAudio` — keep the two in lockstep.
+    /// The Whisper helper config, built identically for prewarm and transcription so a
+    /// prewarmed model satisfies `loadedConfig == config` in the helper and is reused.
+    /// Uses the active profile's language, like every other engine.
     var whisperRuntimeConfig: WhisperRuntimeConfig {
-        WhisperRuntimeConfig(
+        let language = effectiveTranscriptionLanguage
+        return WhisperRuntimeConfig(
             modelName: whisperModelName,
-            language: transcriptionLanguage.isEmpty ? nil : transcriptionLanguage,
+            language: language.isEmpty ? nil : language,
             diarizationEnabled: diarizationEnabled,
             computeUnits: whisperComputeUnits
         )

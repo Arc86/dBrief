@@ -59,7 +59,7 @@ struct ProcessingPipelineTests {
                     #expect(PrivacyTrace.context?.runID == context.runID)
                     #expect(cleaned.text == "hello")
                     #expect(cleaned.segments.count == 1)
-                    return .init(text: "corrected", segments: cleaned.segments)
+                    return .init(result: .init(text: "corrected", segments: cleaned.segments), outcome: .corrected(1))
                 }, onEvent: { event in
                     #expect(PrivacyTrace.context?.recordingID == context.recordingID)
                     await audit.record(event)
@@ -67,6 +67,7 @@ struct ProcessingPipelineTests {
         }
         #expect(output.transcription.text == "corrected")
         #expect(output.spellCorrectionTime == 5)
+        #expect(output.vocabularyWarning == nil)
         #expect(await audit.events == [.correctingVocabulary])
     }
 
@@ -78,7 +79,7 @@ struct ProcessingPipelineTests {
                 options: .init(removeFillerWords: false, ignoredSegments: []), using: { request in
                     await audit.record(request)
                     throw PipelineTestError.failure
-                }, correct: { input in Issue.record("Failed transcription must not reach correction"); return input })
+                }, correct: { input in Issue.record("Failed transcription must not reach correction"); return .init(result: input, outcome: .unchanged) })
         }
         await #expect(throws: PipelineTestError.self) { try await operation() }
         #expect(await audit.requests.count == 1)
@@ -100,7 +101,7 @@ struct ProcessingPipelineTests {
                 }, correct: { input in
                     #expect(stage == "correction")
                     withUnsafeCurrentTask { $0?.cancel() }
-                    return input
+                    return .init(result: input, outcome: .cancelled)
                 }, onEvent: { _ in
                     if stage == "event" { withUnsafeCurrentTask { $0?.cancel() } }
                 })
@@ -119,10 +120,22 @@ struct ProcessingPipelineTests {
                 return .init(text: "hello", segments: [])
             }, correct: { @MainActor value in
                 MainActor.preconditionIsolated()
-                return value
+                return .init(result: value, outcome: .unchanged)
             })
         #expect(result.transcription.text == "hello")
         #expect(result.spellCorrectionTime == 0)
+    }
+
+    @Test func skippedCorrectionKeepsTranscriptAndReportsWarning() async throws {
+        let pipeline = ProcessingPipeline()
+        let output = try await pipeline.transcribe(.init(audioURL: URL(fileURLWithPath: "/synthetic.wav"), segmentURLs: []),
+            options: .init(removeFillerWords: false, ignoredSegments: []), using: { _ in
+                .init(text: "hello", segments: [])
+            }, correct: { value in .init(result: value, outcome: .skipped(.noEngine)) })
+        #expect(output.transcription.text == "hello")
+        #expect(output.transcription.warnings == nil)
+        #expect(output.vocabularyWarning == TranscriptSpellingService.Outcome.skipped(.noEngine).warning)
+        #expect(output.vocabularyWarning != nil)
     }
 
     @Test func cancellationDuringSynchronousCleanupCannotReturnAPublishableTranscript() async {

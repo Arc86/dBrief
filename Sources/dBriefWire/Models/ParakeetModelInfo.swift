@@ -1,7 +1,7 @@
 import Foundation
 
 public struct ParakeetModelInfo: Identifiable, Sendable {
-    public let id: String          // "v2", "v3", "ultra" or "redux"
+    public let id: String          // "v2", "v3", "ultra", "redux" or "phonon2"
     public let displayName: String
     public let estimatedMemoryMB: Int
     public let isEnglishOnly: Bool
@@ -18,6 +18,14 @@ public struct ParakeetModelInfo: Identifiable, Sendable {
     }
 
     public static let defaultID = "v3"
+
+    /// The 25 languages NVIDIA lists for parakeet-tdt-0.6b-v3
+    /// (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3). v3, Ultra and Redux are
+    /// re-trainings of v3, so every multilingual variant shares this set.
+    public static let languageCodes: Set<String> = [
+        "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu", "it",
+        "lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
+    ]
 
     public static let variants: [ParakeetModelInfo] = [
         ParakeetModelInfo(
@@ -42,6 +50,15 @@ public struct ParakeetModelInfo: Identifiable, Sendable {
             id: "redux",
             displayName: "Parakeet Redux (Multilingual, smallest download)",
             estimatedMemoryMB: 1_200,
+            minimumMacOSMajor: 15
+        ),
+        // Quantization-aware re-training of v3 for English (~360 MB download); fastest
+        // v3-family encoder on the ANE. Palettized weights need macOS 15.
+        ParakeetModelInfo(
+            id: "phonon2",
+            displayName: "Parakeet Phonon-2 (English, fastest)",
+            estimatedMemoryMB: 1_500,
+            isEnglishOnly: true,
             minimumMacOSMajor: 15
         ),
     ]

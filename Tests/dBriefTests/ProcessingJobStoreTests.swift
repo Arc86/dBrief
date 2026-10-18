@@ -300,6 +300,34 @@ struct ProcessingJobStoreTests {
         #expect(completed.launchRecoveryAction == .parkAtMarkdownBoundary)
     }
 
+    /// One unreadable record used to block reprocess, calendar link and delete for every
+    /// recording, with nothing to act on. It is now named and can be moved aside.
+    @Test func unreadableRecordIsNamedAndCanBeMovedAsideButValidJobsCannot() async throws {
+        let fixture = try TemporaryFixture()
+        defer { fixture.remove() }
+        let store = ProcessingJobStore(rootURL: fixture.url)
+        let valid = makeJob()
+        try await store.save(valid)
+        let corruptID = UUID()
+        let corruptURL = try manifestURL(for: corruptID, root: fixture.url)
+        try Data("not json".utf8).write(to: corruptURL)
+
+        let issue = try #require(await store.discover().issues.first)
+        let directory = try #require(issue.directoryURL)
+        #expect(directory.lastPathComponent == corruptID.uuidString.lowercased())
+
+        let moved = try await store.moveAside(directory)
+        #expect(FileManager.default.fileExists(atPath: moved.appendingPathComponent(ProcessingJobStore.manifestFileName).path))
+        let after = await store.discover()
+        #expect(after.issues.isEmpty)
+        #expect(after.jobs.map(\.id) == [valid.id])
+        // A readable job is never moved.
+        let validDirectory = corruptURL.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(valid.id.uuidString.lowercased(), isDirectory: true)
+        await #expect(throws: (any Error).self) { _ = try await store.moveAside(validDirectory) }
+        #expect(await store.discover().jobs.map(\.id) == [valid.id])
+    }
+
     private func manifestURL(for id: UUID, root: URL) throws -> URL {
         let directory = root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

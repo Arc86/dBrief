@@ -18,7 +18,8 @@ actor PromptPreviewService: PromptPreviewing {
             guard let summary = request.sample.summary, !summary.isEmpty else { throw PromptPreviewError.missingInsights }
             let input = SpokenSummaryInput.make(summary: summary, actionItems: request.sample.actionItems ?? [],
                                                 truncateForAppleIntelligence: request.configuration == .appleIntelligence)
-            let text = try await completion.complete(systemPrompt: request.draftText, userMessage: input,
+            let systemPrompt = SpokenSummaryPrompt.systemPrompt(base: request.draftText, language: request.spokenSummaryLanguage)
+            let text = try await completion.complete(systemPrompt: systemPrompt, userMessage: input,
                                                      configuration: request.configuration, stage: .spokenSummaryScript)
             try Task.checkCancellation()
             let script = SpokenSummaryScript.clean(text)

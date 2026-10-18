@@ -9,23 +9,23 @@ Make your first recording and get a transcript. Allow extra time for first-use m
 
 ## Step 1: Open dBrief
 
-Click the dBrief icon in the menu bar. The main window appears.
+Click the dBrief icon in the menu bar. The dBrief panel opens.
 
 ## Step 2: Start recording
 
-Click **Record**. dBrief starts capturing audio from your microphone.
+Click **Record meeting**. dBrief starts capturing audio from your microphone.
 
-> **Tip:** You can also press **⌃⌥⌘R** anywhere on your Mac to start or stop recording without touching the menu bar. This shortcut is configurable in **Settings → General → Shortcuts**.
+> **Tip:** You can also press **⌃⌥⌘R** anywhere on your Mac to start or stop recording without touching the menu bar. This shortcut is configurable in **Settings → Recording → Shortcut**.
 
-A floating level meter appears on your screen while recording is active — this confirms audio is being captured.
+A floating recording window with live audio levels appears while recording is active — this confirms audio is being captured.
 
 ## Step 3: Stop recording
 
-Click **Stop** (or press **⌃⌥⌘R** again). A sheet appears asking what you'd like to do next.
+Click **Stop** (or press **⌃⌥⌘R** again). The panel asks what you'd like to do next.
 
 ## Step 4: Transcribe
 
-Make sure **Transcribe** is checked. Enable AI analysis and the outputs you want if you also need a summary, action items, or tags, then click **Done**. dBrief processes the audio and shows you the results.
+Open **Processing settings** and make sure **Transcribe audio** is checked. Tick **Generate summary**, **Extract action items**, or **Analyze tags & sentiment** if you also want those, then click **Process recording**. dBrief processes the audio and shows you the results.
 
 ## What you get
 
@@ -41,5 +41,5 @@ The results are also saved as a Markdown file. See [File Locations](../reference
 ## Next steps
 
 - Change the transcription engine: [Transcription Overview](../transcription/transcription-overview.md)
-- Send results to Notion, Obsidian, or elsewhere: [Integrations](../integrations/integrations-overview.md)
+- Send results to Obsidian, Apple Notes, or elsewhere: [Integrations](../integrations/integrations-overview.md)
 - Automatically start recording when a meeting app opens: [Call Detection](../recording/call-detection.md)

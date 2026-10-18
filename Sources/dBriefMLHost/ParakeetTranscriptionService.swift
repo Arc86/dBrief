@@ -293,6 +293,7 @@ actor ParakeetTranscriptionService {
         case "v2": .v2
         case "ultra": .ultra
         case "redux": .redux
+        case "phonon2": .phonon2
         default: .v3
         }
     }
@@ -312,9 +313,11 @@ actor ParakeetTranscriptionService {
         let models = try await AsrModels.downloadAndLoad(
             version: version,
             progressHandler: { [stateHandler] progress in
+                // Only a real file transfer is "downloading"; FluidAudio also reports
+                // its cached fast path and listing as .downloading(_, totalFiles: 0).
                 let stage: DownloadStage = {
-                    if case .compiling = progress.phase { return .parakeetModelLoading }
-                    return .parakeetModel
+                    if case .downloading(_, let total) = progress.phase, total > 0 { return .parakeetModel }
+                    return .parakeetModelLoading
                 }()
                 stateHandler(.downloading(progress: progress.fractionCompleted, stage: stage))
             }

@@ -17,6 +17,7 @@ There are two distribution paths, signed differently:
 - **Apple Developer Program** membership with a **Developer ID Application** certificate in your login keychain. dBrief's is `Developer ID Application: Jesper Mol (9WFDLY652Y)` (Team ID `9WFDLY652Y`).
 - **notarytool credentials** stored once under the profile name `dbrief` (see [Notarization setup](#notarization-setup)).
 - **Sparkle EdDSA private key** at `~/dbrief-sparkle-private-key.txt` (also backed up in your vault — see [Sparkle in-app updates](#sparkle-in-app-updates)).
+- **TickTick credentials** (optional): put `TICKTICK_CLIENT_ID=…` and `TICKTICK_CLIENT_SECRET=…` in `packaging/secrets.env` (gitignored) or export them before `make notarize`. The build prints `TickTick credentials: stamped`; without them TickTick is hidden in that build. Never commit them — the repository is public.
 
 ## 1. Bump the version
 
@@ -56,7 +57,10 @@ Verify the bundle came out hardened + notarized:
 spctl -a -vv -t install dBrief.app                 # expect: source=Notarized Developer ID
 codesign -dvvv dBrief.app/Contents/MacOS/dBrief 2>&1 | grep -E 'flags|Authority|Timestamp'
 #   expect flags=0x10000(runtime), the Developer ID Authority, and a Timestamp= line
+xcrun stapler validate dBrief-<version>.dmg        # expect: The validate action worked!
 ```
+
+> The DMG itself is notarized and stapled but not codesigned, so `spctl … dBrief-<version>.dmg` reports `rejected / source=no usable signature`. That is expected: Gatekeeper trusts the DMG through its stapled ticket, which `stapler validate` checks.
 
 ## 4. Generate the Sparkle appcast
 
@@ -67,9 +71,11 @@ mkdir -p /tmp/dbrief-appcast
 cp dBrief-<version>.dmg /tmp/dbrief-appcast/
 # Per-version release notes for Sparkle's update dialog. The file MUST share the
 # DMG's basename (dBrief-<version>) so generate_appcast pairs it with this item;
-# --embed-release-notes renders the Markdown to HTML and inlines it in the
-# appcast's <description>, so there is no extra asset to upload.
-cp RELEASE_NOTES.md /tmp/dbrief-appcast/dBrief-<version>.md
+# --embed-release-notes inlines the Markdown in the appcast's
+# <description sparkle:format="markdown">, so there is no extra asset to upload.
+# Only the newest section (everything above the first `---`) goes in, so the
+# update dialog and the GitHub release show this version's notes, not the history.
+awk '/^---$/{exit} {print}' RELEASE_NOTES.md > /tmp/dbrief-appcast/dBrief-<version>.md
 /tmp/sparkle-tools/bin/generate_appcast \
   --ed-key-file ~/dbrief-sparkle-private-key.txt \
   --download-url-prefix "https://github.com/Arc86/dBrief/releases/download/v<version>/" \
@@ -77,7 +83,7 @@ cp RELEASE_NOTES.md /tmp/dbrief-appcast/dBrief-<version>.md
   --embed-release-notes \
   /tmp/dbrief-appcast
 # → writes /tmp/dbrief-appcast/appcast.xml, EdDSA-signed with your private key.
-#   Confirm the release notes landed:  grep -c '<description>' /tmp/dbrief-appcast/appcast.xml   # expect 1
+#   Confirm the release notes landed:  grep -c '<description' /tmp/dbrief-appcast/appcast.xml   # expect 1
 ```
 
 Without a matching notes file (or the `--embed-release-notes` flag) the update dialog shows an empty notes pane and only the small "Full Release Notes…" link — the `.md` step above is what fills the pane. If you'd rather link the notes as a separate uploaded asset instead of embedding, drop the `--embed-release-notes` flag, name the file `dBrief-<version>.html`, and add it to the `gh release create` upload list in step 5; `generate_appcast` then emits a `sparkle:releaseNotesLink` (using `--download-url-prefix`) pointing at that asset.
@@ -90,10 +96,10 @@ git tag v<version>
 git push origin v<version>
 gh release create v<version> dBrief-<version>.dmg /tmp/dbrief-appcast/appcast.xml \
   --title "dBrief <version>" \
-  --notes-file RELEASE_NOTES.md
+  --notes-file /tmp/dbrief-appcast/dBrief-<version>.md
 ```
 
-Upload **both** the DMG and the `appcast.xml`. Because `SUFeedURL` points at `releases/latest/download/appcast.xml`, the feed always resolves to the newest release. Add `--draft` if you want to review before it goes live. Once published, existing installs detect it on their next check (auto, once/day) or via **Settings → General → Software update → Check Now**.
+Upload **both** the DMG and the `appcast.xml`. Because `SUFeedURL` points at `releases/latest/download/appcast.xml`, the feed always resolves to the newest release. Add `--draft` if you want to review before it goes live. Once published, existing installs detect it on their next check (auto, every 12 hours) or via **Settings → General → Software update → Check Now**.
 
 ## 6. Update the Homebrew tap
 

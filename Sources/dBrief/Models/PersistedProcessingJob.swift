@@ -151,6 +151,18 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         self.markdownExport = markdownExport
     }
 
+    /// The one definition of a finished job, shared by recovery, retention, reprocessing
+    /// and the library: completed, or Markdown published with nothing left to send.
+    /// A finished job no longer owns its recording.
+    func isFinished(completedDeliveryIDs: Set<UUID>) -> Bool {
+        Self.isFinished(status: status, markdownGenerated: checkpoint.hasCompleted(.markdownGenerated),
+                        deliveriesComplete: completedDeliveryIDs.contains(id))
+    }
+
+    static func isFinished(status: Status, markdownGenerated: Bool, deliveriesComplete: Bool) -> Bool {
+        status == .completed || (markdownGenerated && deliveriesComplete)
+    }
+
     mutating func markRunning(at date: Date) {
         dismissedFromQueue = false
         status = .running

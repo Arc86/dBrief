@@ -31,6 +31,8 @@ actor IntegrationDeliveryCoordinator {
                   destinations == nil || destinations!.contains(entry.destination),
                   !entry.needsDuplicateConfirmation || allowUncertainRetry else { continue }
             if acceptConfigurationChange, let current = configurationDigests[entry.destination] {
+                // Progress made for the old destination or layout doesn't carry over.
+                if current != batch.deliveries[index].configurationDigest { batch.deliveries[index].createdItems = nil }
                 batch.deliveries[index].configurationDigest = current
             }
             guard configurationDigests[entry.destination] == batch.deliveries[index].configurationDigest else {
@@ -56,6 +58,7 @@ actor IntegrationDeliveryCoordinator {
             case .failed: batch.deliveries[index].status = .uncertain
             }
             batch.deliveries[index].remoteID = result.remoteID
+            if let created = result.createdItems { batch.deliveries[index].createdItems = created }
             batch.deliveries[index].updatedAt = Date()
             // Even cancellation must not discard a confirmed remote success.
             try await store.save(batch)

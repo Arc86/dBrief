@@ -3,84 +3,86 @@ import SwiftUI
 @MainActor
 struct SettingsVocabularyTab: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
+    let editProfile: (UUID) -> Void
     @State private var editor = VocabularyEditing()
     @State private var newTermText = ""
     @State private var addError: String?
     @FocusState private var editFocused: Bool
 
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Terms you add here help the AI understand your domain. After transcription, the AI corrects misspellings of these terms in the transcript. During analysis, they're provided to generate more accurate summaries and action items.")
-                    Text("Add names, acronyms, product names, and technical terms your recordings commonly include.")
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
-
-            Section {
-                HStack(spacing: 8) {
-                    TextField("Add a term…", text: $newTermText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: .infinity)
-                        .onSubmit { addTerm() }
-                    Button("Add") { addTerm() }
-                }
-                if let addError {
-                    Text(addError)
-                        .font(.callout)
-                        .foregroundStyle(.red)
+        SettingsPageScaffold(page: .vocabulary, notice: {
+            SettingsProfileScopeView(fields: SettingsPage.vocabulary.profileFields, editProfile: editProfile)
+        }) {
+            SettingsCard("Terms", description: "Used to fix spelling after transcription and in AI prompts",
+                         section: .vocabularyTerms) {
+                SettingsStackedRow {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            TextField("New term", text: $newTermText, prompt: Text("Add a name, acronym or product…"))
+                                .labelsHidden()
+                                .settingsTextField()
+                                .frame(maxWidth: .infinity)
+                                .onSubmit { addTerm() }
+                            Button("Add") { addTerm() }
+                                .buttonStyle(.settingsPrimary)
+                                .disabled(newTermText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                        if let addError {
+                            Text(addError).uiFont(.system(size: 11.5)).foregroundStyle(status.danger.color)
+                        }
+                    }
                 }
                 if let originalTerm = editor.originalTerm {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Editing “\(originalTerm)”")
-                            .font(.callout)
-                        HStack {
-                            TextField("Term", text: $editor.text)
-                                .textFieldStyle(.roundedBorder)
-                                .focused($editFocused)
-                                .onSubmit { saveEdit() }
-                            Button("Save") { saveEdit() }
-                                .keyboardShortcut(.defaultAction)
-                            Button("Cancel") { editor.cancel() }
-                                .keyboardShortcut(.cancelAction)
+                    SettingsStackedRow {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Editing “\(originalTerm)”")
+                                .uiFont(.system(size: 12, weight: .medium))
+                                .foregroundStyle(palette.heading.color)
+                            HStack {
+                                TextField("Term", text: $editor.text)
+                                    .settingsTextField()
+                                    .focused($editFocused)
+                                    .onSubmit { saveEdit() }
+                                Button("Save") { saveEdit() }
+                                    .buttonStyle(.settingsPrimary)
+                                    .keyboardShortcut(.defaultAction)
+                                Button("Cancel") { editor.cancel() }
+                                    .buttonStyle(.settingsSecondary)
+                                    .keyboardShortcut(.cancelAction)
+                            }
+                            if let error = editor.error {
+                                Text(error).uiFont(.system(size: 11.5)).foregroundStyle(status.danger.color)
+                            }
                         }
-                        if let error = editor.error {
-                            Text(error)
-                                .font(.callout)
-                                .foregroundStyle(.red)
-                        }
+                        .onExitCommand { editor.cancel() }
                     }
-                    .onExitCommand { editor.cancel() }
                 }
+                // Offset identity: rows hold no state, and lists migrated from the legacy
+                // Whisper prompt can contain duplicate terms, which would collide as ids.
                 ForEach(Array(appSettings.customVocabulary.enumerated()), id: \.offset) { index, term in
-                    HStack {
-                        Text(term)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .onTapGesture(count: 2) { startEdit(at: index, term: term) }
-                        Button("Edit") { startEdit(at: index, term: term) }
-                            .disabled(editor.isEditing)
-                            .accessibilityLabel("Edit \(term)")
-                        Button("Delete", role: .destructive) { deleteTerm(at: index, term: term) }
-                            .disabled(editor.originalTerm == term)
-                            .accessibilityLabel("Delete \(term)")
+                    SettingsRow(verbatim: term) {
+                        HStack(spacing: 6) {
+                            Button { startEdit(at: index, term: term) } label: { Image(systemName: "pencil") }
+                                .disabled(editor.isEditing)
+                                .help("Edit")
+                                .accessibilityLabel("Edit \(term)")
+                            Button(role: .destructive) { deleteTerm(at: index, term: term) } label: { Image(systemName: "trash") }
+                                .disabled(editor.originalTerm == term)
+                                .help("Delete")
+                                .accessibilityLabel("Delete \(term)")
+                        }
+                        .buttonStyle(.settingsSecondary)
                     }
-                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { startEdit(at: index, term: term) }
                 }
-            } header: {
-                SettingsSearchHeading("Terms", section: .vocabularyTerms)
-            } footer: {
-                Text("Choose Edit or double-click a term. Save applies your change; Cancel discards it.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .multilineTextAlignment(.leading)
+                if appSettings.customVocabulary.isEmpty {
+                    SettingsRow("No terms yet", caption: "A profile can use its own list instead of this one.")
+                }
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .navigationTitle("Vocabulary")
     }
 
     private func startEdit(at index: Int, term: String) {

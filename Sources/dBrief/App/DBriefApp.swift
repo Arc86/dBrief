@@ -31,6 +31,8 @@ final class AppContext {
     let updaterController = UpdaterController.shared
     let audioPlayer = AudioPlayer()
     let microsoftAuthService = MicrosoftAuthService()
+    let tickTickAuthService = TickTickAuthService()
+    let focusReader = FocusReaderStore()
     let miniPlayer = FloatingMiniPlayerController()
     let memoryMonitor = MemoryPressureMonitor()
     let powerStateMonitor: PowerStateMonitor
@@ -142,21 +144,19 @@ final class AppContext {
         // An interrupted Phase 5A job may be actively reading an old recording.
         // Defer its age-based sweep until a later scheduler run after processing ends.
         guard !recordingManager.hasActiveProcessingJob else { return }
-        let recordingsFolder = appSettings.effectiveRecordingFolderURL
-        let transcriptionFolder = appSettings.effectiveTranscriptionFolderURL
         var combined = RetentionCleanupResult()
 
         do {
             if appSettings.autoDeleteRecordingsEnabled {
                 let days = appSettings.autoDeleteRecordingsDays
-                let result = try await recordingManager.runRetentionCleanup(category: .recordings, days: days, folders: [recordingsFolder])
+                let result = try await recordingManager.runRetentionCleanup(category: .recordings, days: days, folders: appSettings.retentionFolders(for: .recordings))
                 combined.filesDeleted += result.filesDeleted
                 combined.bytesFreed += result.bytesFreed
             }
             if appSettings.autoDeleteTranscriptsEnabled {
                 let days = appSettings.autoDeleteTranscriptsDays
                 let result = try await recordingManager.runRetentionCleanup(category: .transcripts, days: days,
-                    folders: [recordingsFolder, transcriptionFolder])
+                    folders: appSettings.retentionFolders(for: .transcripts))
                 combined.filesDeleted += result.filesDeleted
                 combined.bytesFreed += result.bytesFreed
             }
@@ -193,13 +193,7 @@ final class AppContext {
         if appState.isRecording || appState.isPaused {
             Task { await recordingManager.stopRecording() }
         } else if appState.isIdle {
-            Task {
-                do {
-                    try await recordingManager.startRecording()
-                } catch {
-                    appState.lastError = error.localizedDescription
-                }
-            }
+            Task { await recordingManager.requestRecording() }
         }
     }
 }
@@ -211,6 +205,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     weak var transcriptChatStore: TranscriptChatStore?
     weak var promptEditorWindows: PromptEditorWindowController?
     private var isTerminating = false
+
+    /// Open With from Finder, or an audio file dropped on the Dock icon.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first(where: RecordingManager.isImportableAudio) else { return }
+        Task { @MainActor in
+            if !AppContext.shared.recordingManager.importFile(url) { NSSound.beep() }
+        }
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isTerminating else { return .terminateCancel }
@@ -260,52 +262,59 @@ struct DBriefApp: App {
                 .environment(context.audioPlayer)
                 .environment(context.microsoftAuthService)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
+                .modifier(AppAppearanceScope(settings: context.appSettings))
         } label: {
-            if context.appState.isRecording || context.appState.isPaused {
-                HStack(spacing: 4) {
-                    Image(systemName: "record.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.red, .red)
-                        .environment(\.symbolVariants, .none)
-                    if context.appSettings.showMenuBarRecordingDuration {
-                        Text(formatMenuBarDuration(context.appState.recordingDuration))
-                            .monospacedDigit()
-                            .font(.caption)
+            Group {
+                if context.appState.isRecording || context.appState.isPaused {
+                    HStack(spacing: 4) {
+                        // Paused gets its own glyph and colour, so a glance at the menu bar
+                        // tells a held recording from a running one.
+                        Image(systemName: context.appState.isPaused ? "pause.circle.fill" : "record.circle.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(context.appState.isPaused ? .orange : .red, context.appState.isPaused ? .orange : .red)
+                            .environment(\.symbolVariants, .none)
+                        if context.appSettings.showMenuBarRecordingDuration {
+                            Text(formatMenuBarDuration(context.appState.recordingDuration))
+                                .monospacedDigit()
+                                .uiFont(.caption)
+                        }
                     }
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(context.appState.isPaused ? "dBrief, paused" : "dBrief, recording")
-                .accessibilityValue(context.appSettings.showMenuBarRecordingDuration
-                    ? formatMenuBarDuration(context.appState.recordingDuration)
-                    : "")
-            } else if context.appState.isProcessing {
-                if reduceMotion {
-                    Image(systemName: "circle.dotted")
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.blue)
-                        .accessibilityLabel("dBrief, processing")
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(context.appState.isPaused ? "dBrief, paused" : "dBrief, recording")
+                    .accessibilityValue(context.appSettings.showMenuBarRecordingDuration
+                        ? formatMenuBarDuration(context.appState.recordingDuration)
+                        : "")
+                } else if context.appState.isProcessing {
+                    if reduceMotion {
+                        Image(systemName: "circle.dotted")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.blue)
+                            .accessibilityLabel("dBrief, processing")
+                    } else {
+                        Image(systemName: "circle.dotted")
+                            .symbolRenderingMode(.hierarchical)
+                            .symbolEffect(.pulse, options: .repeating)
+                            .foregroundStyle(.blue)
+                            .accessibilityLabel("dBrief, processing")
+                    }
+                } else if context.appState.queuedCount > 0 {
+                    HStack(spacing: 2) {
+                        Image(systemName: "waveform")
+                            .symbolRenderingMode(.hierarchical)
+                        Text("\(context.appState.queuedCount)")
+                            .uiFont(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("dBrief, \(context.appState.queuedCount) queued")
                 } else {
-                    Image(systemName: "circle.dotted")
-                        .symbolRenderingMode(.hierarchical)
-                        .symbolEffect(.pulse, options: .repeating)
-                        .foregroundStyle(.blue)
-                        .accessibilityLabel("dBrief, processing")
-                }
-            } else if context.appState.queuedCount > 0 {
-                HStack(spacing: 2) {
                     Image(systemName: "waveform")
                         .symbolRenderingMode(.hierarchical)
-                    Text("\(context.appState.queuedCount)")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .accessibilityLabel("dBrief, ready")
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("dBrief, \(context.appState.queuedCount) queued")
-            } else {
-                Image(systemName: "waveform")
-                    .symbolRenderingMode(.hierarchical)
-                    .accessibilityLabel("dBrief, ready")
             }
+            // Right-click menu and audio-file drop on the icon.
+            .modifier(StatusItemControlsInstaller())
         }
         .menuBarExtraStyle(.window)
 
@@ -315,8 +324,10 @@ struct DBriefApp: App {
                 .environment(context.appSettings)
                 .environment(context.recordingManager)
                 .environment(context.microsoftAuthService)
+                .environment(context.tickTickAuthService)
                 .environment(context.updaterController)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
+                .modifier(AppAppearanceScope(settings: context.appSettings))
                 .frame(minWidth: 800, minHeight: 550)
                 .onChange(of: context.appSettings.recordHotkey) { _, newValue in
                     context.hotkeyService.update(hotkey: newValue)
@@ -324,8 +335,10 @@ struct DBriefApp: App {
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 950, height: 650)
+        // Open With / Dock drops go to AppDelegate's import; no window should open for them.
+        .handlesExternalEvents(matching: [])
 
-        Window("Transcripts", id: "transcript") {
+        Window("Recording Library", id: "transcript") {
             TranscriptBrowserView()
                 .environment(context)
                 .environment(context.appState)
@@ -333,9 +346,26 @@ struct DBriefApp: App {
                 .environment(context.audioPlayer)
                 .environment(context.recordingManager)
                 .environment(context.transcriptChatStore)
+                .environment(context.focusReader)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
+                .modifier(AppAppearanceScope(settings: context.appSettings))
         }
         .defaultSize(width: 1100, height: 720)
+        .windowStyle(.hiddenTitleBar)
+        .handlesExternalEvents(matching: [])
+        .commands { RecordingCommands() }
+
+        Window("Focus Reader", id: FocusReaderView.windowID) {
+            FocusReaderView()
+                .environment(context.focusReader)
+                .environment(context.appSettings)
+                .environment(\.calmAppearance, context.appSettings.reduceNeon)
+                .modifier(ViewerAppearanceScope(settings: context.appSettings))
+                .modifier(AppAppearanceScope(settings: context.appSettings, restylesNativeControls: false))
+        }
+        .defaultSize(width: 1000, height: 760)
+        .windowStyle(.hiddenTitleBar)
+        .handlesExternalEvents(matching: [])
     }
 }
 
@@ -348,194 +378,4 @@ private func formatMenuBarDuration(_ duration: TimeInterval) -> String {
         return String(format: "%d:%02d:%02d", hours, minutes, seconds)
     }
     return String(format: "%d:%02d", minutes, seconds)
-}
-
-struct MenuBarView: View {
-    @Environment(\.openWindow) var openWindow
-
-    @Environment(AppState.self) private var appState
-    @Environment(AppSettings.self) private var appSettings
-    @Environment(RecordingManager.self) private var recordingManager
-
-    @State private var showYouTubeInput = false
-    @State private var showQueueManagement = false
-    @State private var showRecentRecordings = true
-
-    var body: some View {
-        VStack(spacing: 10) {
-            if !appSettings.hasCompletedOnboarding {
-                OnboardingView()
-            } else {
-                header
-
-                Divider()
-
-                // The post-recording sheet is a focused, dedicated screen: it
-                // replaces the recording controls (no Profile row / Record button),
-                // history, queue, and file-transcription affordances — matching the
-                // "Recording complete" design frame.
-                if appState.showPostRecordingSheet {
-                    PostRecordingSheet()
-                } else {
-                    RecordingControlsView()
-
-                    if appState.isProcessing {
-                        Divider()
-                        TranscriptionProgressView(onCancel: recordingManager.cancelProcessing)
-                    } else if appState.hasProcessingResults, !showQueueManagement {
-                        Divider()
-                        ResultsView()
-                    }
-
-                    Divider()
-
-                    // Primary library entry stays visible independently of list
-                    // disclosure, processing progress, and completion results.
-                    Button {
-                        openWindow(id: "transcript")
-                        NSApp.activate(ignoringOtherApps: true)
-                    } label: {
-                        Label("Transcript viewer", systemImage: "rectangle.split.2x1")
-                            .font(.callout.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 3)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .help("Open the transcript viewer")
-
-                    if appState.isIdle, !appState.hasProcessingResults {
-                        RecordingHistoryView(expanded: $showRecentRecordings)
-                    }
-
-                    Divider()
-                    ProcessingQueueView(expanded: $showQueueManagement)
-
-                    Divider()
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            Button {
-                                recordingManager.pickFileForTranscription()
-                            } label: {
-                                Label("Transcribe File...", systemImage: "doc.badge.plus")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(!appState.isIdle)
-
-                            Button {
-                                showYouTubeInput.toggle()
-                            } label: {
-                                Label("YouTube URL...", systemImage: "play.rectangle")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(!appState.isIdle)
-                        }
-
-                        if showYouTubeInput && appState.isIdle {
-                            YouTubeURLInputView(isVisible: $showYouTubeInput)
-                        }
-                    }
-                }
-
-                Divider()
-
-                HStack(spacing: 10) {
-                    Button {
-                        closeMenuBarExtraWindow()
-                        openWindow(id: "settings")
-                        NSApp.activate(ignoringOtherApps: true)
-                    } label: {
-                        Text("Settings...")
-                    }
-                    .keyboardShortcut(",", modifiers: .command)
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-
-                    Spacer()
-
-                    Button("Quit dBrief") {
-                        NSApplication.shared.terminate(nil)
-                    }
-                    .keyboardShortcut("q", modifiers: .command)
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                }
-            }
-        }
-        .task {
-            await recordingManager.refreshQueuedCount()
-        }
-        // Keep both section headers visible without making the menu taller than
-        // the screen. Opening either list folds the other, but never stops playback.
-        .onChange(of: showQueueManagement) { _, expanded in
-            if expanded { showRecentRecordings = false }
-        }
-        .onChange(of: showRecentRecordings) { _, expanded in
-            if expanded { showQueueManagement = false }
-        }
-        .padding(12)
-        // Let the window-style popover size to its content rather than forcing a
-        // hard pixel width; the ideal/min keep it sensible without fighting the OS.
-        .frame(minWidth: 340, idealWidth: 360)
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            if let icon = DBriefAppIcon.image {
-                Image(nsImage: icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.blue)
-            }
-
-            Text("dBrief")
-                .font(.headline)
-
-            Spacer()
-
-            statusPill
-        }
-    }
-
-    private var statusPill: some View {
-        HStack(spacing: 6) {
-            BrandStatusDot(color: statusColor, size: 8, pulse: appState.isRecording)
-            Text(statusLabel)
-                .font(.brandMono(11))
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Status: \(statusLabel)")
-    }
-
-    private var statusLabel: String {
-        if appState.isRecording { return "Recording" }
-        if appState.isPaused { return "Paused" }
-        if appState.isProcessing { return "Processing" }
-        return "Ready"
-    }
-
-    private var statusColor: Color {
-        if appState.isRecording { return Brand.recording }
-        if appState.isPaused { return Brand.paused }
-        if appState.isProcessing { return Brand.processing }
-        return Brand.ready
-    }
-
-    private func closeMenuBarExtraWindow() {
-        for window in NSApp.windows where window.level == .statusBar {
-            window.orderOut(nil)
-        }
-    }
 }

@@ -3,6 +3,8 @@ import SwiftUI
 
 /// Immediate, in-memory editing. No preference writes or debounced teardown commits.
 struct PromptTextEditor: NSViewRepresentable {
+    @Environment(\.uiTypography) private var typography
+    @Environment(\.viewerPalette) private var palette
     @Bindable var session: PromptEditorSession
     var fontSize: Double
 
@@ -10,7 +12,12 @@ struct PromptTextEditor: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
-        let text = PromptNativeTextView()
+        // Let the card's surface (paper themes included) show through instead of white.
+        scroll.drawsBackground = false
+        // TextKit 1: TextKit 2's viewport layout redraws its text fragments on every
+        // frame change, which flickers when the card resizes (e.g. Output format).
+        let text = PromptNativeTextView(usingTextLayoutManager: false)
+        text.drawsBackground = false
         text.promptUndoManager = session.undoManager ?? UndoManager()
         text.isRichText = false
         // Model undo restores inheritance metadata together with the text.
@@ -28,7 +35,8 @@ struct PromptTextEditor: NSViewRepresentable {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 4
         text.defaultParagraphStyle = paragraph
-        text.font = .systemFont(ofSize: fontSize)
+        text.font = AppFontStyle.system(size: fontSize).nsFont(using: typography)
+        applyPalette(to: text, coordinator: context.coordinator)
         text.string = session.draft.text
         text.delegate = context.coordinator
         text.setAccessibilityLabel("\(session.identity.kind.title) prompt instructions")
@@ -39,7 +47,10 @@ struct PromptTextEditor: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let text = scroll.documentView as? NSTextView else { return }
         context.coordinator.session = session
-        text.font = .systemFont(ofSize: fontSize)
+        // Runs on every keystroke: assigning a font restyles the whole text storage.
+        let font = AppFontStyle.system(size: fontSize).nsFont(using: typography)
+        if text.font != font { text.font = font }
+        applyPalette(to: text, coordinator: context.coordinator)
         if text.string != session.draft.text {
             let selection = text.selectedRange()
             text.undoManager?.disableUndoRegistration()
@@ -49,9 +60,19 @@ struct PromptTextEditor: NSViewRepresentable {
             text.setSelectedRange(NSRange(location: min(selection.location, count), length: min(selection.length, max(0, count - min(selection.location, count)))))
         }
     }
+    /// Text, caret, and selection on the palette; AppKit's defaults follow the system accent.
+    private func applyPalette(to text: NSTextView, coordinator: Coordinator) {
+        guard coordinator.appliedPalette != palette else { return }
+        coordinator.appliedPalette = palette
+        let heading = palette.heading.nsColor
+        text.textColor = heading
+        text.insertionPointColor = palette.primary.nsColor
+        text.selectedTextAttributes = [.backgroundColor: palette.selected.nsColor, .foregroundColor: heading]
+    }
     func makeCoordinator() -> Coordinator { Coordinator(session: session) }
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
         var session: PromptEditorSession
+        var appliedPalette: ViewerPalette?
         init(session: PromptEditorSession) { self.session = session }
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }

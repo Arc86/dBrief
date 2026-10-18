@@ -24,7 +24,7 @@ public struct SpeechSynthesisResult: Sendable, Codable {
 public enum TTSEngine: String, Codable, Sendable, Hashable, CaseIterable {
     /// TTSKit / Qwen3-TTS — multilingual, voice-style instructions, 0.6B/1.7B.
     case qwen3
-    /// FluidAudio Kokoro (KokoroAne) — fast, ANE-resident; English/Mandarin/Japanese (beta).
+    /// FluidAudio Kokoro (KokoroAne) — fast, ANE-resident; English, Spanish, French, Japanese.
     case kokoro
 
     /// Human-readable label for the engine picker.
@@ -39,8 +39,21 @@ public enum TTSEngine: String, Codable, Sendable, Hashable, CaseIterable {
     public var shortDescription: String {
         switch self {
         case .qwen3: "Multilingual · voice styles"
-        case .kokoro: "Fast · English (beta)"
+        case .kokoro: "Fast · English, Spanish, French, Japanese"
         }
+    }
+
+    /// Languages this engine can speak a spoken summary in.
+    public var supportedLanguages: [TTSLanguage] {
+        switch self {
+        case .qwen3: TTSLanguage.allCases
+        case .kokoro: [.english, .spanish, .french, .japanese]
+        }
+    }
+
+    /// The language actually used: the requested one when supported, else English.
+    public func resolvedLanguage(_ requested: TTSLanguage) -> TTSLanguage {
+        supportedLanguages.contains(requested) ? requested : .english
     }
 }
 
@@ -79,17 +92,57 @@ public enum KokoroVoice: String, Codable, Sendable, CaseIterable {
     case bmFable = "bm_fable"
     case bmGeorge = "bm_george"
     case bmLewis = "bm_lewis"
+    case efDora = "ef_dora"
+    case emAlex = "em_alex"
+    case emSanta = "em_santa"
+    case ffSiwis = "ff_siwis"
+    case jfAlpha = "jf_alpha"
+    case jfGongitsune = "jf_gongitsune"
+    case jfNezumi = "jf_nezumi"
+    case jfTebukuro = "jf_tebukuro"
+    case jmKumo = "jm_kumo"
 
     public var displayName: String {
         rawValue.split(separator: "_").last!.capitalized
     }
 
-    public var language: String { "English" }
+    /// The language this voice speaks, from its Kokoro id prefix.
+    public var language: TTSLanguage {
+        switch rawValue.first {
+        case "e": .spanish
+        case "f": .french
+        case "j": .japanese
+        default: .english
+        }
+    }
 
     public var detail: String {
-        let region = rawValue.hasPrefix("a") ? "American" : "British"
         let gender = rawValue.dropFirst().hasPrefix("f") ? "Female" : "Male"
-        return "\(region) · \(gender)"
+        switch rawValue.first {
+        case "a": return "American · \(gender)"
+        case "b": return "British · \(gender)"
+        default: return "\(language.displayName) · \(gender)"
+        }
+    }
+
+    public static func voices(for language: TTSLanguage) -> [KokoroVoice] {
+        allCases.filter { $0.language == language }
+    }
+
+    public static func defaultVoice(for language: TTSLanguage) -> KokoroVoice? {
+        switch language {
+        case .english: .afHeart
+        case .spanish: .efDora
+        case .french: .ffSiwis
+        case .japanese: .jfAlpha
+        default: nil
+        }
+    }
+
+    /// `voice` when it speaks `language`; otherwise that language's default voice
+    /// (English's when Kokoro doesn't speak `language` at all).
+    public static func resolved(_ voice: KokoroVoice, for language: TTSLanguage) -> KokoroVoice {
+        voice.language == language ? voice : defaultVoice(for: language) ?? .afHeart
     }
 }
 

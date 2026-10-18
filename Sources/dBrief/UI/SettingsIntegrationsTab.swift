@@ -1,471 +1,567 @@
+import EventKit
 import SwiftUI
 
 struct SettingsIntegrationsTab: View {
     @Environment(AppSettings.self) private var appSettings
-    @State private var connectionMessages: [IntegrationDestination: String] = [:]
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
+    let editProfile: (UUID) -> Void
+    @State private var testOutcomes: [IntegrationDestination: TestOutcome] = [:]
     @State private var isTesting: Set<IntegrationDestination> = []
-    private let integrationService = IntegrationDispatchService()
+    @State private var openDestination: IntegrationDestination?
+    @Environment(TickTickAuthService.self) private var tickTickAuth
+    @State private var tickTickSignInError: String?
+
+    private enum TestOutcome: Equatable {
+        case success
+        case failure(String)
+    }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                SettingsCalendarSection()
-                credentialStorageStatus
-                Section("Integrations", settingsSearch: .integrations) {
+        // In-page detail instead of a NavigationStack: inside the split view a pushed
+        // page lands on the window's own navigation stack and stays on screen after
+        // switching to another settings page. This state resets with the page.
+        SettingsPageScaffold(page: .integrations, notice: {
+            VStack(spacing: 10) {
+                credentialStorageNotice
+                // Detail pages keep the notice, for the fields that page edits.
+                SettingsProfileScopeView(fields: openDestination.map(SettingsPage.profileFields(for:))
+                                            ?? SettingsPage.integrations.profileFields,
+                                         editProfile: editProfile)
+            }
+        }) {
+            if let destination = openDestination {
+                Button {
+                    // A result from this visit may not hold after later edits.
+                    testOutcomes[destination] = nil
+                    openDestination = nil
+                } label: {
+                    Label("All integrations", systemImage: "chevron.left")
+                }
+                .buttonStyle(.settingsSecondary)
+                .keyboardShortcut("[", modifiers: .command)
+                integrationDetail(destination)
+            } else {
+                SettingsCard("Send results to", section: .integrations) {
                     ForEach(IntegrationDestination.available, id: \.self) { destination in
-                        NavigationLink(value: destination) {
+                        Button {
+                            openDestination = destination
+                        } label: {
                             integrationRow(for: destination)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityHint("Opens \(destination.displayName) settings")
                     }
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
-            .navigationDestination(for: IntegrationDestination.self) { destination in
-                integrationDetail(destination)
-                    .navigationTitle(destination.displayName)
-            }
         }
+        .onAppear { tickTickAuth.reload() }
     }
+
+    // MARK: Root rows
 
     private func integrationRow(for destination: IntegrationDestination) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             integrationIcon(for: destination)
-                .frame(width: 40, height: 40)
-
+                .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(destination.displayName)
-                    .font(.body)
-                Text(statusText(for: destination))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .uiFont(.system(size: 13, weight: .medium))
+                    .foregroundStyle(palette.heading.color)
+                if let summary = summary(for: destination) {
+                    Text(summary)
+                        .uiFont(.system(size: 11.5))
+                        .foregroundStyle(palette.secondary.color)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            let state = state(for: destination)
+            SettingsStatusPill(LocalizedStringKey(state.title), kind: state.kind)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.secondary.color)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .overlay(alignment: .bottom) { SettingsHairline() }
+    }
+
+    private func isEnabled(_ destination: IntegrationDestination) -> Bool {
+        switch destination {
+        case .obsidian: appSettings.obsidianEnabled
+        case .appleNotes: appSettings.integrations.appleNotes.enabled
+        case .appleReminders: appSettings.integrations.appleReminders.enabled
+        case .notion: appSettings.integrations.notion.enabled
+        case .evernote: appSettings.integrations.evernote.enabled
+        case .googleKeep: appSettings.integrations.googleKeep.enabled
+        case .oneNote: appSettings.integrations.oneNote.enabled
+        case .webhook: appSettings.integrations.webhook.enabled
+        case .tickTick: appSettings.integrations.tickTick.enabled
+        case .todoist: appSettings.integrations.todoist.enabled
         }
     }
+
+    /// Required fields missing while enabled (the same conditions the detail pages warn about).
+    private func needsSetup(_ destination: IntegrationDestination) -> Bool {
+        switch destination {
+        case .obsidian: appSettings.obsidianVaultURL == nil
+        case .appleNotes: false
+        // Reminders needs its own access; without it nothing is created.
+        case .appleReminders: EKEventStore.authorizationStatus(for: .reminder) != .fullAccess
+        case .tickTick: !tickTickAuth.isSignedIn
+        case .todoist: appSettings.todoistToken.isEmpty
+        case .notion: appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty
+        case .evernote: appSettings.evernoteToken.isEmpty
+        case .googleKeep: appSettings.googleKeepToken.isEmpty
+        case .oneNote: appSettings.oneNoteToken.isEmpty
+        case .webhook: appSettings.integrations.webhook.url.isEmpty
+        }
+    }
+
+    private func state(for destination: IntegrationDestination) -> (title: String, kind: SettingsStatusPill.Kind) {
+        guard isEnabled(destination) else { return ("Off", .neutral) }
+        return needsSetup(destination) ? ("Needs setup", .warning) : ("On", .success)
+    }
+
+    private func summary(for destination: IntegrationDestination) -> String? {
+        guard isEnabled(destination) else { return nil }
+        switch destination {
+        case .obsidian:
+            guard let vault = appSettings.obsidianVaultURL else { return "Choose a vault" }
+            return "\(vault.lastPathComponent) · \(appSettings.obsidianFolderDisplayName(relativePath: appSettings.obsidianDefaultFolderRelativePath))"
+        case .appleNotes:
+            let folder = appSettings.integrations.appleNotes.folderName
+            return folder.isEmpty ? "Default folder" : "Folder “\(folder)”"
+        case .appleReminders:
+            let list = appSettings.integrations.appleReminders.listName
+            return "One reminder per action item · " + (list.isEmpty ? "default list" : "list “\(list)”")
+        case .webhook:
+            let host = URLComponents(string: appSettings.integrations.webhook.url)?.host
+            return host.map { "\($0) · \(appSettings.integrations.webhook.fields.count) fields" } ?? "Add a URL"
+        case .tickTick:
+            return "One task per action item · list “\(appSettings.integrations.tickTick.projectName ?? "Inbox")”"
+        case .todoist:
+            return "One task per action item · project “\(appSettings.integrations.todoist.projectName ?? "Inbox")”"
+        case .notion:
+            let notion = appSettings.integrations.notion
+            guard !notion.parentID.isEmpty else { return "Choose a page or database" }
+            return "\(notion.parentType == .dataSource ? "Database" : "Page") “\(notion.parentName ?? "Untitled")”"
+        case .evernote, .googleKeep, .oneNote:
+            return nil
+        }
+    }
+
+    @ViewBuilder
+    private func integrationIcon(for destination: IntegrationDestination) -> some View {
+        if let image = Self.iconImages[destination] {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        } else {
+            Image(systemName: icon(for: destination))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(palette.heading.color)
+                .frame(width: 28, height: 28)
+                .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1) }
+        }
+    }
+
+    // MARK: Detail pages
 
     @ViewBuilder
     private func integrationDetail(_ destination: IntegrationDestination) -> some View {
-        Form {
-            credentialStorageStatus
-            switch destination {
-            case .obsidian:
-                obsidianDetail
-            case .appleNotes:
-                appleNotesDetail
-            case .appleReminders:
-                appleRemindersDetail
-            case .notion:
-                notionDetail
-            case .evernote:
-                evernoteDetail
-            case .googleKeep:
-                googleKeepDetail
-            case .oneNote:
-                oneNoteDetail
-            case .webhook:
-                webhookDetail
-            }
+        switch destination {
+        case .obsidian: obsidianDetail
+        case .appleNotes: appleNotesDetail
+        case .appleReminders: appleRemindersDetail
+        case .notion: notionDetail
+        case .evernote: evernoteDetail
+        case .googleKeep: googleKeepDetail
+        case .oneNote: oneNoteDetail
+        case .webhook: webhookDetail
+        case .tickTick: tickTickDetail
+        case .todoist: todoistDetail
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
     }
 
+    private func enableRow(_ title: String, _ isOn: Binding<Bool>) -> some View {
+        SettingsRow(verbatim: title) { Toggle(title, isOn: isOn) }
+    }
+
+    private func textRow(_ label: String, optional: Bool = false, secure: Bool = false,
+                         _ text: Binding<String>) -> some View {
+        SettingsRow(verbatim: label, caption: optional ? "Optional" : nil) {
+            Group {
+                if secure {
+                    SecureField(label, text: text)
+                } else {
+                    TextField(label, text: text)
+                }
+            }
+            .settingsTextField()
+            .frame(width: 260)
+        }
+    }
+
+    private func warningRow(_ text: String) -> some View {
+        SettingsRow(verbatim: text) { SettingsStatusPill("Needs setup", kind: .warning) }
+    }
+
+    @ViewBuilder
     private var obsidianDetail: some View {
-        Section("Configuration") {
-            Toggle(isOn: binding({ appSettings.obsidianEnabled }, { appSettings.obsidianEnabled = $0 })) {
-                Label("Enable Obsidian", systemImage: "diamond.fill")
-            }
-
+        @Bindable var settings = appSettings
+        SettingsCard("Obsidian") {
+            enableRow("Send to Obsidian", $settings.obsidianEnabled)
             if appSettings.obsidianEnabled {
-                LabeledContent("Vault:") {
-                    HStack {
-                        Text(vaultPathText)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .foregroundStyle(.secondary)
-                        Button("Choose...") {
-                            chooseVault { url in appSettings.obsidianVaultURL = url }
-                        }
-                        .buttonStyle(.bordered)
+                SettingsRow(verbatim: "Vault", caption: vaultPathText, systemImage: "folder") {
+                    Button("Choose…") { chooseVault { url in appSettings.obsidianVaultURL = url } }
+                        .buttonStyle(.settingsSecondary)
+                }
+                SettingsRow(verbatim: "Default folder",
+                            caption: appSettings.obsidianVaultURL == nil
+                                ? "Choose a vault first."
+                                : appSettings.obsidianFolderDisplayName(relativePath: appSettings.obsidianDefaultFolderRelativePath),
+                            systemImage: "folder") {
+                    Button("Choose…") {
+                        chooseFolderInVault { relativePath in appSettings.obsidianDefaultFolderRelativePath = relativePath }
                     }
+                    .buttonStyle(.settingsSecondary)
+                    .disabled(appSettings.obsidianVaultURL == nil)
                 }
-
-                LabeledContent("Default output:") {
-                    HStack {
-                        Text(appSettings.obsidianFolderDisplayName(relativePath: appSettings.obsidianDefaultFolderRelativePath))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .foregroundStyle(.secondary)
-                        Button("Choose...") {
-                            chooseFolderInVault { relativePath in
-                                appSettings.obsidianDefaultFolderRelativePath = relativePath
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(appSettings.obsidianVaultURL == nil)
-                    }
+                SettingsRow("Include the transcript", caption: "Off sends only the summary, action items and tags.") {
+                    Toggle("Include the transcript", isOn: $settings.obsidianIncludeTranscript)
                 }
-
-                if appSettings.obsidianVaultURL == nil {
-                    Text("Select an Obsidian vault to enable folder selection.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Toggle(isOn: binding({ appSettings.obsidianIncludeTranscript }, { appSettings.obsidianIncludeTranscript = $0 })) {
-                    Text("Include transcript in notes")
-                }
-                Text("When off, notes contain only the summary, action items, and tags. Enable to append the full transcript.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var appleNotesDetail: some View {
-        Section("Configuration") {
-            Toggle("Enable Apple Notes", isOn: binding(
-                { appSettings.integrations.appleNotes.enabled },
-                { appSettings.integrations.appleNotes.enabled = $0 }
-            ))
-
-            if appSettings.integrations.appleNotes.enabled {
-                TextField("Account name (optional)", text: binding(
-                    { appSettings.integrations.appleNotes.accountName },
-                    { appSettings.integrations.appleNotes.accountName = $0 }
-                ))
-                TextField("Folder name (optional)", text: binding(
-                    { appSettings.integrations.appleNotes.folderName },
-                    { appSettings.integrations.appleNotes.folderName = $0 }
-                ))
-                deliveryFieldsEditor(
-                    title: "Send fields",
-                    get: { appSettings.integrations.appleNotes.fields },
-                    set: { appSettings.integrations.appleNotes.fields = $0 }
-                )
-                testButton(for: .appleNotes)
-            }
-        }
-    }
-
-    private var appleRemindersDetail: some View {
-        Section("Configuration") {
-            Toggle("Enable Apple Reminders", isOn: binding(
-                { appSettings.integrations.appleReminders.enabled },
-                { appSettings.integrations.appleReminders.enabled = $0 }
-            ))
-
-            if appSettings.integrations.appleReminders.enabled {
-                TextField("Default list name (optional)", text: binding(
-                    { appSettings.integrations.appleReminders.listName },
-                    { appSettings.integrations.appleReminders.listName = $0 }
-                ))
-                Text("Only action items are sent as reminders.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                testButton(for: .appleReminders)
-            }
-        }
-    }
-
-    private var notionDetail: some View {
-        Section("Configuration") {
-            Toggle("Enable Notion", isOn: binding(
-                { appSettings.integrations.notion.enabled },
-                { appSettings.integrations.notion.enabled = $0 }
-            ))
-
-            if appSettings.integrations.notion.enabled {
-                SecureField("Notion token", text: binding({ appSettings.notionToken }, { appSettings.notionToken = $0 }))
-                Picker("Parent type", selection: binding(
-                    { appSettings.integrations.notion.parentType },
-                    { appSettings.integrations.notion.parentType = $0 }
-                )) {
-                    Text("Data source").tag(NotionParentType.dataSource)
-                    Text("Page").tag(NotionParentType.page)
-                }
-                TextField("Parent ID", text: binding(
-                    { appSettings.integrations.notion.parentID },
-                    { appSettings.integrations.notion.parentID = $0 }
-                ))
-                TextField("Title property", text: binding(
-                    { appSettings.integrations.notion.titlePropertyName },
-                    { appSettings.integrations.notion.titlePropertyName = $0 }
-                ))
-                deliveryFieldsEditor(
-                    title: "Send fields",
-                    get: { appSettings.integrations.notion.fields },
-                    set: { appSettings.integrations.notion.fields = $0 }
-                )
-                if appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty {
-                    Text("Token and parent ID are required when Notion is enabled.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                testButton(for: .notion)
-            }
-        }
-    }
-
-    private var evernoteDetail: some View {
-        Section("Configuration") {
-            Toggle("Enable Evernote", isOn: binding(
-                { appSettings.integrations.evernote.enabled },
-                { appSettings.integrations.evernote.enabled = $0 }
-            ))
-
-            if appSettings.integrations.evernote.enabled {
-                SecureField("Evernote token", text: binding({ appSettings.evernoteToken }, { appSettings.evernoteToken = $0 }))
-                TextField("API base URL", text: binding(
-                    { appSettings.integrations.evernote.apiBaseURL },
-                    { appSettings.integrations.evernote.apiBaseURL = $0 }
-                ))
-                TextField("Notebook ID (optional)", text: binding(
-                    { appSettings.integrations.evernote.notebookID },
-                    { appSettings.integrations.evernote.notebookID = $0 }
-                ))
-                deliveryFieldsEditor(
-                    title: "Send fields",
-                    get: { appSettings.integrations.evernote.fields },
-                    set: { appSettings.integrations.evernote.fields = $0 }
-                )
-                if appSettings.evernoteToken.isEmpty {
-                    Text("Token is required when Evernote is enabled.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                testButton(for: .evernote)
-            }
-        }
-    }
-
-    private var googleKeepDetail: some View {
-        Section("Configuration") {
-            Toggle("Enable Google Keep", isOn: binding(
-                { appSettings.integrations.googleKeep.enabled },
-                { appSettings.integrations.googleKeep.enabled = $0 }
-            ))
-
-            if appSettings.integrations.googleKeep.enabled {
-                SecureField("Google OAuth token", text: binding({ appSettings.googleKeepToken }, { appSettings.googleKeepToken = $0 }))
-                TextField("API base URL", text: binding(
-                    { appSettings.integrations.googleKeep.apiBaseURL },
-                    { appSettings.integrations.googleKeep.apiBaseURL = $0 }
-                ))
-                deliveryFieldsEditor(
-                    title: "Send fields",
-                    get: { appSettings.integrations.googleKeep.fields },
-                    set: { appSettings.integrations.googleKeep.fields = $0 }
-                )
-                Text("Google Keep API is enterprise/admin oriented and may require Workspace setup.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if appSettings.googleKeepToken.isEmpty {
-                    Text("Token is required when Google Keep is enabled.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                testButton(for: .googleKeep)
-            }
-        }
-    }
-
-    private var oneNoteDetail: some View {
-        Section("Configuration") {
-            Toggle("Enable Microsoft OneNote", isOn: binding(
-                { appSettings.integrations.oneNote.enabled },
-                { appSettings.integrations.oneNote.enabled = $0 }
-            ))
-
-            if appSettings.integrations.oneNote.enabled {
-                SecureField("Microsoft Graph token", text: binding({ appSettings.oneNoteToken }, { appSettings.oneNoteToken = $0 }))
-                TextField("Graph base URL", text: binding(
-                    { appSettings.integrations.oneNote.graphBaseURL },
-                    { appSettings.integrations.oneNote.graphBaseURL = $0 }
-                ))
-                TextField("Section ID (optional)", text: binding(
-                    { appSettings.integrations.oneNote.sectionID },
-                    { appSettings.integrations.oneNote.sectionID = $0 }
-                ))
-                deliveryFieldsEditor(
-                    title: "Send fields",
-                    get: { appSettings.integrations.oneNote.fields },
-                    set: { appSettings.integrations.oneNote.fields = $0 }
-                )
-                if appSettings.oneNoteToken.isEmpty {
-                    Text("Token is required when OneNote is enabled.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                testButton(for: .oneNote)
             }
         }
     }
 
     @ViewBuilder
-    private var credentialStorageStatus: some View {
-        if let message = appSettings.integrationPersistenceError {
-            Section("Credential storage") {
-                Text(message)
-                    .foregroundStyle(.orange)
-                Button("Retry credential storage") {
-                    appSettings.retryIntegrationCredentialStorage()
+    private var appleNotesDetail: some View {
+        @Bindable var settings = appSettings
+        SettingsCard("Apple Notes") {
+            enableRow("Send to Apple Notes", $settings.integrations.appleNotes.enabled)
+            if appSettings.integrations.appleNotes.enabled {
+                textRow("Account name", optional: true, $settings.integrations.appleNotes.accountName)
+                textRow("Folder name", optional: true, $settings.integrations.appleNotes.folderName)
+                testRow(for: .appleNotes)
+            }
+        }
+        if appSettings.integrations.appleNotes.enabled {
+            deliveryFieldsCard($settings.integrations.appleNotes.fields)
+        }
+    }
+
+    @ViewBuilder
+    private var appleRemindersDetail: some View {
+        @Bindable var settings = appSettings
+        SettingsCard("Apple Reminders", description: "Only action items are sent, one reminder each") {
+            enableRow("Send to Apple Reminders", $settings.integrations.appleReminders.enabled)
+            if appSettings.integrations.appleReminders.enabled {
+                textRow("Default list", optional: true, $settings.integrations.appleReminders.listName)
+                testRow(for: .appleReminders)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tickTickDetail: some View {
+        @Bindable var settings = appSettings
+        SettingsCard("TickTick", description: "Only action items are sent, one task each") {
+            enableRow("Send to TickTick", $settings.integrations.tickTick.enabled)
+            if appSettings.integrations.tickTick.enabled {
+                tickTickAccountRow
+                if tickTickAuth.isSignedIn {
+                    tickTickListRow
+                    testRow(for: .tickTick)
                 }
             }
         }
     }
 
-    private var webhookDetail: some View {
-        Section("Configuration") {
-            Toggle("Enable Webhook", isOn: binding(
-                { appSettings.integrations.webhook.enabled },
-                { appSettings.integrations.webhook.enabled = $0 }
-            ))
-
-            if appSettings.integrations.webhook.enabled {
-                SecureField("Webhook URL", text: binding(
-                    { appSettings.integrations.webhook.url },
-                    { appSettings.integrations.webhook.url = $0 }
-                ))
-                HStack {
-                    Text("Timeout (seconds)")
-                    Spacer()
-                    TextField("", value: binding(
-                        { appSettings.integrations.webhook.timeoutSeconds },
-                        { appSettings.integrations.webhook.timeoutSeconds = $0 }
-                    ), format: .number)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 80)
+    @ViewBuilder
+    private var tickTickAccountRow: some View {
+        if tickTickAuth.isSignedIn {
+            SettingsRow(verbatim: "TickTick account", caption: "Connected", systemImage: "person.crop.circle") {
+                Button("Sign out") { Task { await tickTickAuth.signOut() } }
+                    .buttonStyle(.settingsSecondary)
+            }
+        } else {
+            SettingsRow(verbatim: "TickTick account",
+                        caption: tickTickAuth.isSigningIn
+                            ? "Finish signing in in your browser."
+                            : tickTickSignInError
+                                ?? (tickTickAuth.sessionExpired ? "Your TickTick sign-in expired. Sign in again." : "Not connected"),
+                        systemImage: "person.crop.circle") {
+                if tickTickAuth.isSigningIn {
+                    Button("Cancel") { tickTickAuth.cancelSignIn() }
+                        .buttonStyle(.settingsSecondary)
+                } else {
+                    Button("Sign in with TickTick") {
+                        Task { await signInToTickTick() }
+                    }
+                    .buttonStyle(.settingsPrimary)
                 }
-                Text("Unconfirmed sends can be retried from History → Integrations. Each delivery includes an Idempotency-Key; duplicate protection depends on your receiver supporting it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            }
+        }
+    }
 
-                Text("Headers")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+    private var tickTickListRow: some View {
+        let saved = appSettings.integrations.tickTick
+        return SettingsRow(verbatim: "List", systemImage: "list.bullet") {
+            TaskDestinationPicker(service: .tickTick, savedID: saved.projectID, savedName: saved.projectName) { id, name in
+                var config = appSettings.integrations.tickTick
+                config.projectID = id
+                config.projectName = name
+                appSettings.integrations.tickTick = config
+            }
+        }
+    }
 
-                ForEach(Array(appSettings.integrations.webhook.headers.enumerated()), id: \.element.id) { index, header in
-                    HStack {
-                        TextField("Header", text: binding(
-                            { headerValue(index: index).key },
-                            { updateHeader(index: index, key: $0, value: headerValue(index: index).value) }
-                        ))
-                        SecureField("Value", text: binding(
-                            { headerValue(index: index).value },
-                            { updateHeader(index: index, key: headerValue(index: index).key, value: $0) }
-                        ))
-                        Button {
-                            removeHeader(id: header.id)
-                        } label: {
-                            Image(systemName: "minus.circle")
+    @ViewBuilder
+    private var todoistDetail: some View {
+        @Bindable var settings = appSettings
+        SettingsCard("Todoist", description: "Only action items are sent, one task each") {
+            enableRow("Send to Todoist", $settings.integrations.todoist.enabled)
+            if appSettings.integrations.todoist.enabled {
+                textRow("API token", secure: true, $settings.todoistToken)
+                SettingsRow(verbatim: "Where to find it", caption: "Todoist → Settings → Integrations → Developer") {
+                    Button("Open Todoist") { NSWorkspace.shared.open(TodoistAPI.tokenSettingsURL) }
+                        .buttonStyle(.settingsSecondary)
+                }
+                if appSettings.todoistToken.isEmpty {
+                    warningRow("An API token is required.")
+                } else {
+                    todoistProjectRow
+                    testRow(for: .todoist)
+                }
+            }
+        }
+    }
+
+    private var todoistProjectRow: some View {
+        let saved = appSettings.integrations.todoist
+        return SettingsRow(verbatim: "Project", systemImage: "list.bullet") {
+            TaskDestinationPicker(service: .todoist, savedID: saved.projectID, savedName: saved.projectName) { id, name in
+                var config = appSettings.integrations.todoist
+                config.projectID = id
+                config.projectName = name
+                appSettings.integrations.todoist = config
+            }
+        }
+    }
+
+    @MainActor
+    private func signInToTickTick() async {
+        tickTickSignInError = nil
+        do {
+            try await tickTickAuth.signIn()
+        } catch {
+            tickTickSignInError = error.localizedDescription
+        }
+    }
+
+    @ViewBuilder
+    private var notionDetail: some View {
+        @Bindable var settings = appSettings
+        let notion = appSettings.integrations.notion
+        SettingsCard("Notion", description: "One page per meeting, under a page or in a database") {
+            enableRow("Send to Notion", $settings.integrations.notion.enabled)
+            if notion.enabled {
+                textRow("Integration secret", secure: true, $settings.notionToken)
+                SettingsRow(verbatim: "Where to get it",
+                            caption: "Create an internal integration, then connect your page or database to it (••• → Connections).") {
+                    Button("Open Notion") { NSWorkspace.shared.open(NotionAPI.integrationsURL) }
+                        .buttonStyle(.settingsSecondary)
+                }
+                if appSettings.notionToken.isEmpty {
+                    warningRow("An integration secret is required.")
+                } else {
+                    SettingsRow(verbatim: "Destination", caption: "Pages and databases connected to the integration",
+                                systemImage: "doc.text") {
+                        TaskDestinationPicker(
+                            service: .notion,
+                            savedID: notion.parentID.isEmpty ? nil : TaskDestinationPicker.notionTag(notion.parentType, notion.parentID),
+                            savedName: notion.parentName) { tag, name in
+                            var config = appSettings.integrations.notion
+                            let destination = tag.flatMap(TaskDestinationPicker.notionDestination(fromTag:))
+                            config.parentID = destination?.id ?? ""
+                            config.parentType = destination?.type ?? .page
+                            config.parentName = destination == nil ? nil : name
+                            appSettings.integrations.notion = config
                         }
-                        .buttonStyle(.plain)
+                    }
+                    if notion.parentID.isEmpty { warningRow("Choose a page or database.") }
+                    testRow(for: .notion)
+                }
+            }
+        }
+        if notion.enabled {
+            SettingsCard("Include in the page") {
+                ForEach([DeliveryField.summary, .actionItems, .tags, .sentiment, .meetingInfo, .transcript]) { field in
+                    SettingsRow(verbatim: field == .meetingInfo ? "Attendees" : field.displayName,
+                                caption: field == .transcript ? "The full transcript at the end of the page. Long meetings make long pages." : nil) {
+                        Toggle(field.displayName, isOn: $settings.integrations.notion.fields[contains: field])
                     }
                 }
+            }
+        }
+    }
 
-                Button {
-                    appSettings.integrations.webhook.headers.append(WebhookHeader())
-                } label: {
-                    Label("Add header", systemImage: "plus.circle")
+    @ViewBuilder
+    private var evernoteDetail: some View {
+        @Bindable var settings = appSettings
+        SettingsCard("Evernote") {
+            enableRow("Send to Evernote", $settings.integrations.evernote.enabled)
+            if appSettings.integrations.evernote.enabled {
+                textRow("Token", secure: true, $settings.evernoteToken)
+                textRow("API base URL", $settings.integrations.evernote.apiBaseURL)
+                textRow("Notebook ID", optional: true, $settings.integrations.evernote.notebookID)
+                if appSettings.evernoteToken.isEmpty { warningRow("A token is required.") }
+                testRow(for: .evernote)
+            }
+        }
+        if appSettings.integrations.evernote.enabled {
+            deliveryFieldsCard($settings.integrations.evernote.fields)
+        }
+    }
+
+    @ViewBuilder
+    private var googleKeepDetail: some View {
+        @Bindable var settings = appSettings
+        SettingsCard("Google Keep", description: "The Keep API may need Google Workspace setup") {
+            enableRow("Send to Google Keep", $settings.integrations.googleKeep.enabled)
+            if appSettings.integrations.googleKeep.enabled {
+                textRow("OAuth token", secure: true, $settings.googleKeepToken)
+                textRow("API base URL", $settings.integrations.googleKeep.apiBaseURL)
+                if appSettings.googleKeepToken.isEmpty { warningRow("A token is required.") }
+                testRow(for: .googleKeep)
+            }
+        }
+        if appSettings.integrations.googleKeep.enabled {
+            deliveryFieldsCard($settings.integrations.googleKeep.fields)
+        }
+    }
+
+    @ViewBuilder
+    private var oneNoteDetail: some View {
+        @Bindable var settings = appSettings
+        SettingsCard("Microsoft OneNote") {
+            enableRow("Send to OneNote", $settings.integrations.oneNote.enabled)
+            if appSettings.integrations.oneNote.enabled {
+                textRow("Graph token", secure: true, $settings.oneNoteToken)
+                textRow("Graph base URL", $settings.integrations.oneNote.graphBaseURL)
+                textRow("Section ID", optional: true, $settings.integrations.oneNote.sectionID)
+                if appSettings.oneNoteToken.isEmpty { warningRow("A token is required.") }
+                testRow(for: .oneNote)
+            }
+        }
+        if appSettings.integrations.oneNote.enabled {
+            deliveryFieldsCard($settings.integrations.oneNote.fields)
+        }
+    }
+
+    @ViewBuilder
+    private var credentialStorageNotice: some View {
+        if let message = appSettings.integrationPersistenceError {
+            SettingsNotice(Text(message), tone: .warning) {
+                Button("Retry") { appSettings.retryIntegrationCredentialStorage() }
+                    .buttonStyle(.settingsSecondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var webhookDetail: some View {
+        @Bindable var settings = appSettings
+        Group {
+            SettingsCard("Webhook",
+                         description: "Each delivery has an Idempotency-Key; retry unconfirmed sends with Integrations… on the recording") {
+                enableRow("Send to a webhook", $settings.integrations.webhook.enabled)
+                if appSettings.integrations.webhook.enabled {
+                    textRow("URL", secure: true, $settings.integrations.webhook.url)
+                    SettingsRow("Timeout") {
+                        HStack(spacing: 6) {
+                            TextField("Timeout", value: $settings.integrations.webhook.timeoutSeconds,
+                                      format: .number)
+                                .settingsTextField()
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 70)
+                            Text("seconds").uiFont(.system(size: 12)).foregroundStyle(palette.secondary.color)
+                        }
+                    }
+                    if appSettings.integrations.webhook.url.isEmpty { warningRow("A URL is required.") }
+                    testRow(for: .webhook)
                 }
-                .buttonStyle(.borderless)
-
-                deliveryFieldsEditor(
-                    title: "Send fields",
-                    get: { appSettings.integrations.webhook.fields },
-                    set: { appSettings.integrations.webhook.fields = $0 }
-                )
-
-                if appSettings.integrations.webhook.url.isEmpty {
-                    Text("Webhook URL is required when webhook is enabled.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+            }
+            if appSettings.integrations.webhook.enabled {
+                SettingsCard("Headers") {
+                    ForEach($settings.integrations.webhook.headers) { $header in
+                        SettingsStackedRow {
+                            HStack(spacing: 8) {
+                                TextField("Header", text: $header.key)
+                                    .settingsTextField()
+                                SecureField("Value", text: $header.value)
+                                    .settingsTextField()
+                                Button { removeHeader(id: header.id) } label: { Image(systemName: "xmark") }
+                                    .buttonStyle(.settingsSecondary)
+                                    .accessibilityLabel("Remove header")
+                            }
+                        }
+                    }
+                    SettingsRow("Add a header") {
+                        Button {
+                            appSettings.integrations.webhook.headers.append(WebhookHeader())
+                        } label: {
+                            Label("Add header", systemImage: "plus")
+                        }
+                        .buttonStyle(.settingsSecondary)
+                    }
                 }
-                testButton(for: .webhook)
+                deliveryFieldsCard($settings.integrations.webhook.fields, includingAudio: true)
             }
         }
         .disabled(appSettings.integrations.webhook.credentialsUnavailable)
     }
 
-    private func deliveryFieldsEditor(
-        title: String,
-        get: @escaping () -> [DeliveryField],
-        set: @escaping ([DeliveryField]) -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(DeliveryField.allCases) { field in
-                Toggle(field.displayName, isOn: binding(
-                    { get().contains(field) },
-                    { isOn in
-                        var current = get()
-                        if isOn {
-                            if !current.contains(field) {
-                                current.append(field)
-                            }
-                        } else {
-                            current.removeAll { $0 == field }
-                        }
-                        set(current)
-                    }
-                ))
-                .toggleStyle(.smallSwitch)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func binding<T>(_ get: @escaping () -> T, _ set: @escaping (T) -> Void) -> Binding<T> {
-        Binding(get: { @MainActor in get() }, set: { @MainActor value in set(value) })
-    }
-
-    @ViewBuilder
-    private func integrationIcon(for destination: IntegrationDestination) -> some View {
-        glassIconTile {
-            if let image = integrationIconImage(for: destination) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 30, height: 30)
-                    .scaleEffect(1.15)
-            } else {
-                Image(systemName: icon(for: destination))
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 24, weight: .medium))
-            }
-        }
-    }
-
-    private func integrationIconImage(for destination: IntegrationDestination) -> NSImage? {
-        let baseNames = iconFileBaseNames(for: destination)
-        let searchNames = Set(baseNames + baseNames.map { $0.lowercased() })
-        let extensions = ["png", "jpg", "jpeg", "pdf", "icns", "webp", ""]
-
-        guard let resourceURL = Bundle.main.resourceURL else { return nil }
-        for name in searchNames {
-            for ext in extensions {
-                let fileName = ext.isEmpty ? name : "\(name).\(ext)"
-                let url = resourceURL.appendingPathComponent("3dPartyIcons/\(fileName)")
-                if let image = NSImage(contentsOf: url) {
-                    return image
+    private func deliveryFieldsCard(_ fields: Binding<[DeliveryField]>, includingAudio: Bool = false) -> some View {
+        SettingsCard("Send fields") {
+            ForEach(DeliveryField.options(includingAudio: includingAudio)) { field in
+                SettingsRow(verbatim: field.displayName) {
+                    Toggle(field.displayName, isOn: fields[contains: field])
                 }
             }
         }
-        return nil
     }
 
-    private func iconFileBaseNames(for destination: IntegrationDestination) -> [String] {
+    /// Bundled brand icons, resolved once: the first match in name, then extension, order.
+    private static let iconImages: [IntegrationDestination: NSImage] = {
+        guard let resourceURL = Bundle.main.resourceURL else { return [:] }
+        let extensions = ["png", "jpg", "jpeg", "pdf", "icns", "webp", ""]
+        var images: [IntegrationDestination: NSImage] = [:]
+        for destination in IntegrationDestination.allCases {
+            var seen = Set<String>()
+            let names = iconFileBaseNames(for: destination).flatMap { [$0, $0.lowercased()] }
+                .filter { seen.insert($0).inserted }
+            search: for name in names {
+                for ext in extensions {
+                    let fileName = ext.isEmpty ? name : "\(name).\(ext)"
+                    if let image = NSImage(contentsOf: resourceURL.appendingPathComponent("3dPartyIcons/\(fileName)")) {
+                        images[destination] = image
+                        break search
+                    }
+                }
+            }
+        }
+        return images
+    }()
+
+    private static func iconFileBaseNames(for destination: IntegrationDestination) -> [String] {
         switch destination {
         case .obsidian:
             return ["Obsidian", destination.rawValue, destination.displayName]
@@ -483,31 +579,10 @@ struct SettingsIntegrationsTab: View {
             return ["OneNote", "Microsoft OneNote", destination.rawValue, destination.displayName]
         case .webhook:
             return ["Webhook", destination.rawValue, destination.displayName]
-        }
-    }
-
-    private func glassIconTile<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.45),
-                                    .white.opacity(0.15),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 0.8
-                        )
-                )
-                .shadow(color: .black.opacity(0.10), radius: 2, x: 0, y: 1)
-
-            content()
-                .padding(3)
+        case .tickTick:
+            return ["TickTick", destination.rawValue, destination.displayName]
+        case .todoist:
+            return ["Todoist", destination.rawValue, destination.displayName]
         }
     }
 
@@ -521,68 +596,38 @@ struct SettingsIntegrationsTab: View {
         case .googleKeep: "lightbulb"
         case .oneNote: "book.closed"
         case .webhook: "network"
+        case .tickTick: "checkmark.square"
+        case .todoist: "checkmark.circle"
         }
-    }
-
-    private func statusText(for destination: IntegrationDestination) -> String {
-        switch destination {
-        case .obsidian:
-            return appSettings.obsidianEnabled ? "On" : "Off"
-        case .appleNotes:
-            return appSettings.integrations.appleNotes.enabled ? "On" : "Off"
-        case .appleReminders:
-            return appSettings.integrations.appleReminders.enabled ? "On" : "Off"
-        case .notion:
-            return appSettings.integrations.notion.enabled ? "On" : "Off"
-        case .evernote:
-            return appSettings.integrations.evernote.enabled ? "On" : "Off"
-        case .googleKeep:
-            return appSettings.integrations.googleKeep.enabled ? "On" : "Off"
-        case .oneNote:
-            return appSettings.integrations.oneNote.enabled ? "On" : "Off"
-        case .webhook:
-            if !appSettings.integrations.webhook.enabled { return "Off" }
-            return "On · \(appSettings.integrations.webhook.fields.count) fields"
-        }
-    }
-
-    private func headerValue(index: Int) -> WebhookHeader {
-        guard appSettings.integrations.webhook.headers.indices.contains(index) else {
-            return WebhookHeader()
-        }
-        return appSettings.integrations.webhook.headers[index]
-    }
-
-    private func updateHeader(index: Int, key: String, value: String) {
-        guard appSettings.integrations.webhook.headers.indices.contains(index) else { return }
-        appSettings.integrations.webhook.headers[index].key = key
-        appSettings.integrations.webhook.headers[index].value = value
     }
 
     private func removeHeader(id: UUID) {
         appSettings.integrations.webhook.headers.removeAll { $0.id == id }
     }
 
-    private func testButton(for destination: IntegrationDestination) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                Task {
-                    await runConnectionTest(destination: destination)
+    @ViewBuilder
+    private func testRow(for destination: IntegrationDestination) -> some View {
+        let outcome = testOutcomes[destination]
+        SettingsRow("Test the connection") {
+            HStack(spacing: 8) {
+                switch outcome {
+                case .success: SettingsStatusPill("Connected", kind: .success)
+                case .failure(let message): SettingsStatusPill("Failed", kind: .danger).help(message)
+                case nil: EmptyView()
                 }
-            } label: {
-                if isTesting.contains(destination) {
-                    Text("Testing...")
-                } else {
-                    Text("Test connection")
+                Button(isTesting.contains(destination) ? "Testing…" : "Test connection") {
+                    Task { await runConnectionTest(destination: destination) }
                 }
+                .buttonStyle(.settingsSecondary)
+                .disabled(isTesting.contains(destination))
             }
-            .buttonStyle(.bordered)
-            .disabled(isTesting.contains(destination))
-
-            if let message = connectionMessages[destination] {
+        }
+        if case .failure(let message) = outcome {
+            SettingsStackedRow {
                 Text(message)
-                    .font(.caption)
-                    .foregroundStyle(message == "Connection successful" ? .green : .red)
+                    .uiFont(.system(size: 11.5))
+                    .foregroundStyle(status.danger.color)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -593,11 +638,13 @@ struct SettingsIntegrationsTab: View {
         defer { isTesting.remove(destination) }
 
         do {
-            try await integrationService.testConnection(destination: destination, settings: appSettings)
-            connectionMessages[destination] = "Connection successful"
+            // Created per test: the service owns an EKEventStore, too costly for view init.
+            try await IntegrationDispatchService().testConnection(destination: destination, settings: appSettings)
+            testOutcomes[destination] = .success
         } catch {
-            connectionMessages[destination] = error.localizedDescription
+            testOutcomes[destination] = .failure(error.localizedDescription)
         }
+        if destination == .tickTick { tickTickAuth.reload() }
     }
 
     private var vaultPathText: String {
@@ -631,6 +678,20 @@ struct SettingsIntegrationsTab: View {
         if panel.runModal() == .OK, let url = panel.url {
             guard let relativePath = appSettings.obsidianRelativePath(for: url) else { return }
             completion(relativePath)
+        }
+    }
+}
+
+private extension Array where Element == DeliveryField {
+    /// Membership as a settable flag, for key-path toggle bindings.
+    subscript(contains field: DeliveryField) -> Bool {
+        get { contains(field) }
+        set {
+            if newValue {
+                if !contains(field) { append(field) }
+            } else {
+                removeAll { $0 == field }
+            }
         }
     }
 }

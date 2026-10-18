@@ -1,0 +1,72 @@
+import Testing
+@testable import dBrief
+
+@Suite struct ViewerPresentationPolicyTests {
+    /// Space played audio on the Summary tab with no visible player to stop it.
+    @Test func thePlayerStaysVisibleOnAnyTabWhileItsAudioPlays() {
+        for mode in ViewerDocumentMode.allCases {
+            #expect(ViewerPresentationPolicy.showsPlayback(mode: mode, hasFinalizedAudio: true, isLive: false, isPlaying: true))
+        }
+    }
+
+    @Test func playbackBelongsOnlyToFinalizedTranscriptView() {
+        for mode in ViewerDocumentMode.allCases {
+            #expect(
+                ViewerPresentationPolicy.showsPlayback(
+                    mode: mode,
+                    hasFinalizedAudio: true,
+                    isLive: false
+                ) == (mode == .transcript)
+            )
+            #expect(
+                !ViewerPresentationPolicy.showsPlayback(
+                    mode: mode,
+                    hasFinalizedAudio: false,
+                    isLive: false
+                )
+            )
+            #expect(
+                !ViewerPresentationPolicy.showsPlayback(
+                    mode: mode,
+                    hasFinalizedAudio: true,
+                    isLive: true
+                )
+            )
+        }
+    }
+
+    @Test func firstLoadPicksTheInitialMode() {
+        #expect(ViewerPresentationPolicy.modeAfterLoad(current: .transcript, hasAppliedInitialMode: false, hasSummary: true) == .summary)
+        #expect(ViewerPresentationPolicy.modeAfterLoad(current: .summary, hasAppliedInitialMode: false, hasSummary: false) == .transcript)
+    }
+
+    @Test func reloadKeepsTheUsersTab() {
+        for mode in ViewerDocumentMode.allCases {
+            #expect(ViewerPresentationPolicy.modeAfterLoad(current: mode, hasAppliedInitialMode: true, hasSummary: true) == mode)
+            #expect(ViewerPresentationPolicy.modeAfterLoad(current: mode, hasAppliedInitialMode: true, hasSummary: false) == mode)
+        }
+    }
+
+    @Test func initialModeUsesSummaryWhenAvailable() {
+        #expect(ViewerPresentationPolicy.initialMode(hasSummary: true) == .summary)
+        #expect(ViewerPresentationPolicy.initialMode(hasSummary: false) == .transcript)
+    }
+
+}
+
+@Suite struct ViewerMountedModesTests {
+    @Test func onlyTheCurrentTabIsMountedAtFirst() {
+        #expect(ViewerPresentationPolicy.mountedModes(visited: [], current: .summary) == [.summary])
+    }
+
+    @Test func visitedTabsStayMountedInStableOrder() {
+        let mounted = ViewerPresentationPolicy.mountedModes(
+            visited: [.meetingInsights, .summary], current: .transcript)
+        #expect(mounted == [.summary, .transcript, .meetingInsights])
+    }
+
+    @Test func theCurrentTabIsNeverDuplicated() {
+        let mounted = ViewerPresentationPolicy.mountedModes(visited: [.transcript], current: .transcript)
+        #expect(mounted == [.transcript])
+    }
+}

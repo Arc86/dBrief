@@ -9,6 +9,8 @@ enum KeychainSecretKey: String, CaseIterable, Sendable {
     case microsoftAccessToken = "microsoft.accessToken"
     case microsoftRefreshToken = "microsoft.refreshToken"
     case microsoftTokenExpiry = "microsoft.tokenExpiry"
+    case tickTickAccessToken = "integration.ticktick.accessToken"
+    case todoist = "integration.todoist.token"
 }
 
 enum KeychainError: LocalizedError, Sendable {
@@ -29,7 +31,35 @@ enum KeychainError: LocalizedError, Sendable {
     }
 }
 
+/// Secrets for a test run, which must never read or write the user's real Keychain
+/// items (reading them prompts for the login password on every run).
+private final class InMemorySecrets: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    subscript(account: String) -> String? {
+        get { lock.withLock { values[account] } }
+        set { lock.withLock { values[account] = newValue } }
+    }
+}
+
 enum KeychainHelper {
+    /// A test host: XCTest or Swift Testing is loaded, a test bundle is, or the process
+    /// is a test runner. Hosts differ between toolchains, so check all of them; the app
+    /// itself links none of these.
+    private static let testStore: InMemorySecrets? = isTestHost ? InMemorySecrets() : nil
+
+    private static var isTestHost: Bool {
+        if NSClassFromString("XCTestCase") != nil { return true }
+        if Bundle.allBundles.contains(where: { $0.bundleURL.pathExtension == "xctest" }) { return true }
+        if Bundle.allFrameworks.contains(where: { ["XCTest", "Testing"].contains($0.bundleURL.deletingPathExtension().lastPathComponent) }) {
+            return true
+        }
+        let process = ProcessInfo.processInfo.processName
+        return process == "xctest" || process.hasPrefix("swiftpm-testing-helper") || process.hasSuffix("PackageTests")
+    }
+
+    static var usesInMemoryStore: Bool { testStore != nil }
+
     static func set(_ value: String, for key: KeychainSecretKey) throws {
         try set(value, account: key.rawValue)
     }
@@ -55,6 +85,10 @@ enum KeychainHelper {
     }
 
     private static func set(_ value: String, account: String) throws {
+        if let testStore {
+            testStore[account] = value.isEmpty ? nil : value
+            return
+        }
         if value.isEmpty {
             try delete(account: account)
             return
@@ -83,6 +117,7 @@ enum KeychainHelper {
     }
 
     private static func get(account: String) throws -> String {
+        if let testStore { return testStore[account] ?? "" }
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -104,6 +139,10 @@ enum KeychainHelper {
     }
 
     private static func delete(account: String) throws {
+        if let testStore {
+            testStore[account] = nil
+            return
+        }
         let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError.unexpectedStatus(status)

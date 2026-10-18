@@ -14,3 +14,9 @@ public struct DiarizedTurn: Sendable, Equatable, Codable {
         self.end = end
     }
 }
+
+/// The voiceprint model behind every embedding the helper extracts, recorded on
+/// each library voiceprint (`Voiceprint.model`) and in privacy receipts.
+public enum SpeakerEmbeddingModel {
+    public static let tag = "fluidaudio-wespeaker-256"
+}

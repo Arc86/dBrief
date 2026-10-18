@@ -3,26 +3,24 @@ import dBriefWire
 
 struct SettingsTranscriptionTab: View {
     @Environment(AppSettings.self) private var appSettings
-    @Environment(\.settingsSearchRevealAdvanced) private var searchAdvanced
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
     @Environment(\.settingsSearchRequest) private var searchRequest
     @Environment(RecordingManager.self) private var recordingManager
-    @State private var selectedEndpointId: UUID?
-    @State private var isEditing = false
-    @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:8080", modelName: "whisper-1")
-    @State private var isNew = false
-    @State private var testResult: TestResult?
-    @State private var availableModels: [String] = []
-    @State private var isLoadingModels = false
     @State private var purgeMessage: String?
-    @State private var whisperModels: [WhisperModelInfo] = []
+    // Start from the built-in list so the model card (and its change-model button,
+    // which also picks Parakeet / Apple Speech) never waits on the network.
+    private static let offlineWhisperModels = WhisperModelInfo.fallbackModelNames
+        .map { WhisperModelInfo.parse($0) }.sorted()
+    @State private var whisperModels: [WhisperModelInfo] = Self.offlineWhisperModels
     @State private var isFetchingWhisperModels = false
     @State private var whisperModelFetchError: String?
     @State private var showWhisperComparison = false
-    @State private var showModelHelp = false
     @State private var modernApple = false
     @State private var lastLocalEngine: AppSettings.TranscriptionEngine = .localWhisper
     @State private var newIgnoredPhrase = ""
     @State private var showIgnoredSegments = false
+    let editProfile: (UUID) -> Void
 
     enum TestResult {
         case testing
@@ -30,451 +28,290 @@ struct SettingsTranscriptionTab: View {
         case failure(String)
     }
 
-    private func fetchWhisperModels() {
+    /// Asks the ML helper for the Hugging Face list, so only call it when Whisper is
+    /// in use or the picker is open (it launches the helper process).
+    private func loadWhisperModels() async {
         guard !isFetchingWhisperModels else { return }
         isFetchingWhisperModels = true
         whisperModelFetchError = nil
-        Task {
-            let modelNames = await recordingManager.fetchAvailableWhisperModels()
-            if modelNames.isEmpty {
-                whisperModels = WhisperModelInfo.fallbackModelNames
-                    .map { WhisperModelInfo.parse($0) }.sorted()
-                whisperModelFetchError = "Using offline model list — couldn't reach HuggingFace."
-            } else {
-                whisperModels = modelNames.map { WhisperModelInfo.parse($0) }.sorted()
-            }
-            isFetchingWhisperModels = false
+        let modelNames = await recordingManager.fetchAvailableWhisperModels()
+        if modelNames.isEmpty {
+            whisperModels = Self.offlineWhisperModels
+            whisperModelFetchError = "Using offline model list — couldn't reach HuggingFace."
+        } else {
+            whisperModels = modelNames.map { WhisperModelInfo.parse($0) }.sorted()
         }
+        isFetchingWhisperModels = false
     }
 
     var body: some View {
-        if isEditing {
-            endpointEditor
-        } else {
-            Form {
-                Section("Engine", settingsSearch: .transcriptionEngine) { engineSection }
-                    .listRowBackground(Color.clear)
-                Section("Language", settingsSearch: .transcriptionLanguage) { languageSection }
-                    .listRowBackground(Color.clear)
-                Section("Cleanup", settingsSearch: .transcriptionCleanup) { cleanupSection }
-                    .listRowBackground(Color.clear)
-                Section("Live Transcription", settingsSearch: .transcriptionLive) { liveTranscriptionSection }
-                    .listRowBackground(Color.clear)
-                if appSettings.transcriptionEngine == .remoteEndpoint || searchRequest?.section == .transcriptionServices || searchRequest?.section == .transcriptionChunking {
-                    Section("Transcription services", settingsSearch: .transcriptionServices) { endpointsSection }
-                        .listRowBackground(Color.clear)
-                    if appSettings.powerUserMode || searchAdvanced {
-                        Section("Large File Handling", settingsSearch: .transcriptionChunking) {
-                            if appSettings.transcriptionEngine != .remoteEndpoint {
-                                Text("These options apply to remote transcription services.")
-                                    .font(.caption).foregroundStyle(.secondary)
+        @Bindable var settings = appSettings
+        let engine = settings.transcriptionEngine
+        SettingsPageScaffold(page: .transcription, notice: {
+            SettingsProfileScopeView(fields: SettingsPage.transcription.profileFields, editProfile: editProfile)
+        }) {
+            SettingsCard("Engine", section: .transcriptionEngine) {
+                SettingsRow("Where transcription runs") {
+                    Picker("Where transcription runs", selection: Binding(
+                        get: { settings.transcriptionEngine == .remoteEndpoint },
+                        set: { remote in
+                            if remote {
+                                lastLocalEngine = settings.transcriptionEngine
+                                settings.transcriptionEngine = .remoteEndpoint
+                            } else {
+                                settings.transcriptionEngine = lastLocalEngine
                             }
-                            chunkingSection
                         }
-                            .listRowBackground(Color.clear)
+                    )) {
+                        Text("On this Mac").tag(false)
+                        Text("Remote service").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                modelCard(engine: engine)
+                if engine == .localWhisper, let error = whisperModelFetchError {
+                    SettingsRow("Model list unavailable", caption: LocalizedStringKey(error)) {
+                        SettingsStatusPill("Offline", kind: .warning)
                     }
                 }
+                if engine == .remoteEndpoint {
+                    SettingsRow("Remote transcription", caption: "Uses the default provider below.")
+                }
+                if let purgeMessage {
+                    SettingsRow(verbatim: "Model download", caption: purgeMessage)
+                }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
-            .sheet(isPresented: $showWhisperComparison) {
-                WhisperModelPicker(modelIDs: whisperModels.isEmpty ? WhisperModelInfo.fallbackModelNames : whisperModels.map(\.id),
-                    selectedID: LocalTranscriptionChoice.id(engine: appSettings.transcriptionEngine,
-                        whisper: appSettings.whisperModelName, parakeet: appSettings.parakeetModelVariant),
-                    language: appSettings.transcriptionLanguage, identifySpeakers: appSettings.diarizationEnabled) { id in
-                        let engine = LocalTranscriptionChoice.engine(id)
-                        if engine == .localWhisper { appSettings.whisperModelName = id }
-                        if let variant = LocalTranscriptionChoice.parakeetVariant(id) {
-                            appSettings.parakeetModelVariant = variant
+
+            SettingsCard("Language", section: .transcriptionLanguage) {
+                SettingsRow("Spoken language", caption: languageCaption) { languagePicker }
+            }
+
+            SettingsCard("Cleanup", description: "Markup and hallucination artifacts are always removed",
+                         section: .transcriptionCleanup) {
+                SettingsRow("Remove filler words", caption: "um, uh, you know. Off keeps transcripts verbatim.") {
+                    Toggle("Remove filler words", isOn: $settings.removeFillerWords)
+                }
+                SettingsRow("Drop silence hallucinations",
+                            caption: "Removes whole lines such as “Thanks for watching”. Real speech that contains a phrase is kept.") {
+                    Toggle("Drop silence hallucinations", isOn: $settings.removeIgnoredSegments)
+                }
+                if settings.removeIgnoredSegments {
+                    SettingsStackedRow {
+                        DisclosureGroup(isExpanded: $showIgnoredSegments) {
+                            customIgnoredSegmentsEditor.padding(.top, 8)
+                        } label: {
+                            Text("Custom phrases (\(settings.customIgnoredSegments.count)) · \(TranscriptCleanup.defaultIgnoredSegments.count) built-in")
+                                .uiFont(.system(size: 12, weight: .medium))
+                                .foregroundStyle(palette.heading.color)
                         }
-                        appSettings.transcriptionEngine = engine
-                        lastLocalEngine = engine
-                    }
-            }
-            .onAppear {
-                fetchWhisperModels()
-                if appSettings.transcriptionEngine != .remoteEndpoint { lastLocalEngine = appSettings.transcriptionEngine }
-            }
-            .task(id: appSettings.transcriptionLanguage) {
-                if #available(macOS 26, *) {
-                    let supported = await AppleSpeechAnalyzerService.supports(locale: appSettings.transcriptionLanguage.isEmpty
-                        ? .current : Locale(identifier: appSettings.transcriptionLanguage))
-                    guard !Task.isCancelled else { return }
-                    modernApple = supported
-                }
-            }
-
-        }
-    }
-
-    private func formatMemory(_ mb: Int) -> String {
-        let gb = Double(mb) / 1_024
-        return String(format: "%.1f GB", gb)
-    }
-
-    private var liveTranscriptionSection: some View {
-        @Bindable var settings = appSettings
-        return Toggle(isOn: $settings.liveTranscriptionEnabled) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Transcribe live while recording")
-                Text("Real-time preview (and live chat) using Apple's on-device speech, with your mic and the meeting audio labeled separately. The final transcript still uses your chosen engine.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var engineSection: some View {
-        @Bindable var settings = appSettings
-        Picker("Transcription", selection: Binding(
-            get: { settings.transcriptionEngine == .remoteEndpoint },
-            set: { remote in
-                if remote {
-                    lastLocalEngine = settings.transcriptionEngine
-                    settings.transcriptionEngine = .remoteEndpoint
-                } else { settings.transcriptionEngine = lastLocalEngine }
-            })) {
-                Text("On this Mac").tag(false)
-                Text("Remote service").tag(true)
-            }.pickerStyle(.segmented)
-
-        switch settings.transcriptionEngine {
-        case .appleSpeech:
-            TranscriptionModelCard(presentation: .local(LocalTranscriptionChoice.apple, modernApple: modernApple),
-                                   onChangeModel: { showWhisperComparison = true }) {
-                Label("macOS managed", systemImage: "apple.logo").font(.caption).foregroundStyle(.secondary)
-            }
-            DisclosureGroup("Memory and sources") {
-                LocalModelEvidenceView(modelID: LocalTranscriptionChoice.apple)
-            }
-        case .parakeetLocal:
-            parakeetSection
-        case .localWhisper:
-            whisperSection
-        case .remoteEndpoint:
-            Text("Use a remote Whisper API or server. Requires an endpoint.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-
-        TranscriptionEngineGuideView()
-    }
-
-    @ViewBuilder
-    private var parakeetSection: some View {
-        @Bindable var settings = appSettings
-        VStack(alignment: .leading, spacing: 8) {
-            let id = LocalTranscriptionChoice.id(engine: .parakeetLocal, whisper: "",
-                                                 parakeet: settings.parakeetModelVariant)
-            TranscriptionModelCard(presentation: .local(id),
-                                   onChangeModel: { showWhisperComparison = true }) {
-                ModelDownloadButton(kind: .parakeet, compact: true)
-            }
-            DisclosureGroup("Memory and sources") {
-                LocalModelEvidenceView(modelID: id)
-            }.font(.caption)
-
-            Toggle("Identify speakers", isOn: $settings.diarizationEnabled)
-            Text("Identifies who said what via SpeakerKit, after transcription. Adds processing time and ~500 MB memory.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Button("Remove downloaded Parakeet model") {
-                Task {
-                    do {
-                        try await recordingManager.purgeLocalParakeetModel()
-                        purgeMessage = "Local Parakeet model cache removed."
-                    } catch {
-                        purgeMessage = error.localizedDescription
                     }
                 }
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            if let purgeMessage {
-                Text(purgeMessage)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
 
-    @ViewBuilder
-    private var whisperSection: some View {
-        @Bindable var settings = appSettings
-
-        VStack(alignment: .leading, spacing: 10) {
-            // — Model group header with help popover —
-            HStack(spacing: 6) {
-                Text("Model")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Button {
-                    showModelHelp.toggle()
-                } label: {
-                    Image(systemName: "info.circle")
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .popover(isPresented: $showModelHelp, arrowEdge: .bottom) {
-                    Text("Smaller models are faster but less accurate. Larger models are more accurate but use more memory and time. When in doubt, keep the recommended one.")
-                        .font(.callout)
-                        .padding()
-                        .frame(width: 260)
+            SettingsCard("Live preview", section: .transcriptionLive) {
+                SettingsRow("Transcribe while recording",
+                            caption: "A quick on-device preview (and live chat). The final transcript still comes from the engine above.") {
+                    Toggle("Transcribe while recording", isOn: $settings.liveTranscriptionEnabled)
                 }
             }
 
-            // — Model card —
-            if isFetchingWhisperModels && whisperModels.isEmpty {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading models…").font(.caption).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .secondarySystemFill)))
-            } else {
-                TranscriptionModelCard(modelID: settings.whisperModelName,
-                                       onChangeModel: { showWhisperComparison = true }) {
-                    ModelDownloadButton(kind: .whisper, compact: true)
+            if settings.usesTranscriptionEngineAnywhere(.remoteEndpoint) || searchRequest?.section == .transcriptionServices {
+                SettingsCard("Providers", description: "For remote transcription", section: .transcriptionServices) {
+                    SettingsProviderList(kind: .transcription, endpoints: $settings.transcriptionEndpoints,
+                                         defaultID: $settings.defaultTranscriptionEndpointId)
                 }
             }
 
-            HStack {
-                Text("Estimated ratings").font(.caption2).foregroundStyle(.secondary)
-                Spacer()
-            }
-            DisclosureGroup("Memory and sources") {
-                WhisperModelImpactView(modelID: settings.whisperModelName,
-                                       identifySpeakers: settings.diarizationEnabled)
-                    .padding(.top, 8)
-            }.font(.caption)
-
-            // — Offline fetch error (shown at top level so it's visible without expanding Advanced) —
-            if let error = whisperModelFetchError {
-                Label(error, systemImage: "wifi.slash")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-
-            // — Diarization (plain label, jargon in caption) —
-            Divider().padding(.vertical, 6)
-            Text("Speakers").font(.subheadline).foregroundStyle(.secondary)
-            Toggle(isOn: $settings.diarizationEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Identify different speakers")
-                    Text("Diarization — labels who said what. Slower, uses ~500 MB more memory.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-
-            // — Confirm-first speaker review (only meaningful while diarizing) —
-            if settings.diarizationEnabled {
-                Picker(selection: $settings.speakerIdMode) {
-                    ForEach(AppSettings.SpeakerIdMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("When a voice is recognized")
-                        Text(settings.speakerIdMode.shortDescription)
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-
-            // — Advanced (collapsed) —
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Where it runs")
-                            Text("Compute units. Leave on Automatic unless transcription fails on large models.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Picker("", selection: $settings.whisperComputeUnits) {
+            SettingsAdvancedCard(page: .transcription, summary: "Compute, warm-up, large files",
+                                 sections: [.transcriptionAdvanced, .transcriptionChunking]) {
+                SettingsCard("Whisper", description: "On-device Whisper only", section: .transcriptionAdvanced) {
+                    SettingsRow("Where it runs", caption: "Leave on Automatic unless large models fail.") {
+                        Picker("Where it runs", selection: $settings.whisperComputeUnits) {
                             ForEach(AppSettings.WhisperComputeUnits.allCases, id: \.self) { unit in
                                 Text(unit.friendlyName).tag(unit)
                             }
                         }
-                        .labelsHidden()
                         .pickerStyle(.menu)
-                        .frame(width: 200)
                     }
-
-                    Toggle(isOn: $settings.prewarmWhisperOnLaunch) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Keep model warm")
-                            Text("Loads the Whisper model shortly after launch and after the Mac wakes, to reduce startup time. Can retain model memory while idle.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
+                    SettingsRow("Keep the model warm", caption: "Loads after launch and wake to start faster. Keeps memory in use while idle.") {
+                        Toggle("Keep the model warm", isOn: $settings.prewarmWhisperOnLaunch)
                     }
-
-                    HStack {
+                    SettingsRow("Model list", caption: "Fetched from Hugging Face.") {
                         Button {
-                            fetchWhisperModels()
+                            Task { await loadWhisperModels() }
                         } label: {
-                            Label("Refresh model list", systemImage: "arrow.clockwise")
+                            Label(isFetchingWhisperModels ? "Refreshing…" : "Refresh", systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
-                        .help("Refresh model list from HuggingFace")
-                        Spacer()
-                    }
-
-                    Button("Remove downloaded WhisperKit model") {
-                        Task {
-                            do {
-                                try await recordingManager.purgeLocalWhisperModel()
-                                purgeMessage = "Local WhisperKit model cache removed."
-                            } catch {
-                                purgeMessage = error.localizedDescription
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    if let purgeMessage {
-                        Text(purgeMessage)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        .buttonStyle(.settingsSecondary)
+                        .disabled(isFetchingWhisperModels)
                     }
                 }
-                .padding(.top, 6)
-            } label: {
-                Text("Advanced").font(.subheadline)
+                SettingsCard("Large files", description: "Remote services only", section: .transcriptionChunking) {
+                    SettingsRow("Split large files",
+                                caption: "Chunks are transcribed in order and merged. Native cloud diarization uses one file.") {
+                        Toggle("Split large files", isOn: $settings.remoteChunkingEnabled)
+                    }
+                    if settings.remoteChunkingEnabled {
+                        stepperRow("Max upload size", "\(settings.remoteChunkMaxUploadMB) MB",
+                                   value: $settings.remoteChunkMaxUploadMB, in: 1...100)
+                        stepperRow("Overlap", "\(Int(settings.remoteChunkOverlapSeconds)) s",
+                                   value: $settings.remoteChunkOverlapSeconds, in: 0...15)
+                        stepperRow("Retries", "\(settings.remoteChunkRetryCount)",
+                                   value: $settings.remoteChunkRetryCount, in: 0...5)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showWhisperComparison) {
+            TranscriptionModelPicker(modelIDs: whisperModels.map(\.id),
+                selectedID: LocalTranscriptionChoice.id(engine: appSettings.transcriptionEngine,
+                    whisper: appSettings.whisperModelName, parakeet: appSettings.parakeetModelVariant),
+                language: appSettings.transcriptionLanguage, identifySpeakers: appSettings.diarizationEnabled) { id in
+                    let engine = LocalTranscriptionChoice.engine(id)
+                    if engine == .localWhisper { appSettings.whisperModelName = id }
+                    if let variant = LocalTranscriptionChoice.parakeetVariant(id) {
+                        appSettings.parakeetModelVariant = variant
+                    }
+                    appSettings.transcriptionEngine = engine
+                    lastLocalEngine = engine
+                }
+        }
+        .onAppear {
+            if appSettings.transcriptionEngine != .remoteEndpoint { lastLocalEngine = appSettings.transcriptionEngine }
+        }
+        .task(id: engine == .localWhisper || showWhisperComparison) {
+            guard engine == .localWhisper || showWhisperComparison else { return }
+            await loadWhisperModels()
+        }
+        .task(id: appSettings.transcriptionLanguage) {
+            if #available(macOS 26, *) {
+                let supported = await AppleSpeechAnalyzerService.supports(locale: appSettings.transcriptionLanguage.isEmpty
+                    ? .current : Locale(identifier: appSettings.transcriptionLanguage))
+                guard !Task.isCancelled else { return }
+                modernApple = supported
             }
         }
     }
 
+    // MARK: Engine
+
     @ViewBuilder
-    private var languageSection: some View {
+    private func modelCard(engine: AppSettings.TranscriptionEngine) -> some View {
+        switch engine {
+        case .appleSpeech:
+            SettingsStackedRow {
+                VStack(alignment: .leading, spacing: 8) {
+                    TranscriptionModelCard(presentation: .local(LocalTranscriptionChoice.apple, modernApple: modernApple),
+                                           onChangeModel: { showWhisperComparison = true }) {
+                        SettingsStatusPill("Managed by macOS", kind: .neutral)
+                    }
+                    ModelEvidenceDisclosure {
+                        LocalModelEvidenceView(modelID: LocalTranscriptionChoice.apple)
+                    }
+                }
+            }
+        case .parakeetLocal:
+            let id = LocalTranscriptionChoice.id(engine: .parakeetLocal, whisper: "", parakeet: appSettings.parakeetModelVariant)
+            SettingsStackedRow {
+                VStack(alignment: .leading, spacing: 8) {
+                    TranscriptionModelCard(presentation: .local(id), onChangeModel: { showWhisperComparison = true }) {
+                        HStack(spacing: 6) {
+                            ModelDownloadButton(kind: .parakeet, compact: true)
+                            ModelActionsMenu(modelName: "Parakeet", message: $purgeMessage) {
+                                try await recordingManager.purgeLocalParakeetModel()
+                            }
+                        }
+                    }
+                    ModelEvidenceDisclosure {
+                        LocalModelEvidenceView(modelID: id)
+                    }
+                }
+            }
+        case .localWhisper:
+            SettingsStackedRow {
+                VStack(alignment: .leading, spacing: 8) {
+                    TranscriptionModelCard(modelID: appSettings.whisperModelName,
+                                           onChangeModel: { showWhisperComparison = true }) {
+                        HStack(spacing: 6) {
+                            ModelDownloadButton(kind: .whisper, compact: true)
+                            ModelActionsMenu(modelName: "WhisperKit", message: $purgeMessage) {
+                                try await recordingManager.purgeLocalWhisperModel()
+                            }
+                        }
+                    }
+                    .help("Smaller models are faster but less accurate. Larger models are more accurate but use more memory and time. Ratings are estimates.")
+                    ModelEvidenceDisclosure {
+                        WhisperModelImpactView(modelID: appSettings.whisperModelName,
+                                               identifySpeakers: appSettings.diarizationEnabled)
+                            .padding(.top, 8)
+                    }
+                }
+            }
+        case .remoteEndpoint:
+            EmptyView()
+        }
+    }
+
+    // MARK: Language
+
+    @ViewBuilder
+    private var languagePicker: some View {
         @Bindable var settings = appSettings
         if settings.transcriptionEngine == .appleSpeech {
             AppleSpeechLanguagePicker(selection: $settings.transcriptionLanguage)
         } else {
-            Picker("Audio language", selection: $settings.transcriptionLanguage) {
-                Text(settings.transcriptionEngine == .appleSpeech ? "Auto (System language)" : "Auto-detect").tag("")
-                Divider()
-                Text("English").tag("en")
-                Text("Dutch").tag("nl")
-                Text("German").tag("de")
-                Text("French").tag("fr")
-                Text("Spanish").tag("es")
-                Text("Italian").tag("it")
-                Text("Portuguese").tag("pt")
-                Text("Japanese").tag("ja")
-                Text("Chinese").tag("zh")
-                Text("Korean").tag("ko")
-                Text("Russian").tag("ru")
-                Text("Arabic").tag("ar")
-                Text("Hindi").tag("hi")
-                Text("Polish").tag("pl")
-                Text("Turkish").tag("tr")
-                Text("Ukrainian").tag("uk")
-                Text("Swedish").tag("sv")
-                Text("Danish").tag("da")
-                Text("Norwegian").tag("no")
-            }
-            .pickerStyle(.menu)
-            .disabled(settings.transcriptionEngine == .parakeetLocal)
+            TranscriptionLanguagePicker(selection: $settings.transcriptionLanguage)
+                .disabled(settings.transcriptionEngine == .parakeetLocal)
         }
+    }
+
+    private var languageCaption: LocalizedStringKey? {
+        let settings = appSettings
         if settings.transcriptionEngine == .parakeetLocal {
-            Text("Parakeet determines the language from its model and the audio. This selection has no effect; it is kept for other engines.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            return "Parakeet detects the language itself. This choice is kept for other engines."
         } else if settings.transcriptionEngine == .appleSpeech && settings.transcriptionLanguage.isEmpty {
-            Text("Apple Speech uses the system language when set to Auto.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else if settings.transcriptionEngine == .localWhisper && settings.transcriptionLanguage.isEmpty {
-            Text("WhisperKit auto-detects language when set to Auto-detect.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            return "Apple Speech uses the system language when set to Auto."
+        } else if settings.transcriptionLanguage.isEmpty {
+            return "Auto-detect works best for mixed-language meetings."
         }
+        return nil
     }
 
-    private var cleanupSection: some View {
-        @Bindable var settings = appSettings
-        return VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Remove filler words (um, uh, …)", isOn: $settings.removeFillerWords)
-                Text("Markup and hallucination artifacts are always cleaned. Filler removal is off by default so meeting transcripts stay verbatim.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            ignoredSegmentsSection
-        }
-    }
-
-    private var ignoredSegmentsSection: some View {
-        @Bindable var settings = appSettings
-        return VStack(alignment: .leading, spacing: 8) {
-            Toggle("Filter ignored segments", isOn: $settings.removeIgnoredSegments)
-            Text("Drops segments that exactly match a known filler phrase — Whisper silence-hallucinations like “Thank you for watching”, “Subscribe to the channel”, or “♪”. Matching is whole-segment, so real speech that merely contains a phrase is kept.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            if settings.removeIgnoredSegments {
-                DisclosureGroup(isExpanded: $showIgnoredSegments) {
-                    customIgnoredSegmentsEditor
-                } label: {
-                    Text("Custom phrases (\(settings.customIgnoredSegments.count)) · \(TranscriptCleanup.defaultIgnoredSegments.count) built-in")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
+    // MARK: Cleanup
 
     private var customIgnoredSegmentsEditor: some View {
         @Bindable var settings = appSettings
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 TextField("Add a phrase to ignore", text: $newIgnoredPhrase)
-                    .textFieldStyle(.roundedBorder)
+                    .settingsTextField()
                     .onSubmit { addIgnoredPhrase() }
                 Button("Add", action: addIgnoredPhrase)
+                    .buttonStyle(.settingsSecondary)
                     .disabled(newIgnoredPhrase.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-
             if settings.customIgnoredSegments.isEmpty {
-                Text("No custom phrases. Built-in phrases are always applied while filtering is on.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("No custom phrases. Built-in phrases always apply while this is on.")
+                    .uiFont(.system(size: 11.5))
+                    .foregroundStyle(palette.secondary.color)
             } else {
                 ForEach(settings.customIgnoredSegments, id: \.self) { phrase in
                     HStack {
-                        Text(phrase)
-                            .font(.callout)
+                        Text(phrase).uiFont(.system(size: 12)).foregroundStyle(palette.text.color)
                         Spacer()
                         Button {
                             settings.customIgnoredSegments.removeAll { $0 == phrase }
                         } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(palette.secondary.color)
                         }
                         .buttonStyle(.plain)
-                        .help("Remove phrase")
+                        .accessibilityLabel("Remove \(phrase)")
                     }
                 }
-
-                Button("Reset to Defaults") {
-                    settings.customIgnoredSegments = []
-                }
-                .font(.caption)
+                Button("Reset to defaults") { settings.customIgnoredSegments = [] }
+                    .buttonStyle(.settingsSecondary)
             }
         }
-        .padding(.top, 4)
     }
 
     private func addIgnoredPhrase() {
@@ -487,281 +324,42 @@ struct SettingsTranscriptionTab: View {
         newIgnoredPhrase = ""
     }
 
-    private var endpointsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if appSettings.transcriptionEndpoints.isEmpty {
-                Text("No transcription services configured. Click + to add one.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-            } else {
-                ForEach(Array(appSettings.transcriptionEndpoints.enumerated()), id: \.element.id) { index, endpoint in
-                    endpointRow(endpoint)
-                    if index < appSettings.transcriptionEndpoints.count - 1 {
-                        Divider()
-                    }
-                }
+    private func stepperRow<V: Strideable>(_ label: LocalizedStringKey, _ value: String, value binding: Binding<V>,
+                                           in range: ClosedRange<V>) -> some View where V.Stride: ExpressibleByIntegerLiteral {
+        SettingsRow(label) {
+            HStack(spacing: 6) {
+                Text(value).uiFont(.system(size: 12).monospacedDigit()).foregroundStyle(palette.text.color)
+                Stepper(label, value: binding, in: range, step: 1)
+                    .accessibilityValue(Text(value))
             }
+        }
+    }
+}
 
+/// The spoken-language menu for Whisper and remote engines, shared by the
+/// Transcription page and the profile editor's override.
+struct TranscriptionLanguagePicker: View {
+    @Binding var selection: String
+
+    static let languages: [(code: String, name: String)] = [
+        ("en", "English"), ("nl", "Dutch"), ("de", "German"), ("fr", "French"), ("es", "Spanish"),
+        ("it", "Italian"), ("pt", "Portuguese"), ("ja", "Japanese"), ("zh", "Chinese"), ("ko", "Korean"),
+        ("ru", "Russian"), ("ar", "Arabic"), ("hi", "Hindi"), ("pl", "Polish"), ("tr", "Turkish"),
+        ("uk", "Ukrainian"), ("sv", "Swedish"), ("da", "Danish"), ("no", "Norwegian"),
+    ]
+
+    var body: some View {
+        Picker("Spoken language", selection: $selection) {
+            Text("Auto-detect").tag("")
             Divider()
-
-            HStack {
-                Menu {
-                    ForEach(ProviderPresets.transcription) { preset in
-                        Button(preset.name) { beginAddEndpoint(preset.makeEndpoint()) }
-                    }
-                    Divider()
-                    Button("Custom…") {
-                        beginAddEndpoint(Endpoint(name: "", baseURL: "http://localhost:8080", modelName: "whisper-1"))
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-
-                Button {
-                    if let id = selectedEndpointId {
-                        appSettings.transcriptionEndpoints.removeAll { $0.id == id }
-                        selectedEndpointId = nil
-                    }
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .disabled(selectedEndpointId == nil)
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Button("Set as Default") {
-                    appSettings.defaultTranscriptionEndpointId = selectedEndpointId
-                }
-                .disabled(selectedEndpointId == nil)
-                .buttonStyle(.bordered)
+            ForEach(Self.languages, id: \.code) { language in
+                Text(language.name).tag(language.code)
+            }
+            // Keep a code typed into an older version selectable.
+            if !selection.isEmpty, !Self.languages.contains(where: { $0.code == selection }) {
+                Text(selection).tag(selection)
             }
         }
-    }
-
-    private var chunkingSection: some View {
-        @Bindable var settings = appSettings
-        return VStack(alignment: .leading, spacing: 8) {
-            Toggle("Enable chunking for large files", isOn: $settings.remoteChunkingEnabled)
-
-            if settings.remoteChunkingEnabled {
-                LabeledContent("Max upload size") {
-                    Stepper(
-                        "\(settings.remoteChunkMaxUploadMB) MB",
-                        value: $settings.remoteChunkMaxUploadMB,
-                        in: 1...100
-                    )
-                    .frame(width: 180, alignment: .trailing)
-                }
-
-                LabeledContent("Overlap") {
-                    Stepper(
-                        "\(Int(settings.remoteChunkOverlapSeconds)) sec",
-                        value: $settings.remoteChunkOverlapSeconds,
-                        in: 0...15,
-                        step: 1
-                    )
-                    .frame(width: 180, alignment: .trailing)
-                }
-
-                LabeledContent("Retry count") {
-                    Stepper(
-                        "\(settings.remoteChunkRetryCount)",
-                        value: $settings.remoteChunkRetryCount,
-                        in: 0...5
-                    )
-                    .frame(width: 180, alignment: .trailing)
-                }
-
-                Text("Large files are split into smaller chunks, transcribed sequentially, and merged into a single timeline.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Hosted providers may enforce a smaller upload limit. Files above the effective limit are split automatically when the endpoint supports it. Native cloud diarization uses a single file.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func endpointRow(_ endpoint: Endpoint) -> some View {
-        let isDefault = endpoint.id == appSettings.defaultTranscriptionEndpointId
-            || (appSettings.defaultTranscriptionEndpointId == nil
-                && endpoint.id == appSettings.transcriptionEndpoints.first?.id)
-        let isSelected = endpoint.id == selectedEndpointId
-
-        return HStack {
-            VStack(alignment: .leading) {
-                Text(endpoint.name)
-                    .fontWeight(.medium)
-                Text(endpoint.baseURL)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if isDefault {
-                Text("Default")
-                    .font(.caption)
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.18))
-                    .clipShape(Capsule())
-            }
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .onTapGesture {
-            selectedEndpointId = endpoint.id
-        }
-        .onTapGesture(count: 2) {
-            editingEndpoint = endpoint
-            isNew = false
-            testResult = nil
-            availableModels = []
-            isEditing = true
-        }
-    }
-
-    private func beginAddEndpoint(_ endpoint: Endpoint) {
-        editingEndpoint = endpoint
-        isNew = true
-        testResult = nil
-        availableModels = []
-        isEditing = true
-    }
-
-    private var endpointEditor: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            Text(isNew ? "Add Transcription Service" : "Edit Transcription Service")
-                .font(.title3)
-                .fontWeight(.medium)
-
-            if editingEndpoint.provider == .deepgram || editingEndpoint.provider == .elevenLabs {
-                Text("\(editingEndpoint.provider == .deepgram ? "Deepgram" : "ElevenLabs") native API. Enter your model and API key; long files and (Deepgram) diarization are handled server-side.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 12) {
-                GridRow {
-                    Text("Name:")
-                    NativeTextField(placeholder: "My Whisper Server", text: $editingEndpoint.name, accessibilityName: "Transcription service name")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Base URL:")
-                    NativeTextField(placeholder: "http://localhost:8080", text: $editingEndpoint.baseURL, accessibilityName: "Transcription service base URL")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Model:")
-                    if availableModels.isEmpty {
-                        NativeTextField(placeholder: "whisper-1", text: $editingEndpoint.modelName, accessibilityName: "Transcription service model")
-                            .frame(height: 22)
-                    } else {
-                        Picker("Transcription service model", selection: $editingEndpoint.modelName) {
-                            ForEach(availableModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(height: 22)
-                    }
-                }
-                GridRow {
-                    Text("API Key (optional):")
-                    NativeTextField(placeholder: "", text: $editingEndpoint.apiKey, isSecure: true, accessibilityName: "Transcription service API key (optional)")
-                        .frame(height: 22)
-                }
-            }
-            .frame(maxWidth: 350)
-
-            if isLoadingModels {
-                ProgressView("Loading models...")
-                    .controlSize(.small)
-            } else if !availableModels.isEmpty {
-                Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let testResult {
-                HStack {
-                    switch testResult {
-                    case .testing:
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Testing...")
-                    case .success:
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("Connection successful")
-                    case .failure(let error):
-                        SettingsErrorDetails(summary: "Connection failed", error: error)
-                    }
-                }
-                .font(.callout)
-            }
-
-            HStack {
-                Button("Test Connection") {
-                    testAndLoadModels()
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Button("Cancel") {
-                    isEditing = false
-                }
-                .buttonStyle(.bordered)
-
-                Button("Save") {
-                    if isNew {
-                        appSettings.transcriptionEndpoints.append(editingEndpoint)
-                    } else {
-                        if let idx = appSettings.transcriptionEndpoints.firstIndex(where: { $0.id == editingEndpoint.id }) {
-                            appSettings.transcriptionEndpoints[idx] = editingEndpoint
-                        }
-                    }
-                    isEditing = false
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(editingEndpoint.name.isEmpty || editingEndpoint.baseURL.isEmpty || editingEndpoint.modelName.isEmpty)
-            }
-            .frame(maxWidth: 350)
-
-            Spacer()
-        }
-        .padding()
-    }
-
-    private func testAndLoadModels() {
-        testResult = .testing
-        isLoadingModels = true
-        Task {
-            do {
-                let service = TranscriptionService()
-                let models = try await service.fetchAvailableModels(endpoint: editingEndpoint)
-                availableModels = models
-                if !models.isEmpty, !models.contains(editingEndpoint.modelName), let firstModel = models.first {
-                    editingEndpoint.modelName = firstModel
-                }
-                testResult = .success
-            } catch {
-                availableModels = []
-                testResult = .failure(error.localizedDescription)
-            }
-            isLoadingModels = false
-        }
+        .pickerStyle(.menu)
     }
 }

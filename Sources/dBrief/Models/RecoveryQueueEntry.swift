@@ -67,8 +67,9 @@ struct RecoveryQueueEntry: Identifiable, Codable, Sendable {
         let completedDeliveryIDs = Set(deliveries.filter(\.isComplete).map(\.id))
         var entries = jobs.compactMap { job -> Self? in
             guard job.id != activeID, !queuedIDs.contains(job.id), !deliveryIDs.contains(job.id),
-                  job.status != .completed, job.dismissedFromQueue != true else { return nil }
-            if job.markdownCompleted, completedDeliveryIDs.contains(job.id) { return nil }
+                  job.dismissedFromQueue != true,
+                  !PersistedProcessingJob.isFinished(status: job.status, markdownGenerated: job.markdownCompleted,
+                                                     deliveriesComplete: completedDeliveryIDs.contains(job.id)) else { return nil }
             let status: String
             switch job.status {
             case .failed:

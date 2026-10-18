@@ -17,7 +17,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.6</string>
+	<string>1.4.7</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -30,7 +30,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>1.4.6</string>
+	<string>1.4.7</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSCalendarsFullAccessUsageDescription</key>
@@ -49,5 +49,22 @@
 	<string>https://github.com/Arc86/dBrief/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>6fnsC0BNteXyMAHepJ2OLtprdaRvSokq2hdXYKQjvR8=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>43200</integer>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

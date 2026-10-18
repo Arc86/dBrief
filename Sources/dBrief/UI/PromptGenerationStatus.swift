@@ -4,6 +4,7 @@ struct PromptGenerationStatus: View {
     let progress: PromptGenerationProgress
     let generationTitle: String
     let cancel: () -> Void
+    @Environment(\.viewerPalette) private var palette
 
     private var title: String {
         switch progress {
@@ -29,21 +30,21 @@ struct PromptGenerationStatus: View {
                 } else {
                     ProgressView().controlSize(.small)
                 }
-                Text(title).font(.callout.weight(.medium))
+                Text(title).uiFont(.callout.weight(.medium))
                 Spacer(minLength: 0)
-                Button("Cancel", action: cancel).controlSize(.small)
+                Button("Cancel", action: cancel).buttonStyle(.settingsSecondary)
             }
             if case .downloadingModel(let fraction?) = progress {
                 HStack(spacing: 10) {
                     ProgressView(value: fraction).accessibilityLabel("Model download")
                     Text(fraction, format: .percent.precision(.fractionLength(0)))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .uiFont(.caption.monospacedDigit()).foregroundStyle(palette.secondary.color)
                 }
             }
-            if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+            if let detail { Text(detail).uiFont(.caption).foregroundStyle(palette.secondary.color) }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+        .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }

@@ -13,13 +13,13 @@ It's a **preview**: the text appears quickly but is rougher than the final resul
 
 ## Turning it on
 
-Go to **Settings → Transcription → Live Transcription** and enable **Transcribe live while recording**. It's off by default.
+Go to **Settings → Transcription**, and in the **Live preview** card turn on **Transcribe while recording**. It's off by default.
 
-It runs entirely on your Mac and uses your **Transcription → Language** setting — which matters more than you'd expect for the live preview (see below).
+It runs entirely on your Mac and uses your **Transcription → Language → Spoken language** setting — which matters more than you'd expect for the live preview (see below).
 
 ## Language
 
-The live preview follows your **Settings → Transcription → Language** setting. For Apple Speech, **Auto** means *your Mac's system language* — **not** automatic detection. So if your Mac is set to English, the live preview is English even when you're speaking another language. Pick a specific language in that menu to change it.
+The live preview follows your **Settings → Transcription → Language → Spoken language** setting. Left on **Auto-detect** (or **System language** with Apple Speech), it uses *your Mac's system language* — **not** automatic detection. So if your Mac is set to English, the live preview is English even when you're speaking another language. Pick a specific language in that menu to change it.
 
 **One language at a time.** Apple's on-device speech recogniser handles a single language per session — it doesn't auto-detect, and it can't switch languages mid-conversation. If a meeting mixes languages (say Dutch and English), the live preview can only follow one of them; the other comes out rough. This is a limitation of Apple's live recogniser, not of dBrief.
 
@@ -30,23 +30,23 @@ For mixed-language meetings, the **final** transcript handles it far better — 
 
 ## Watching the live transcript
 
-Start a recording, then open the **Transcripts** window. The in-progress recording is pinned at the top of the sidebar under **In Progress** (with a pulsing red dot) and is selected automatically. You'll see:
+Start a recording, then open the **Recording library**. The in-progress recording is pinned at the top of the sidebar under **In Progress** (with a pulsing red dot). You'll see:
 
-- A status banner — *Recording — live transcript* (or *Processing…*) and a running segment count.
+- A status line — *Recording — live transcript* (or the current processing step) and a running segment count.
 - Finalized lines as they're confirmed, labelled **You** / **Participant**.
 - The current in-progress phrase shown in lighter italic text until it's confirmed.
 
-The **Live Transcript** button on the recording controls and the processing screen also jumps straight here.
+While live transcription runs, the **Live** button in the menu bar panel's recording controls opens this view directly.
 
 When the recording finishes, the view automatically swaps the live preview for the final, higher-quality transcript.
 
 ## Chatting with the live transcript
 
-While recording, click the **chat** button in the toolbar. Unlike a finished recording — where chat replaces the transcript — the live view opens chat as a **side panel on the right**, so you can keep watching the transcript grow while you ask questions about what's been said so far. Click the toggle (or the panel's **✕**) to hide it again.
+While recording, click **Ask dBrief AI** in the header. Chat opens as a **side panel on the right**, so you can keep watching the transcript grow while you ask questions about what's been said so far. Click **Ask dBrief AI** again (or the panel's **✕**) to hide it.
 
 Chat reads the transcript *as it currently stands* on each question, so answers reflect everything captured up to that moment. See [Transcript Chat](../ai-analysis/transcript-chat.md) for engines and example prompts.
 
-**Your conversation carries over.** When the recording finishes, an in-progress chat isn't thrown away — it's kept and re-pointed at the final transcript, so the questions and answers from during the meeting are still there, and new questions use the polished text. (Chat history lives for the current app session; it isn't yet saved across app restarts.)
+**Your conversation carries over.** When the recording finishes, an in-progress chat isn't thrown away — it's kept and re-pointed at the final transcript, so the questions and answers from during the meeting are still there, and new questions use the polished text. From then on the conversation is saved with the recording, like any other [Transcript Chat](../ai-analysis/transcript-chat.md).
 
 ## Requirements & privacy
 

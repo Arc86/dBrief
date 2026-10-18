@@ -26,14 +26,14 @@ struct SpeakerRenamePopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("RENAME SPEAKER").font(.caption2.bold()).foregroundStyle(.secondary)
+            Text("RENAME SPEAKER").uiFont(.caption2.bold()).foregroundStyle(.secondary)
             HStack(spacing: 6) {
                 TextField("Name", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused)
                     .onSubmit { commit() }
                 Button("Rename") { commit() }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .buttonStyle(.typographyProminent).controlSize(.small)
                     .disabled(trimmed.isEmpty)
             }
         }

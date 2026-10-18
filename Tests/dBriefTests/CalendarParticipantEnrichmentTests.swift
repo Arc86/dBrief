@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Testing
 @testable import dBrief
 
@@ -51,5 +52,17 @@ struct CalendarParticipantEnrichmentTests {
         #expect(value.restoredConfig(using: changedEffort)?.effort == config.effort)
         #expect(value.restoredConfig(using: config.updating(command: "other-cli")) == nil)
         #expect(value.restoredConfig(using: config.updating(attendeePolicy: .never)) == nil)
+    }
+
+    @Test("A launcher change invalidates recovery; no launcher keeps old journals valid")
+    func launcherParticipatesInDigest() {
+        let config = CalendarCLIConfig.unnormalized(timeoutSeconds: 30, mailboxEmail: "ada@example.com")
+        let scope = CalendarCLIScope(config: config)
+        let value = CalendarParticipantRequestConfiguration(config: config, scope: scope)
+        let legacy = SHA256.hash(data: Data("managed-claude-calendar-command-v1".utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        #expect(value.commandDigest == legacy)
+        #expect(!value.matches(config: config.updating(launcher: "cswap run 1 --"), scope: scope))
+        #expect(value.restoredConfig(using: config.updating(launcher: "cswap run 2 --")) == nil)
     }
 }

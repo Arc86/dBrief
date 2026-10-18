@@ -26,6 +26,8 @@ struct PromptPreviewRequest: Equatable, Sendable {
     let summaryGuidance: String
     let actionItemsGuidance: String
     let tagsGuidance: String
+    /// Language the spoken-summary preview is written in, matching real generation.
+    var spokenSummaryLanguage: TTSLanguage = .english
 
     var guidance: InsightsGuidance {
         .init(summary: identity.kind == .summary ? draftText : summaryGuidance,
@@ -40,9 +42,11 @@ struct PromptPreviewRequest: Equatable, Sendable {
             let sentInput = SpokenSummaryInput.make(summary: summary, actionItems: sample.actionItems ?? [], truncateForAppleIntelligence: true)
             return fullInput != sentInput ? "The saved summary and action items exceed Apple Intelligence’s input budget. The preview keeps the beginning and end." : nil
         }
-        let limit = configuration == .appleIntelligence ? UnifiedInsightsPrompt.foundationModelsCharLimit : UnifiedInsightsPrompt.transcriptCharLimit
-        if case .remote = configuration { return nil }
-        return sample.transcript.count > limit ? "The selected transcript exceeds this engine’s input budget. The production preview keeps the beginning and end." : nil
+        // Apple Intelligence and Gemma analyze a long transcript in parts, losing nothing;
+        // only Local CLI still sends the beginning and end.
+        guard case .localCLI = configuration else { return nil }
+        return sample.transcript.count > UnifiedInsightsPrompt.transcriptCharLimit
+            ? "The selected transcript exceeds this engine’s input budget. The production preview keeps the beginning and end." : nil
     }
 }
 enum PromptPreviewOutput: Equatable, Sendable {
@@ -63,7 +67,7 @@ enum PromptPreviewError: Error, LocalizedError, Equatable {
         let contextMessages: Set<String> = [
             AIServiceError.contextWindowExceeded.localizedDescription,
             PromptAIError.contextLimit.localizedDescription,
-            "The transcript is too long for Apple Intelligence. Try a shorter recording or a different AI engine."
+            "Part of this recording was too dense for Apple Intelligence even after splitting. Try a different AI engine."
         ]
         if contextMessages.contains(message) { return .contextLimit }
         return .analysisFailure(SettingsErrorSanitizer.details(for: message))

@@ -68,20 +68,13 @@ final class MicrosoftAuthService {
         ]
         let authURL = components.url!
 
+        defer { activeAuthSession = nil }
         let callbackURL: URL = try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
                 url: authURL,
-                callbackURLScheme: "dbrief"
-            ) { [weak self] url, error in
-                self?.activeAuthSession = nil
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if let url {
-                    continuation.resume(returning: url)
-                } else {
-                    continuation.resume(throwing: MicrosoftAuthError.missingAuthCode)
-                }
-            }
+                callbackURLScheme: "dbrief",
+                completionHandler: Self.authCompletion(continuation)
+            )
             session.presentationContextProvider = WebAuthPresentationContext.shared
             session.prefersEphemeralWebBrowserSession = false
             activeAuthSession = session
@@ -101,6 +94,22 @@ final class MicrosoftAuthService {
         accountInfo = info
         if let info { persistAccountInfo(info) }
         log.info("Microsoft sign-in succeeded for \(self.accountInfo?.email ?? "unknown")")
+    }
+
+    /// ASWebAuthenticationSession calls its completion on an XPC queue, so the
+    /// handler must not inherit this class's @MainActor isolation (it would trap).
+    nonisolated static func authCompletion(
+        _ continuation: CheckedContinuation<URL, Error>
+    ) -> @Sendable (URL?, Error?) -> Void {
+        { url, error in
+            if let error {
+                continuation.resume(throwing: error)
+            } else if let url {
+                continuation.resume(returning: url)
+            } else {
+                continuation.resume(throwing: MicrosoftAuthError.missingAuthCode)
+            }
+        }
     }
 
     func signOut() {

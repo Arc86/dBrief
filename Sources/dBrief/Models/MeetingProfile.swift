@@ -29,6 +29,15 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
     var transcriptionFolderPath: String?
     var obsidianVaultPath: String?
     var obsidianDefaultFolderRelativePath: String?
+    /// Task destinations. An empty id overrides to the Inbox; the names are display only.
+    var tickTickProjectID: String?
+    var tickTickProjectName: String?
+    var todoistProjectID: String?
+    var todoistProjectName: String?
+    /// Notion page or database (`NotionParentType` raw value); the name is display only.
+    var notionParentID: String?
+    var notionParentType: String?
+    var notionParentName: String?
 
     // swiftlint:disable:next function_default_parameter_at_end
     init(
@@ -52,7 +61,14 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         recordingFolderPath: String? = nil,
         transcriptionFolderPath: String? = nil,
         obsidianVaultPath: String? = nil,
-        obsidianDefaultFolderRelativePath: String? = nil
+        obsidianDefaultFolderRelativePath: String? = nil,
+        tickTickProjectID: String? = nil,
+        tickTickProjectName: String? = nil,
+        todoistProjectID: String? = nil,
+        todoistProjectName: String? = nil,
+        notionParentID: String? = nil,
+        notionParentType: String? = nil,
+        notionParentName: String? = nil
     ) {
         self.transcriptionLanguage = transcriptionLanguage
         self.customVocabulary = customVocabulary
@@ -75,6 +91,13 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         self.transcriptionFolderPath = transcriptionFolderPath
         self.obsidianVaultPath = obsidianVaultPath
         self.obsidianDefaultFolderRelativePath = obsidianDefaultFolderRelativePath
+        self.tickTickProjectID = tickTickProjectID
+        self.tickTickProjectName = tickTickProjectName
+        self.todoistProjectID = todoistProjectID
+        self.todoistProjectName = todoistProjectName
+        self.notionParentID = notionParentID
+        self.notionParentType = notionParentType
+        self.notionParentName = notionParentName
     }
 
     static let empty = MeetingProfileOverrides()
@@ -106,6 +129,13 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         transcriptionFolderPath = try c.decodeIfPresent(String.self, forKey: .transcriptionFolderPath)
         obsidianVaultPath = try c.decodeIfPresent(String.self, forKey: .obsidianVaultPath)
         obsidianDefaultFolderRelativePath = try c.decodeIfPresent(String.self, forKey: .obsidianDefaultFolderRelativePath)
+        tickTickProjectID = try c.decodeIfPresent(String.self, forKey: .tickTickProjectID)
+        tickTickProjectName = try c.decodeIfPresent(String.self, forKey: .tickTickProjectName)
+        todoistProjectID = try c.decodeIfPresent(String.self, forKey: .todoistProjectID)
+        todoistProjectName = try c.decodeIfPresent(String.self, forKey: .todoistProjectName)
+        notionParentID = try c.decodeIfPresent(String.self, forKey: .notionParentID)
+        notionParentType = try c.decodeIfPresent(String.self, forKey: .notionParentType)
+        notionParentName = try c.decodeIfPresent(String.self, forKey: .notionParentName)
 
         if let vocab = try c.decodeIfPresent([String].self, forKey: .customVocabulary) {
             customVocabulary = vocab

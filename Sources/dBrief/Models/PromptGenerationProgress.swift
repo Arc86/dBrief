@@ -13,7 +13,7 @@ enum PromptGenerationProgress: Equatable, Sendable {
 
     static func from(_ state: LocalAIPluginState) -> Self? {
         switch state {
-        case .analyzing: return .generating
+        case .analyzing, .analyzingPart: return .generating
         case .downloading(_, .llmModelPreparing): return .preparingModel
         case .downloading(let fraction, .llmModel):
             let progress = fraction.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }

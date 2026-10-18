@@ -24,14 +24,4 @@ struct ModelDownloadTests {
         #expect(ModelDownloadPhase.from(pluginState: .diarizing) == nil)
         #expect(ModelDownloadPhase.from(pluginState: .newSegments([])) == nil)
     }
-
-    @Test("engine guide lists all six engines with non-empty content")
-    func engineGuideContent() {
-        let entries = TranscriptionEngineGuide.entries
-        #expect(entries.count == 6)
-        for entry in entries {
-            #expect(!entry.title.isEmpty)
-            #expect(!entry.detail.isEmpty)
-        }
-    }
 }

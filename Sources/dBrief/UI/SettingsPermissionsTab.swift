@@ -7,172 +7,60 @@ import SwiftUI
 
 struct SettingsPermissionsTab: View {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var micStatus: AVAuthorizationStatus = .notDetermined
-    @State private var screenRecordingGranted = false
-    @State private var speechStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
-    @State private var calendarStatus: EKAuthorizationStatus = .notDetermined
-    @AppStorage("permissions.didRequestScreenCapture") private var didRequestScreenCapture = false
+    @Environment(AppSettings.self) private var appSettings
+    @Environment(SettingsPermissionStatus.self) private var permissions
+    @AppStorage(SettingsPermissionStatus.didRequestScreenCaptureKey) private var didRequestScreenCapture = false
+
+    private var attention: Int { permissions.attentionCount(settings: appSettings) }
 
     var body: some View {
-        Form {
-            Section("Permissions Check", settingsSearch: .permissions) {
-                PermissionRow(
-                    title: "Microphone",
-                    statusText: micStatusText,
-                    statusStyle: micStatusStyle,
-                    actionTitle: micActionTitle,
-                    action: requestMicrophone
-                )
-
-                PermissionRow(
-                    title: "Screen Recording (System Audio)",
-                    statusText: screenStatusText,
-                    statusStyle: screenStatusStyle,
-                    actionTitle: screenActionTitle,
-                    action: requestScreenRecording
-                )
-
-                PermissionRow(
-                    title: "Speech Recognition",
-                    statusText: speechStatusText,
-                    statusStyle: speechStatusStyle,
-                    actionTitle: speechActionTitle,
-                    action: requestSpeechRecognition
-                )
-
-                PermissionRow(
-                    title: "Calendar",
-                    statusText: calendarStatusText,
-                    statusStyle: calendarStatusStyle,
-                    actionTitle: calendarActionTitle,
-                    action: requestCalendar
-                )
-            }
-            .listRowBackground(Color.clear)
-
-            Section("Manage Access") {
-                LabeledContent("Open System Settings") {
-                    HStack {
-                        Button("Microphone") {
-                            openSystemSettingsPane("Privacy_Microphone")
-                        }
-                        .buttonStyle(.bordered)
-                        Button("Screen Recording") {
-                            openSystemSettingsPane("Privacy_ScreenCapture")
-                        }
-                        .buttonStyle(.bordered)
-                        Button("Speech") {
-                            openSystemSettingsPane("Privacy_SpeechRecognition")
-                        }
-                        .buttonStyle(.bordered)
-                        Button("Calendar") {
-                            openSystemSettingsPane("Privacy_Calendars")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-
-                LabeledContent("Refresh permission status") {
-                    Button("Refresh") {
-                        refreshStatuses()
-                    }
-                    .buttonStyle(.bordered)
+        SettingsPageScaffold(page: .permissions, notice: {
+            if attention > 0 {
+                SettingsNotice(Text(attention == 1 ? "1 permission needs attention." : "\(attention) permissions need attention."),
+                               tone: .warning) {
+                    Button("Refresh") { permissions.refresh() }.buttonStyle(.settingsSecondary)
                 }
             }
-            .listRowBackground(Color.clear)
+        }) {
+            SettingsCard("Access", section: .permissions) {
+                row("Microphone", caption: "Required to record.", icon: "mic",
+                    state: permissions.microphone, action: requestMicrophone)
+                row("Screen recording", caption: "Captures the other side of calls (system audio).",
+                    icon: "rectangle.on.rectangle", state: permissions.screenRecording, action: requestScreenRecording)
+                row("Speech recognition", caption: "Only for Apple Speech and the live preview.", icon: "waveform",
+                    state: permissions.speech, action: requestSpeechRecognition)
+                row("Calendar", caption: "Pre-fills meeting titles and attendees.", icon: "calendar",
+                    state: permissions.calendar, action: requestCalendar)
+                row("Reminders", caption: "Only for the Apple Reminders integration.", icon: "checklist",
+                    state: permissions.reminders, action: requestReminders)
+            }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
-        .onAppear {
-            refreshStatuses()
-        }
+        .onAppear { permissions.refresh() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                refreshStatuses()
+            if phase == .active { permissions.refresh() }
+        }
+    }
+
+    private func row(_ title: LocalizedStringKey, caption: LocalizedStringKey, icon: String,
+                     state: PermissionAuthorizationState, action: @escaping () -> Void) -> some View {
+        SettingsRow(title, caption: state == .restricted ? "Blocked by a device management profile or Screen Time." : caption,
+                    systemImage: icon) {
+            HStack(spacing: 8) {
+                switch state {
+                case .granted: SettingsStatusPill("Allowed", kind: .success)
+                case .denied: SettingsStatusPill("Denied", kind: .danger)
+                case .restricted: SettingsStatusPill("Restricted", kind: .warning)
+                case .notDetermined: SettingsStatusPill("Not asked", kind: .neutral)
+                }
+                if let title = actionTitle(for: state) {
+                    Button(title, action: action).buttonStyle(.settingsSecondary)
+                }
             }
         }
-    }
-
-    private var micStatusText: String {
-        switch micStatus {
-        case .authorized: "Granted"
-        case .denied: "Denied"
-        case .restricted: "Restricted"
-        case .notDetermined: "Not determined"
-        @unknown default: "Unknown"
-        }
-    }
-
-    private var micStatusStyle: Color {
-        micStatus == .authorized ? .green : .orange
-    }
-
-    private var micActionTitle: String? {
-        actionTitle(for: permissionState(for: micStatus))
-    }
-
-    private var screenStatusText: String {
-        screenRecordingGranted ? "Granted" : "Not granted"
-    }
-
-    private var screenStatusStyle: Color {
-        screenRecordingGranted ? .green : .orange
-    }
-
-    private var screenActionTitle: String? {
-        actionTitle(for: screenPermissionState)
-    }
-
-    private var speechStatusText: String {
-        switch speechStatus {
-        case .authorized: "Granted"
-        case .denied: "Denied"
-        case .restricted: "Restricted"
-        case .notDetermined: "Not determined"
-        @unknown default: "Unknown"
-        }
-    }
-
-    private var speechStatusStyle: Color {
-        speechStatus == .authorized ? .green : .orange
-    }
-
-    private var speechActionTitle: String? {
-        actionTitle(for: permissionState(for: speechStatus))
-    }
-
-    private var calendarStatusText: String {
-        switch calendarStatus {
-        case .fullAccess: "Granted"
-        case .writeOnly: "Write-only"
-        case .denied: "Denied"
-        case .restricted: "Restricted"
-        case .notDetermined: "Not determined"
-        @unknown default: "Unknown"
-        }
-    }
-
-    private var calendarStatusStyle: Color {
-        calendarStatus == .fullAccess ? .green : .orange
-    }
-
-    private var calendarActionTitle: String? {
-        actionTitle(for: permissionState(for: calendarStatus))
-    }
-
-    @MainActor
-    private func refreshStatuses() {
-        micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        screenRecordingGranted = CGPreflightScreenCaptureAccess()
-        speechStatus = SFSpeechRecognizer.authorizationStatus()
-        calendarStatus = EKEventStore.authorizationStatus(for: .event)
     }
 
     private func requestMicrophone() {
-        switch PermissionRecoveryPolicy.action(for: permissionState(for: micStatus)) {
+        switch PermissionRecoveryPolicy.action(for: permissions.microphone) {
         case .requestAccess:
             Task {
                 _ = await withCheckedContinuation { continuation in
@@ -180,7 +68,7 @@ struct SettingsPermissionsTab: View {
                         continuation.resume(returning: granted)
                     }
                 }
-                refreshStatuses()
+                permissions.refresh()
             }
         case .openSystemSettings:
             openSystemSettingsPane("Privacy_Microphone")
@@ -190,11 +78,11 @@ struct SettingsPermissionsTab: View {
     }
 
     private func requestScreenRecording() {
-        switch PermissionRecoveryPolicy.action(for: screenPermissionState) {
+        switch PermissionRecoveryPolicy.action(for: permissions.screenRecording) {
         case .requestAccess:
             didRequestScreenCapture = true
             _ = CGRequestScreenCaptureAccess()
-            refreshStatuses()
+            permissions.refresh()
         case .openSystemSettings:
             openSystemSettingsPane("Privacy_ScreenCapture")
         case .explainRestriction, .none:
@@ -203,11 +91,11 @@ struct SettingsPermissionsTab: View {
     }
 
     private func requestSpeechRecognition() {
-        switch PermissionRecoveryPolicy.action(for: permissionState(for: speechStatus)) {
+        switch PermissionRecoveryPolicy.action(for: permissions.speech) {
         case .requestAccess:
             Task {
                 _ = await LocalTranscriptionService.requestAccess()
-                refreshStatuses()
+                permissions.refresh()
             }
         case .openSystemSettings:
             openSystemSettingsPane("Privacy_SpeechRecognition")
@@ -216,13 +104,27 @@ struct SettingsPermissionsTab: View {
         }
     }
 
+    private func requestReminders() {
+        switch PermissionRecoveryPolicy.action(for: permissions.reminders) {
+        case .requestAccess:
+            Task {
+                _ = try? await EKEventStore().requestFullAccessToReminders()
+                permissions.refresh()
+            }
+        case .openSystemSettings:
+            openSystemSettingsPane("Privacy_Reminders")
+        case .explainRestriction, .none:
+            break
+        }
+    }
+
     private func requestCalendar() {
-        switch PermissionRecoveryPolicy.action(for: permissionState(for: calendarStatus)) {
+        switch PermissionRecoveryPolicy.action(for: permissions.calendar) {
         case .requestAccess:
             Task {
                 let store = EKEventStore()
                 _ = try? await store.requestFullAccessToEvents()
-                refreshStatuses()
+                permissions.refresh()
             }
         case .openSystemSettings:
             openSystemSettingsPane("Privacy_Calendars")
@@ -231,79 +133,17 @@ struct SettingsPermissionsTab: View {
         }
     }
 
-    private var screenPermissionState: PermissionAuthorizationState {
-        if screenRecordingGranted { return .granted }
-        return didRequestScreenCapture ? .denied : .notDetermined
-    }
-
-    private func permissionState(for status: AVAuthorizationStatus) -> PermissionAuthorizationState {
-        switch status {
-        case .notDetermined: .notDetermined
-        case .restricted: .restricted
-        case .denied: .denied
-        case .authorized: .granted
-        @unknown default: .restricted
-        }
-    }
-
-    private func permissionState(
-        for status: SFSpeechRecognizerAuthorizationStatus
-    ) -> PermissionAuthorizationState {
-        switch status {
-        case .notDetermined: .notDetermined
-        case .restricted: .restricted
-        case .denied: .denied
-        case .authorized: .granted
-        @unknown default: .restricted
-        }
-    }
-
-    private func permissionState(for status: EKAuthorizationStatus) -> PermissionAuthorizationState {
-        switch status {
-        case .notDetermined, .writeOnly: .notDetermined
-        case .restricted: .restricted
-        case .denied: .denied
-        case .fullAccess: .granted
-        @unknown default: .restricted
-        }
-    }
-
-    private func actionTitle(for state: PermissionAuthorizationState) -> String? {
+    private func actionTitle(for state: PermissionAuthorizationState) -> LocalizedStringKey? {
         switch PermissionRecoveryPolicy.action(for: state) {
         case .requestAccess: "Request"
-        case .openSystemSettings: "Open Settings"
-        case .explainRestriction: nil
-        case .none: "Granted"
+        case .openSystemSettings: "Open System Settings"
+        case .explainRestriction, .none: nil
         }
     }
 
     private func openSystemSettingsPane(_ anchor: String) {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
             NSWorkspace.shared.open(url)
-        }
-    }
-}
-
-private struct PermissionRow: View {
-    let title: String
-    let statusText: String
-    let statusStyle: Color
-    let actionTitle: String?
-    let action: () -> Void
-
-    var body: some View {
-        LabeledContent(title) {
-            HStack {
-                Text(statusText)
-                    .foregroundStyle(statusStyle)
-                if let actionTitle {
-                    Button(actionTitle) {
-                        action()
-                    }
-                    .disabled(actionTitle == "Granted")
-                    .buttonStyle(.bordered)
-                }
-            }
         }
     }
 }

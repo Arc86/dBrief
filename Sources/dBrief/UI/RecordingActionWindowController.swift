@@ -70,19 +70,21 @@ final class RecordingActionWindowController {
         self.recordingManager = recordingManager
     }
 
-    func showReprocessing(recording: Recording, operation: ReprocessingOperation) {
+    func showReprocessing(recording: Recording, operation: ReprocessingOperation, discardingRunID: UUID? = nil) {
         guard let appState, let appSettings, let recordingManager else { return }
         presenter.close()
         prepareForPresentation(appSettings: appSettings)
         let root = ReprocessingSheet(
             recording: recording,
             operation: operation,
+            discardingRunID: discardingRunID,
             dismissAction: { [weak self] in self?.close() }
         )
         .environment(appState)
         .environment(appSettings)
         .environment(recordingManager)
         .environment(\.calmAppearance, appSettings.reduceNeon)
+            .modifier(AppAppearanceScope(settings: appSettings))
         presenter.show(
             title: operation.title,
             contentSize: NSSize(width: 530, height: 580),
@@ -104,6 +106,7 @@ final class RecordingActionWindowController {
         .environment(appSettings)
         .environment(recordingManager)
         .environment(\.calmAppearance, appSettings.reduceNeon)
+            .modifier(AppAppearanceScope(settings: appSettings))
         presenter.show(
             title: "Link Calendar Meeting",
             contentSize: NSSize(width: 540, height: 300),
@@ -117,9 +120,7 @@ final class RecordingActionWindowController {
     }
 
     private func prepareForPresentation(appSettings: AppSettings) {
-        for window in NSApp.windows where window.level == .statusBar {
-            window.orderOut(nil)
-        }
+        MenuBarPanel.close()
         if !appSettings.showDockIcon {
             NSApp.setActivationPolicy(.regular)
         }

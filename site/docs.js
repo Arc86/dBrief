@@ -20,11 +20,11 @@
       items: [
         { slug: "recording/recording-basics", title: "Recording Basics" },
         { slug: "recording/audio-sources",   title: "Audio Sources" },
-        { slug: "recording/mini-player",     title: "Mini Player" },
+        { slug: "recording/mini-player",     title: "Floating Recording Window" },
         { slug: "recording/call-detection",  title: "Call Detection" },
         { slug: "recording/calendar",        title: "Calendar Integration" },
         { slug: "recording/youtube-urls",    title: "Video & YouTube URLs" },
-        { slug: "recording/watched-folders", title: "Watched Folders" },
+        { slug: "recording/watched-folders", title: "Import & Watched Folders" },
       ],
     },
     {
@@ -88,7 +88,7 @@
         { slug: "reference/permissions",        title: "Permissions" },
         { slug: "reference/file-locations",     title: "File Locations" },
         { slug: "reference/privacy-receipts", title: "Privacy Receipts" },
-        { slug: "reference/benchmark",          title: "Benchmark & Performance" },
+        { slug: "reference/benchmark",          title: "Performance" },
       ],
     },
   ];

@@ -161,19 +161,25 @@ struct LocalCLICompletionTests {
         let task = Task {
             try await LocalCLIService.runShellCommand("/bin/sleep 30 & child=$!; echo $child > '\(marker.path)'; wait", systemPrompt: "s", userPrompt: "u", fullPrompt: String(repeating: "x", count: 100_000), timeoutSeconds: 20)
         }
-        for _ in 0..<100 {
-            if FileManager.default.fileExists(atPath: marker.path) { break }
+        // Wait for the shell to report its child. It's a login shell, which on a
+        // saturated machine can take well over 15 s to start, so the deadline only
+        // guards against a hang; the loop ends as soon as the pid is written.
+        let pidDeadline = ContinuousClock.now + .seconds(60)
+        var pidText = ""
+        while ContinuousClock.now < pidDeadline {
+            pidText = (try? String(contentsOf: marker, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !pidText.isEmpty { break }
             try await Task.sleep(for: .milliseconds(30))
         }
-        let pid = try #require(Int32(try String(contentsOf: marker, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+        let pid = try #require(Int32(pidText))
         let start = ContinuousClock.now
         task.cancel()
         await #expect(throws: CancellationError.self) { _ = try await task.value }
         // Well under the 20 s timeout and 30 s child, so only cancellation can end it
         // this fast — with headroom for a saturated test process.
         #expect(ContinuousClock.now - start < .seconds(15))
-        for _ in 0..<50 {
-            if kill(pid, 0) != 0 { break }
+        let exitDeadline = ContinuousClock.now + .seconds(5)
+        while kill(pid, 0) == 0, ContinuousClock.now < exitDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(kill(pid, 0) != 0)

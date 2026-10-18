@@ -17,7 +17,8 @@ struct AnthropicSamplingTests {
     @Test("Older models keep the low-temperature setting")
     func legacyModelsKeepTemperature() {
         for model in ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5-20251001",
-                      "claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-5", "claude-3-5-sonnet-latest"] {
+                      "claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-5", "claude-3-5-sonnet-latest",
+                      "claude-opus-4-20250514", "claude-sonnet-4-20250514"] {
             #expect(AIService.anthropicAcceptsTemperature(model: model), "\(model)")
         }
     }

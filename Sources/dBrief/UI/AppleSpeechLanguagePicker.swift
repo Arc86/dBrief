@@ -24,7 +24,7 @@ struct AppleSpeechLanguagePicker: View {
         .pickerStyle(.menu)
         if !available {
             Text("The saved language is unavailable with Apple Speech. Choose a supported language or change the transcription engine.")
-                .font(.caption).foregroundStyle(.orange)
+                .uiFont(.caption).foregroundStyle(.orange)
         }
     }
 }

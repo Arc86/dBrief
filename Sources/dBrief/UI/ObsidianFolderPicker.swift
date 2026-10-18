@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ObsidianFolderPicker: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(\.viewerPalette) private var palette
 
     let title: String
     let currentRelativePath: String
@@ -10,28 +11,30 @@ struct ObsidianFolderPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.secondary.color)
 
-            HStack {
+            HStack(spacing: 8) {
                 Text(appSettings.obsidianFolderDisplayName(relativePath: currentRelativePath))
+                    .uiFont(.system(size: 12))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.text.color)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button("Choose...") {
+                Button("Choose…") {
                     chooseFolderInVault { relativePath in
                         onSelect(relativePath)
                     }
                 }
+                .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32, fillsWidth: false))
                 .disabled(appSettings.obsidianVaultURL == nil)
             }
 
             if appSettings.obsidianVaultURL == nil {
-                Text("Select an Obsidian vault in Settings > Integrations.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("Select an Obsidian vault in Settings → Integrations.")
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.secondary.color)
             }
         }
     }
@@ -45,7 +48,7 @@ struct ObsidianFolderPicker: View {
         panel.canCreateDirectories = true
         panel.directoryURL = vaultURL
         panel.message = "Choose a folder inside your Obsidian vault"
-        if panel.runModal() == .OK, let url = panel.url {
+        if MenuBarPanel.runModal(panel) == .OK, let url = panel.url {
             guard let relativePath = appSettings.obsidianRelativePath(for: url) else { return }
             completion(relativePath)
         }

@@ -42,7 +42,7 @@ struct CalendarCLITransport: CalendarCLITransporting {
         guard config.validateCommand() else { throw CalendarCLITransportError.invalidCommand }
         let requestID = UUID()
         let command = config.command ?? CalendarCLIConfig.managedCommand(
-            allowedTool: CalendarCLIPrompt.calendarSearchTool, modelID: config.modelID
+            allowedTool: CalendarCLIPrompt.calendarSearchTool, modelID: config.modelID, launcher: config.launcher
         )
         let startedAt = Date()
         do {
@@ -71,7 +71,7 @@ struct CalendarCLITransport: CalendarCLITransporting {
         guard config.validateCommand() else { throw CalendarCLITransportError.invalidCommand }
         let requestID = UUID()
         let command = config.command ?? CalendarCLIConfig.managedCommand(
-            allowedTool: CalendarCLIPrompt.readResourceTool, modelID: config.modelID
+            allowedTool: CalendarCLIPrompt.readResourceTool, modelID: config.modelID, launcher: config.launcher
         )
         let startedAt = Date()
         do {

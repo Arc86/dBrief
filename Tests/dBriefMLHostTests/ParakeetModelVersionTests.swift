@@ -12,10 +12,11 @@ struct ParakeetModelVersionTests {
         #expect(ParakeetTranscriptionService.asrVersion(for: "") == .v3)
     }
 
-    @Test("Redux loads Redux where the OS supports it, and v3 where it does not")
-    func reduxFollowsOSSupport() {
-        let expected: AsrModelVersion
-        if #available(macOS 15, *) { expected = .redux } else { expected = .v3 }
-        #expect(ParakeetTranscriptionService.asrVersion(for: "redux") == expected)
+    @Test("Redux and Phonon-2 load their own model where the OS supports them, and v3 where it does not")
+    func macOS15VariantsFollowOSSupport() {
+        let supported: Bool
+        if #available(macOS 15, *) { supported = true } else { supported = false }
+        #expect(ParakeetTranscriptionService.asrVersion(for: "redux") == (supported ? .redux : .v3))
+        #expect(ParakeetTranscriptionService.asrVersion(for: "phonon2") == (supported ? .phonon2 : .v3))
     }
 }

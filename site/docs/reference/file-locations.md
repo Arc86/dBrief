@@ -4,7 +4,7 @@ Where dBrief stores your recordings, exports, models, and settings.
 
 ## Recordings
 
-Audio files are saved in dated subfolders inside your output folder (set in **Settings → General → Folders**):
+Audio files are saved in dated subfolders inside your recordings folder (set with **Recordings** in **Settings → Storage → Folders**):
 
 ```
 ~/Documents/Recordings/
@@ -13,11 +13,11 @@ Audio files are saved in dated subfolders inside your output folder (set in **Se
         └── 2026-04-06_1430_team-standup.m4a
 ```
 
-Recordings are saved as **M4A / AAC**. You can change the output folder in **Settings → General → Folders**.
+Recordings are saved as **M4A / AAC**. You can change the folder in **Settings → Storage → Folders**.
 
 ## Markdown exports
 
-Markdown files are saved in your configured transcription folder, unless you've configured an Obsidian vault folder — in which case they go there instead. Small JSON sidecars are written next to the Markdown file: `.richtranscript.json` (speaker names and word timing for the [transcript viewer](../history/transcript-viewer.md)), `.insights.json` (the AI summary, action items, and tags), and `.chat.json` (your [Transcript Chat](../ai-analysis/transcript-chat.md) conversation). They travel with the recording and are removed when it's deleted.
+Markdown files are saved in your **Transcripts** folder (**Settings → Storage → Folders**), unless you've configured an Obsidian vault folder — in which case they go there instead. Small JSON sidecars are written next to the Markdown file: `.richtranscript.json` (speaker names and word timing for the [transcript viewer](../history/transcript-viewer.md)), `.insights.json` (the AI summary, action items, and tags), and `.chat.json` (your [Transcript Chat](../ai-analysis/transcript-chat.md) conversation). They travel with the recording and are removed when it's deleted.
 
 ## AI and transcription models
 
@@ -32,18 +32,18 @@ On-device models are stored in Application Support:
 
 Parakeet and other FluidAudio models use the shared `~/Library/Application Support/FluidAudio/Models/` cache. Beta builds use `com.dbrief.app.beta` for their own app data and preferences, while the FluidAudio cache is shared.
 
-To remove models, use the **Purge** options in **Settings → Transcription** and **Settings → AI Analysis** (Power User Mode for the Gemma model).
+To remove a model, open the **…** menu on its model card in **Settings → Transcription** or **Settings → AI analysis** and choose **Remove downloaded model**.
 
 ## Auto-delete (retention)
 
-dBrief can automatically remove old files so your recordings folder doesn't grow forever. In **Settings → General → Privacy** there are two independent policies:
+dBrief can automatically remove old files so your recordings folder doesn't grow forever. In **Settings → Storage → Auto-delete** there are two independent policies:
 
-- **Auto-delete recordings** — removes audio files older than the chosen age; transcripts and notes are kept.
-- **Auto-delete transcripts** — removes transcript, insights, and Markdown note files older than the chosen age; audio recordings are kept.
+- **Delete old recordings** — removes audio files older than the chosen age; transcripts and notes are kept.
+- **Delete old transcripts** — removes transcript, insights, and Markdown note files older than the chosen age; audio recordings are kept.
 
 Cleanup only removes files recognized as dBrief outputs; unrelated files in shared folders are left alone.
 
-Both are **off by default**. When enabled, you pick an age (1, 7, 14, 30, 60, 90, 180, or 365 days — 30 by default), and each file is judged by its own creation date. Cleanup runs automatically when dBrief launches, and you can trigger it immediately with **Run Cleanup Now**. Deletion is permanent and can't be undone.
+Both are **off by default**. When enabled, you pick an age (1 day, 1 week, 2 weeks, 30, 60, 90 or 180 days, or 1 year — 30 days by default), and each file is judged by its own creation date. Cleanup runs when dBrief launches and then daily while it's open. To run it right away, use the **Clean up now** row (**Delete old recordings…** or **Delete old transcripts…**) and confirm. The **Last clean-up** row shows when it last ran. Deletion is permanent and can't be undone.
 
 ## Settings
 

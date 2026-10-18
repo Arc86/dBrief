@@ -21,6 +21,21 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
 
     private(set) var playbackRate: Float = 1.0
 
+    /// Every live player, so a new capture can silence all of them (library, viewer,
+    /// spoken summary, speaker review, voice preview).
+    private static let live = NSHashTable<AudioPlayer>.weakObjects()
+
+    override init() {
+        super.init()
+        Self.live.add(self)
+    }
+
+    /// Pauses (never stops) every playing player, keeping each one's place. Called when
+    /// a capture starts: system audio capture would otherwise record the playback.
+    static func pauseAll() {
+        for player in live.allObjects where player.isPlaying { player.pause() }
+    }
+
     func play(url: URL) {
         stop()
 
@@ -107,17 +122,35 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.currentTime = self.player?.currentTime ?? 0
-                if let limit = self.endLimit, self.currentTime >= limit {
-                    self.endLimit = nil
-                    self.playingTag = nil
-                    self.pause()
-                }
+        // One timer at a time, even if resume() is called twice.
+        stopTimer()
+        timer = Self.scheduleTickTimer { [weak self] in
+            // A player released while playing stops its timer instead of leaking it.
+            guard let self else { return false }
+            self.currentTime = self.player?.currentTime ?? 0
+            if let limit = self.endLimit, self.currentTime >= limit {
+                self.endLimit = nil
+                self.playingTag = nil
+                self.pause()
+            }
+            return true
+        }
+    }
+
+    /// Schedules the 10 Hz playback tick on the main run loop in `.common` modes, so
+    /// it keeps firing while menus track, scrollers drag and windows resize (a plain
+    /// `scheduledTimer` only fires in `.default`). Main run-loop timers fire on the
+    /// main thread, so no `Task` hop is needed per tick.
+    /// `tick` returns false to stop the timer.
+    static func scheduleTickTimer(interval: TimeInterval = 0.1,
+                                  _ tick: @escaping @MainActor () -> Bool) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: true) { timer in
+            MainActor.assumeIsolated {
+                if !tick() { timer.invalidate() }
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
     }
 
     private func stopTimer() {
@@ -125,18 +158,7 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         timer = nil
     }
 
-    var formattedCurrentTime: String {
-        formatTime(currentTime)
-    }
+    var formattedCurrentTime: String { currentTime.formattedDuration }
 
-    var formattedDuration: String {
-        formatTime(duration)
-    }
-
-    private func formatTime(_ time: TimeInterval) -> String {
-        let total = Int(time)
-        let minutes = total / 60
-        let seconds = total % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+    var formattedDuration: String { duration.formattedDuration }
 }

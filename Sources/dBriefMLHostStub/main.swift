@@ -69,9 +69,10 @@ while true {
                 event: .state(.newSegments([.init(start: 0, end: 1, text: "unattributed")]))))
             send(.init(id: env.id, channel: .plugin,
                 event: .state(.newSegments([.init(start: 0, end: 1, text: "current")]))))
-            if case .analyzeStream = env.request {
+            switch env.request {
+            case .analyzeStream, .chatTurn:
                 send(.init(id: env.id, channel: .plugin, event: .token("synthetic token")))
-            } else {
+            default:
                 send(.init(id: env.id, channel: .plugin, event: .transcriptionResult(.init(text: "synthetic result"))))
             }
             send(.init(id: env.id, channel: .plugin, event: .finished))
@@ -163,6 +164,12 @@ while true {
             send(EventEnvelope(id: env.id, channel: .plugin, event: .state(.diarizing)))
             send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
         default: // echo: emit a state, then a result
+            if case let .embed(texts, _) = env.request {
+                send(EventEnvelope(id: env.id, channel: .plugin,
+                    event: .embeddingsResult([[Float]](repeating: [1, 0], count: texts.count))))
+                send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
+                continue
+            }
             send(EventEnvelope(id: env.id, channel: .plugin, event: .state(.transcribing)))
             send(EventEnvelope(id: env.id, channel: .plugin,
                 event: .transcriptionResult(TranscriptionResult(text: "echo"))))

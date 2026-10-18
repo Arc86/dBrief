@@ -6,8 +6,12 @@ import SwiftUI
 @MainActor
 final class ChatScrollFollowController: NSObject {
     private weak var scrollView: NSScrollView?
-    private var followsBottom = true
+    private var followsBottom = true {
+        didSet { if followsBottom != oldValue { onFollowChange?(followsBottom) } }
+    }
     private var isUserScrolling = false
+    /// Called when the user scrolls away from, or back to, the bottom.
+    var onFollowChange: ((Bool) -> Void)?
 
     var shouldFollow: Bool { followsBottom && !isUserScrolling }
 

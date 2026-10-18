@@ -55,7 +55,7 @@ struct AutomaticPostRecordingConfiguration: Equatable, Sendable {
     @MainActor init(settings: AppSettings) {
         transcriptionEndpoint = settings.effectiveDefaultTranscriptionEndpoint
         aiEndpoint = settings.effectiveDefaultAIEndpoint
-        integrations = settings.integrations
+        integrations = settings.resolvedIntegrations(for: settings.activeProfile.id)
         localCLI = settings.effectiveLocalCLIConfig
         vocabulary = settings.effectiveCustomVocabulary
         ignoredSegments = settings.effectiveIgnoredSegments.sorted()
