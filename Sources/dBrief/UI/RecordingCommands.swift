@@ -53,8 +53,17 @@ extension FocusedValues {
     }
 }
 
+/// Capture shortcuts, shared by the menu panel, the floating recording controls and
+/// the Recording menu. ⌘P and ⌘. are left to Print and Cancel.
+enum CaptureShortcut {
+    static let pauseResume = KeyboardShortcut("p", modifiers: [.command, .option])
+    static let stop = KeyboardShortcut(".", modifiers: [.command, .option])
+}
+
 /// View ▸ Summary…Meeting Insights (⌘1–⌘4) and the Recording menu.
 struct RecordingCommands: Commands {
+    let appState: AppState
+    let recordingManager: RecordingManager
     @FocusedValue(\.recordingViewer) private var viewer
 
     var body: some Commands {
@@ -77,6 +86,19 @@ struct RecordingCommands: Commands {
         }
 
         CommandMenu("Recording") {
+            // Capture, so pausing and stopping work from the keyboard while dBrief is active.
+            if appState.isRecording || appState.isPaused {
+                Button(appState.isPaused ? "Resume Recording" : "Pause Recording") {
+                    if appState.isPaused { recordingManager.requestResume() } else { recordingManager.pauseRecording() }
+                }
+                .keyboardShortcut(CaptureShortcut.pauseResume)
+                Button("Stop Recording") { Task { await recordingManager.stopRecording() } }
+                    .keyboardShortcut(CaptureShortcut.stop)
+            } else {
+                Button("Start Recording") { Task { await recordingManager.requestRecording() } }
+                    .disabled(!appState.isIdle)
+            }
+            Divider()
             // Space is handled by the library window, so typing a space never plays.
             Button(viewer?.isPlaying == true ? "Pause" : "Play") { viewer?.togglePlayback?() }
                 .disabled(viewer?.togglePlayback == nil)

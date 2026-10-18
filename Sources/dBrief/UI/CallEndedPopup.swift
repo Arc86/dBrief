@@ -6,9 +6,10 @@ struct CallEndedPopup: View {
 
     var body: some View {
         // Dismissing keeps recording.
+        let text = CallPromptText.ended(app: appState.callEndedApp)
         CallAlertCard(
-            title: "\(appState.callEndedApp ?? "Call") ended",
-            message: "Stop recording and create the meeting brief?",
+            title: text.title,
+            message: text.message,
             dismissLabel: "Keep recording",
             onDismiss: { appState.showCallEndedPopup = false }
         ) {
@@ -16,6 +17,7 @@ struct CallEndedPopup: View {
                 appState.showCallEndedPopup = false
             }
             .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fillsWidth: false))
+            .keyboardShortcut(.cancelAction)
 
             Button {
                 appState.showCallEndedPopup = false

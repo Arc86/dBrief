@@ -192,6 +192,11 @@ final class AppContext {
     private func toggleRecording() {
         if appState.isRecording || appState.isPaused {
             Task { await recordingManager.stopRecording() }
+        } else if appState.isIdle, appState.showCallDetectedPopup {
+            // The hotkey answers an open call prompt, so the recording keeps its call.
+            let app = appState.detectedCallApp, bundleId = appState.detectedCallAppBundleId
+            appState.showCallDetectedPopup = false
+            Task { await recordingManager.requestRecording(associatedApp: app, callBundleId: bundleId) }
         } else if appState.isIdle {
             Task { await recordingManager.requestRecording() }
         }
@@ -353,7 +358,7 @@ struct DBriefApp: App {
         .defaultSize(width: 1100, height: 720)
         .windowStyle(.hiddenTitleBar)
         .handlesExternalEvents(matching: [])
-        .commands { RecordingCommands() }
+        .commands { RecordingCommands(appState: context.appState, recordingManager: context.recordingManager) }
 
         Window("Focus Reader", id: FocusReaderView.windowID) {
             FocusReaderView()

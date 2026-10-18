@@ -24,8 +24,6 @@ final class CallDetectedOverlayController {
     private var endedObserver: NSObjectProtocol?
     private var endedAutoDismissTask: Task<Void, Never>?
 
-    private static let panelSize = NSSize(width: 360, height: 116)
-
     private init() {}
 
     func configure(appState: AppState, appSettings: AppSettings, recordingManager: RecordingManager) {
@@ -68,7 +66,7 @@ final class CallDetectedOverlayController {
         guard panel == nil else { return }
         guard let appState, let appSettings, let recordingManager else { return }
 
-        panel = makePanel(content: CallDetectedPopup()
+        panel = makePanel(text: .detected(app: appState.detectedCallApp), content: CallDetectedPopup()
             .environment(appState)
             .environment(appSettings)
             .environment(recordingManager)
@@ -95,7 +93,7 @@ final class CallDetectedOverlayController {
         guard endedPanel == nil else { return }
         guard let appState, let appSettings, let recordingManager else { return }
 
-        endedPanel = makePanel(content: CallEndedPopup()
+        endedPanel = makePanel(text: .ended(app: appState.callEndedApp), content: CallEndedPopup()
             .environment(appState)
             .environment(appSettings)
             .environment(recordingManager)
@@ -118,15 +116,13 @@ final class CallDetectedOverlayController {
 
     // MARK: - Shared panel machinery
 
-    private func makePanel<Content: View>(content: Content) -> NSPanel {
+    private func makePanel<Content: View>(text: CallPromptText, content: Content) -> NSPanel {
         let hosting = NSHostingController(rootView: content)
+        // Sized once from the content: self-sizing hosting windows re-enter layout on macOS 26.
+        hosting.sizingOptions = []
+        let size = NSSize(width: CallPromptText.cardWidth, height: hosting.view.fittingSize.height)
 
-        let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: Self.panelSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
-        )
+        let panel = KeyablePanel(size: size, title: text.title)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -135,22 +131,25 @@ final class CallDetectedOverlayController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
         panel.contentViewController = hosting
+        panel.setAccessibilitySubrole(.dialog)
 
         if let screen = NSScreen.main {
             let frame = screen.visibleFrame
-            let origin = NSPoint(
-                x: frame.maxX - Self.panelSize.width - 12,
-                y: frame.maxY - Self.panelSize.height - 12
-            )
-            panel.setFrame(NSRect(origin: origin, size: Self.panelSize), display: true)
+            let origin = NSPoint(x: frame.maxX - size.width - 12, y: frame.maxY - size.height - 12)
+            panel.setFrame(NSRect(origin: origin, size: size), display: true)
         }
 
         panel.orderFrontRegardless()
+        // Keyboard and VoiceOver users get the prompt focused, so Return and Esc work
+        // and VoiceOver lands on it; everyone else keeps typing in the app in front.
+        if KeyablePanel.assistiveFocusPreferred { panel.makeKey() }
+        appState?.announcer.announce(text.announcement, priority: .high)
         return panel
     }
 
     private func makeAutoDismissTask(seconds: Int, dismiss: @escaping @MainActor () -> Void) -> Task<Void, Never>? {
-        guard seconds > 0 else { return nil }
+        // VoiceOver users may not reach the prompt before it times out.
+        guard seconds > 0, !NSWorkspace.shared.isVoiceOverEnabled else { return nil }
         return Task { @MainActor in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
