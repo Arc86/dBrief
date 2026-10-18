@@ -2,6 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>%@ profile · %lld tasks selected</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ profile · %2$#@n@ selected</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld task</string>
+			<key>other</key>
+			<string>%2$lld tasks</string>
+		</dict>
+	</dict>
 	<key>%@ · %lld attendees</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

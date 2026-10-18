@@ -2,6 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>%@ profile · %lld tasks selected</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Profiel %1$@ · %2$#@n@ geselecteerd</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld taak</string>
+			<key>other</key>
+			<string>%2$lld taken</string>
+		</dict>
+	</dict>
 	<key>%@ · %lld attendees</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -32,6 +48,22 @@
 			<string>%2$lld veld</string>
 			<key>other</key>
 			<string>%2$lld velden</string>
+		</dict>
+	</dict>
+	<key>%@: %@ and ^[%lld more step](inflect: true) didn't finish. Open it to retry.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@: %2$@ en %3$#@n@ niet voltooid. Open om het opnieuw te proberen.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>nog %3$lld stap is</string>
+			<key>other</key>
+			<string>nog %3$lld stappen zijn</string>
 		</dict>
 	</dict>
 	<key>%lld attendees loaded</key>
@@ -464,6 +496,49 @@
 			<string>Er staat %lld opname klaar om te verwerken. Je Mac is nu aangesloten op de stroom.</string>
 			<key>other</key>
 			<string>Er staan %lld opnamen klaar om te verwerken. Je Mac is nu aangesloten op de stroom.</string>
+		</dict>
+	</dict>
+	<key>^[%lld person](inflect: true) · ^[%lld voiceprint](inflect: true)</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@p@ · %2$#@v@</string>
+		<key>p</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%1$lld persoon</string>
+			<key>other</key>
+			<string>%1$lld personen</string>
+		</dict>
+		<key>v</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld stemafdruk</string>
+			<key>other</key>
+			<string>%2$lld stemafdrukken</string>
+		</dict>
+	</dict>
+	<key>^[%lld voiceprint](inflect: true)</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld stemafdruk</string>
+			<key>other</key>
+			<string>%lld stemafdrukken</string>
 		</dict>
 	</dict>
 </dict>

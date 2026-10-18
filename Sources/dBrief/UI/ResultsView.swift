@@ -323,7 +323,13 @@ struct ResultsView: View {
                 Text("Low available memory")
                     .uiFont(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
-                Text("\(warning.modelName) requires \(String(format: "%.1f", warning.requiredGB)) GB but only \(String(format: "%.1f", warning.availableGB)) GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps\(warning.hasRemoteEndpoint ? " or retry with a remote endpoint" : "") if it stalls.")
+                Group {
+                    if warning.hasRemoteEndpoint {
+                        Text("\(warning.modelName) requires \(warning.requiredGB, specifier: "%.1f") GB but only \(warning.availableGB, specifier: "%.1f") GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps or retry with a remote endpoint if it stalls.")
+                    } else {
+                        Text("\(warning.modelName) requires \(warning.requiredGB, specifier: "%.1f") GB but only \(warning.availableGB, specifier: "%.1f") GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps if it stalls.")
+                    }
+                }
                     .uiFont(.system(size: 11))
                     .foregroundStyle(palette.secondary.color)
                     .fixedSize(horizontal: false, vertical: true)

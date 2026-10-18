@@ -371,7 +371,7 @@ struct PostRecordingSheet: View {
                         Text("Processing settings")
                             .uiFont(.system(size: 12, weight: .medium))
                             .foregroundStyle(palette.heading.color)
-                        Text("\(reviewProfile.name) profile · \(selectedTaskCount) task\(selectedTaskCount == 1 ? "" : "s") selected")
+                        Text("\(reviewProfile.name) profile · \(selectedTaskCount) tasks selected")
                             .uiFont(.system(size: 11))
                             .foregroundStyle(palette.secondary.color)
                     }

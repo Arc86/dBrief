@@ -10,6 +10,12 @@
             "state" : "translated",
             "value" : "dBrief accesses your calendar to pre-fill meeting title, participants, and agenda context at recording time."
           }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief gebruikt je agenda om de titel, deelnemers en agenda van een vergadering in te vullen wanneer je opneemt."
+          }
         }
       }
     },
@@ -21,6 +27,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief needs microphone access to record audio from your microphone during calls and voice recordings."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief heeft toegang tot je microfoon nodig om je stem op te nemen tijdens gesprekken en spraakopnamen."
           }
         }
       }
@@ -34,6 +46,12 @@
             "state" : "translated",
             "value" : "dBrief uses full Reminders access to save extracted action items."
           }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief gebruikt volledige toegang tot Herinneringen om gevonden actiepunten te bewaren."
+          }
         }
       }
     },
@@ -45,6 +63,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief uses Reminders access to save extracted action items."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief gebruikt Herinneringen om gevonden actiepunten te bewaren."
           }
         }
       }
@@ -58,6 +82,12 @@
             "state" : "translated",
             "value" : "dBrief needs screen recording permission to capture system audio during calls."
           }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief heeft toestemming voor schermopname nodig om tijdens gesprekken het systeemgeluid op te nemen."
+          }
         }
       }
     },
@@ -69,6 +99,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief uses speech recognition to transcribe your recordings on-device."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief gebruikt spraakherkenning om je opnamen op deze Mac te transcriberen."
           }
         }
       }
