@@ -7957,6 +7957,16 @@
         }
       }
     },
+    "Delivery stopped before sending" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aflevering gestopt vóór verzending"
+          }
+        }
+      }
+    },
     "Delivery unconfirmed — retry may create duplicates" : {
       "localizations" : {
         "nl" : {
@@ -9157,6 +9167,16 @@
         }
       }
     },
+    "Error: %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fout: %@"
+          }
+        }
+      }
+    },
     "Estimated %@; higher is better" : {
       "localizations" : {
         "nl" : {
@@ -9213,6 +9233,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Aan elke voorwaarde moet worden voldaan. E-maildomeinen moeten exact overeenkomen. Lege voorwaarden komen nooit overeen."
+          }
+        }
+      }
+    },
+    "Evidence unavailable" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bewijs niet beschikbaar"
           }
         }
       }
@@ -11915,6 +11945,16 @@
         }
       }
     },
+    "Live transcript" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Live transcript"
+          }
+        }
+      }
+    },
     "Live transcription" : {
       "localizations" : {
         "nl" : {
@@ -13651,6 +13691,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Er is geen Markdown-bestand geschreven voor deze opname"
+          }
+        }
+      }
+    },
+    "No action items" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geen actiepunten"
           }
         }
       }
@@ -15691,6 +15741,16 @@
         }
       }
     },
+    "Partial evidence" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gedeeltelijk bewijs"
+          }
+        }
+      }
+    },
     "Participant" : {
       "localizations" : {
         "nl" : {
@@ -16587,6 +16647,28 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Verwerking voltooid met problemen"
+          }
+        }
+      }
+    },
+    "Processing finished, ^[%lld step](inflect: true) failed" : {
+      "localizations" : {
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verwerking voltooid, %lld stap mislukt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verwerking voltooid, %lld stappen mislukt"
+                }
+              }
+            }
           }
         }
       }
@@ -17651,6 +17733,16 @@
         }
       }
     },
+    "Recorded attempts" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geregistreerde pogingen"
+          }
+        }
+      }
+    },
     "Recording" : {
       "localizations" : {
         "nl" : {
@@ -17697,6 +17789,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Opname voltooid"
+          }
+        }
+      }
+    },
+    "Recording failed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opname mislukt"
           }
         }
       }
@@ -17751,6 +17853,16 @@
         }
       }
     },
+    "Recording paused" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opname gepauzeerd"
+          }
+        }
+      }
+    },
     "Recording processed" : {
       "localizations" : {
         "nl" : {
@@ -17767,6 +17879,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Herstel van opname vraagt aandacht"
+          }
+        }
+      }
+    },
+    "Recording resumed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opname hervat"
           }
         }
       }
@@ -17791,12 +17913,32 @@
         }
       }
     },
+    "Recording started" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opname gestart"
+          }
+        }
+      }
+    },
     "Recording status" : {
       "localizations" : {
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Opnamestatus"
+          }
+        }
+      }
+    },
+    "Recording stopped" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opname gestopt"
           }
         }
       }
@@ -24398,6 +24540,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Transcriptie in behandeling"
+          }
+        }
+      }
+    },
+    "Transcription progress" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Voortgang transcriptie"
           }
         }
       }

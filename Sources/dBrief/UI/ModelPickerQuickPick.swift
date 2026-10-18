@@ -59,8 +59,8 @@ struct ModelPickerQuickPick: View {
             Text(LocalTranscriptionChoice.shortTitle(id))
                 .uiFont(.system(size: 14, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
-            ModelRatingMeter(kind: .speed, value: profile?.speed)
-            ModelRatingMeter(kind: .accuracy, value: profile?.accuracy)
+            ModelRatingMeter(kind: .speed, value: profile?.speed, stacked: true)
+            ModelRatingMeter(kind: .accuracy, value: profile?.accuracy, stacked: true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile?.languageLabel ?? "")
                 Text("\(ram) · \(Text(download).foregroundStyle(cached[id] == true ? status.success.color : palette.secondary.color))")

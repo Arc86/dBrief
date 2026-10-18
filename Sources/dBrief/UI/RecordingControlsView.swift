@@ -96,6 +96,11 @@ struct RecordingControlsView: View {
             Task { await recordingManager.requestRecording() }
         } label: {
             Label("Record meeting", systemImage: "mic.fill")
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                // Room for the shortcut on both sides keeps the label centred and clear of it,
+                // however long the translation.
+                .padding(.horizontal, 46)
                 .frame(maxWidth: .infinity)
                 // The shortcut rides inside the button it triggers, quiet and right-aligned.
                 .overlay(alignment: .trailing) {

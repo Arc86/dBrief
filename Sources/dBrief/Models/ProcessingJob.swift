@@ -52,9 +52,9 @@ final class ProcessingJob {
     }
 
     var transcriptButtonTitle: String? {
-        if recording.transcription != nil { return "View transcript" }
-        if !progressiveSegments.isEmpty { return "Live transcript" }
-        return transcriptionStartedAt == nil ? nil : "Transcription progress"
+        if recording.transcription != nil { return String(localized: "View transcript") }
+        if !progressiveSegments.isEmpty { return String(localized: "Live transcript") }
+        return transcriptionStartedAt == nil ? nil : String(localized: "Transcription progress")
     }
 
     /// When actual transcription (not model download/load) began, used to drive the

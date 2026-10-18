@@ -1326,6 +1326,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Verwijderen kon niet worden voltooid. Mogelijk zijn er nog bestanden over; controleer de opslag voordat je het opnieuw probeert.</string>
 	<key>Deliver</key>
 	<string>Afleveren</string>
+	<key>Delivery stopped before sending</key>
+	<string>Aflevering gestopt vóór verzending</string>
 	<key>Delivery unconfirmed — retry may create duplicates</key>
 	<string>Aflevering niet bevestigd — opnieuw proberen kan duplicaten maken</string>
 	<key>Delivery unconfirmed. Check the destination, then retry with Integrations….</key>
@@ -1566,6 +1568,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Voer instructies in of herstel de standaardprompt.</string>
 	<key>Error details</key>
 	<string>Foutdetails</string>
+	<key>Error: %@</key>
+	<string>Fout: %@</string>
 	<key>Estimated %@; higher is better</key>
 	<string>Geschatte %@; hoger is beter</string>
 	<key>Estimated share of installed RAM</key>
@@ -1578,6 +1582,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Evernote-token is vereist</string>
 	<key>Every condition must match. Email domains match exactly. Empty conditions never match.</key>
 	<string>Aan elke voorwaarde moet worden voldaan. E-maildomeinen moeten exact overeenkomen. Lege voorwaarden komen nooit overeen.</string>
+	<key>Evidence unavailable</key>
+	<string>Bewijs niet beschikbaar</string>
 	<key>Evidence varies by workload: an independent LibriSpeech evaluation found accuracy close to large v3; Argmax's earlier macOS 26 beta earnings-call benchmark placed it between Whisper Base and Small. The conservative band reflects that uncertainty.</key>
 	<string>De resultaten verschillen per werklast: een onafhankelijke LibriSpeech-evaluatie vond een nauwkeurigheid dicht bij large v3; de eerdere benchmark van Argmax met earnings calls op de macOS 26-bèta plaatste het model tussen Whisper Base en Small. De voorzichtige categorie weerspiegelt die onzekerheid.</string>
 	<key>Exact domain, e.g. acme.com</key>
@@ -2106,6 +2112,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Live voorvertoning</string>
 	<key>Live preview, %@, %lld points</key>
 	<string>Live voorvertoning, %@, %lld punten</string>
+	<key>Live transcript</key>
+	<string>Live transcript</string>
 	<key>Live transcription</key>
 	<string>Live transcriptie</string>
 	<key>Lively, slightly husky male voice · Chinese (Sichuan)</key>
@@ -2442,6 +2450,8 @@ Mix: amix normalize=0</string>
 	<string>Nog geen AI-aanbieders</string>
 	<key>No Markdown file was written for this recording</key>
 	<string>Er is geen Markdown-bestand geschreven voor deze opname</string>
+	<key>No action items</key>
+	<string>Geen actiepunten</string>
 	<key>No action items found</key>
 	<string>Geen actiepunten gevonden</string>
 	<key>No action items found.</key>
@@ -2848,6 +2858,8 @@ Mix: amix normalize=0</string>
 	<string>Parakeet v2 ondersteunt alleen Engels. Kies v3 voor meertalige spraak.</string>
 	<key>Part %lld of %lld · %@</key>
 	<string>Deel %lld van %lld · %@</string>
+	<key>Partial evidence</key>
+	<string>Gedeeltelijk bewijs</string>
 	<key>Participant</key>
 	<string>Deelnemer</string>
 	<key>Paste your Notion integration secret first.</key>
@@ -3224,6 +3236,8 @@ Mix: amix normalize=0</string>
 	<string>Vergadering opnemen</string>
 	<key>Record, transcribe, and analyze meetings and voice notes — right from your menu bar.</key>
 	<string>Neem vergaderingen en spraakmemo's op, transcribeer en analyseer ze — direct vanuit je menubalk.</string>
+	<key>Recorded attempts</key>
+	<string>Geregistreerde pogingen</string>
 	<key>Recording</key>
 	<string>Opname</string>
 	<key>Recording Library</key>
@@ -3234,6 +3248,8 @@ Mix: amix normalize=0</string>
 	<string>Audio opnemen</string>
 	<key>Recording completed</key>
 	<string>Opname voltooid</string>
+	<key>Recording failed</key>
+	<string>Opname mislukt</string>
 	<key>Recording finalization</key>
 	<string>Opname afronden</string>
 	<key>Recording folder</key>
@@ -3244,16 +3260,24 @@ Mix: amix normalize=0</string>
 	<string>Opname-indicatoren</string>
 	<key>Recording library</key>
 	<string>Opnamebibliotheek</string>
+	<key>Recording paused</key>
+	<string>Opname gepauzeerd</string>
 	<key>Recording processed</key>
 	<string>Opname verwerkt</string>
 	<key>Recording recovery needs attention</key>
 	<string>Herstel van opname vraagt aandacht</string>
+	<key>Recording resumed</key>
+	<string>Opname hervat</string>
 	<key>Recording shortcut</key>
 	<string>Opnametoetscombinatie</string>
 	<key>Recording sidebar width</key>
 	<string>Breedte van opnamezijbalk</string>
+	<key>Recording started</key>
+	<string>Opname gestart</string>
 	<key>Recording status</key>
 	<string>Opnamestatus</string>
+	<key>Recording stopped</key>
+	<string>Opname gestopt</string>
 	<key>Recording title</key>
 	<string>Opnametitel</string>
 	<key>Recording unavailable</key>
@@ -4556,6 +4580,8 @@ Sentiment: %@</string>
 	<string>Transcriptiemodellen</string>
 	<key>Transcription pending</key>
 	<string>Transcriptie in behandeling</string>
+	<key>Transcription progress</key>
+	<string>Voortgang transcriptie</string>
 	<key>Transcription service</key>
 	<string>Transcriptiedienst</string>
 	<key>Transcription service API key (optional)</key>

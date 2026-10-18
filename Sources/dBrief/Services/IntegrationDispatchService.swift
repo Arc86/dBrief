@@ -106,7 +106,7 @@ actor IntegrationDispatchService {
             return await sendToNotion(batch: batch, delivery: delivery, config: config)
         }
         if delivery.destination == .appleReminders, ActionItemText.deliverable(bundle.actionItems).isEmpty {
-            return .init(destination: .appleReminders, status: .skipped, message: "No action items", remoteID: nil)
+            return .init(destination: .appleReminders, status: .skipped, message: String(localized: "No action items"), remoteID: nil)
         }
         return await perform(delivery.destination) {
             try Task.checkCancellation()

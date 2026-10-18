@@ -10,8 +10,8 @@ struct PrivacyReceiptSnapshot: Equatable, Sendable {
     var omittedAttempts = 0
 
     var heading: String {
-        if hasUnreadableReceipt || hasGaps { return "Partial evidence" }
-        if !hasReceipt || attempts.isEmpty { return "Evidence unavailable" }
-        return "Recorded attempts"
+        if hasUnreadableReceipt || hasGaps { return String(localized: "Partial evidence") }
+        if !hasReceipt || attempts.isEmpty { return String(localized: "Evidence unavailable") }
+        return String(localized: "Recorded attempts")
     }
 }

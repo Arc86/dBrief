@@ -434,6 +434,22 @@
 			<string>Geef de %lld stemmen een naam voordat de analyse verdergaat.</string>
 		</dict>
 	</dict>
+	<key>Processing finished, ^[%lld step](inflect: true) failed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Verwerking voltooid, %lld stap mislukt</string>
+			<key>other</key>
+			<string>Verwerking voltooid, %lld stappen mislukt</string>
+		</dict>
+	</dict>
 	<key>Processing in %lld seconds</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

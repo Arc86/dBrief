@@ -11,7 +11,7 @@ extension IntegrationDispatchService {
                        config: IntegrationSettings) async -> IntegrationDispatchResult {
         let items = ActionItemText.deliverable(batch.bundle.actionItems)
         guard !items.isEmpty else {
-            return .init(destination: .todoist, status: .skipped, message: "No action items", remoteID: nil)
+            return .init(destination: .todoist, status: .skipped, message: String(localized: "No action items"), remoteID: nil)
         }
         var created = delivery.createdItems ?? [:]
         do {
