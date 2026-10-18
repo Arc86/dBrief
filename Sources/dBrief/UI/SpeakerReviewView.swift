@@ -166,12 +166,17 @@ struct SpeakerReviewContent: View {
 
 /// The one-line state of a voice, shared by the list row and the picker header.
 private enum SpeakerReviewStatus {
-    static func text(item: SpeakerReviewItem, name: String, reviewed: Bool) -> String {
-        if reviewed { return name == item.id ? "Kept unnamed" : "Named" }
+    /// `compact` drops "voice match" after the percentage, for the narrow sidebar.
+    static func text(item: SpeakerReviewItem, name: String, reviewed: Bool, compact: Bool = false) -> String {
+        if reviewed { return name == item.id ? String(localized: "Kept unnamed") : String(localized: "Named") }
         if name != item.id {
-            return item.reason == .matched ? "Suggested · \(Int(item.confidence * 100))% voice match" : "Suggested name"
+            guard item.reason == .matched else { return String(localized: "Suggested name") }
+            let percent = Int(item.confidence * 100)
+            return compact
+                ? String(localized: "Suggested · \(percent)%")
+                : String(localized: "Suggested · \(percent)% voice match")
         }
-        return "Needs a name"
+        return String(localized: "Needs a name")
     }
 }
 
@@ -183,12 +188,12 @@ private struct SpeakerReviewHeader: View {
 
     var body: some View {
         PanelWindowHeader(
-            title: speakerCount == 1 ? "Who’s this voice?" : "Who’s speaking?",
+            title: speakerCount == 1 ? String(localized: "Who’s this voice?") : String(localized: "Who’s speaking?"),
             subtitle: beforeAnalysis
-                ? "Name \(speakerCount == 1 ? "the voice" : "the \(speakerCount) voices") before the analysis continues."
-                : "Choose who each voice belongs to.",
-            detail: meetingTitle.map { "\($0) · \(attendeeCount) attendee\(attendeeCount == 1 ? "" : "s")" }
-                ?? (attendeeCount > 0 ? "\(attendeeCount) meeting participant\(attendeeCount == 1 ? "" : "s")" : nil)
+                ? String(localized: "Name the \(speakerCount) voices before the analysis continues.")
+                : String(localized: "Choose who each voice belongs to."),
+            detail: meetingTitle.map { String(localized: "\($0) · \(attendeeCount) attendees") }
+                ?? (attendeeCount > 0 ? String(localized: "\(attendeeCount) meeting participants") : nil)
         )
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -227,9 +232,8 @@ private struct SpeakerReviewListRow: View {
     }
 
     private var status: String {
-        let text = SpeakerReviewStatus.text(item: item, name: name, reviewed: reviewed)
         // The sidebar is narrow; the percentage alone says enough there.
-        return text.replacingOccurrences(of: " voice match", with: "")
+        SpeakerReviewStatus.text(item: item, name: name, reviewed: reviewed, compact: true)
     }
 }
 
@@ -369,8 +373,9 @@ private struct SpeakerReviewPicker: View {
     private func sectionTitle(at index: Int, in rows: [SpeakerReviewRow]) -> String? {
         func section(_ row: SpeakerReviewRow) -> String {
             switch row {
-            case .person(let choice): meetingIDs.contains(choice.id) ? "In this meeting" : "Voice library"
-            case .typed: "New name"
+            case .person(let choice):
+                meetingIDs.contains(choice.id) ? String(localized: "In this meeting") : String(localized: "Voice library")
+            case .typed: String(localized: "New name")
             }
         }
         let current = section(rows[index])
@@ -378,8 +383,8 @@ private struct SpeakerReviewPicker: View {
     }
 
     private var emptyMessage: String {
-        if !draft.trimmedSearch.isEmpty { return "No matching people." }
-        return "No attendees or saved voices yet — type this person’s name above."
+        if !draft.trimmedSearch.isEmpty { return String(localized: "No matching people.") }
+        return String(localized: "No attendees or saved voices yet — type this person’s name above.")
     }
 
     private func moveHighlight(by offset: Int, in rows: [SpeakerReviewRow]) {
@@ -448,15 +453,16 @@ private struct SpeakerReviewPersonRow: View {
         .onHover { hovered = $0 }
         .buttonStyle(.plain)
         .help(choice.detail.map { "\(choice.name) · \($0)" } ?? choice.name)
-        .accessibilityLabel(choice.detail.flatMap { $0.isEmpty ? nil : "Use \(choice.name), \($0)" } ?? "Use \(choice.name)")
+        .accessibilityLabel(choice.detail.flatMap { $0.isEmpty ? nil : String(localized: "Use \(choice.name), \($0)") }
+            ?? String(localized: "Use \(choice.name)"))
         .accessibilityValue(accessibilityValue)
     }
 
     private var accessibilityValue: String {
         var parts: [String] = []
-        if selected { parts.append("Selected") }
+        if selected { parts.append(String(localized: "Selected")) }
         if let score = choice.score, score >= SpeakerReviewCandidates.visibleScore {
-            parts.append("\(Int(score * 100)) percent voice match")
+            parts.append(String(localized: "\(Int(score * 100)) percent voice match"))
         }
         return parts.joined(separator: ", ")
     }

@@ -16,11 +16,11 @@ struct LibraryWorkDetailView: View {
 
     private var actionTitle: String {
         switch item.target {
-        case .queue: "Process Now"
-        case .recovery: "Resume Processing"
-        case .delivery: "Review Deliveries"
-        case .capture: "Recover Audio"
-        case .reprocess: "Resume Reprocess"
+        case .queue: String(localized: "Process Now")
+        case .recovery: String(localized: "Resume Processing")
+        case .delivery: String(localized: "Review Deliveries")
+        case .capture: String(localized: "Recover Audio")
+        case .reprocess: String(localized: "Resume Reprocess")
         }
     }
 

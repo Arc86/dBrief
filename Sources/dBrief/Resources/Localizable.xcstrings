@@ -24,6 +24,12 @@
         }
       }
     },
+    "%.1f times the text size" : {
+
+    },
+    "%.1f×" : {
+
+    },
     "%@  All day" : {
 
     },
@@ -36,6 +42,9 @@
           }
         }
       }
+    },
+    "%@ (Not Installed)" : {
+
     },
     "%@ (unavailable)" : {
 
@@ -57,6 +66,19 @@
       }
     },
     "%@ didn’t finish" : {
+
+    },
+    "%@ of %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ of %2$@"
+          }
+        }
+      }
+    },
+    "%@ of unknown duration" : {
 
     },
     "%@ profile · %lld task%@ selected" : {
@@ -85,9 +107,6 @@
     "%@ theme mode" : {
 
     },
-    "%@ words" : {
-
-    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
@@ -108,6 +127,16 @@
         }
       }
     },
+    "%@ · %lld attendees" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$lld attendees"
+          }
+        }
+      }
+    },
     "%@ — %@" : {
       "localizations" : {
         "en" : {
@@ -117,6 +146,9 @@
           }
         }
       }
+    },
+    "%@ — All day" : {
+
     },
     "%@, %@" : {
       "localizations" : {
@@ -157,6 +189,12 @@
           }
         }
       }
+    },
+    "%@×" : {
+
+    },
+    "%@…" : {
+
     },
     "%lld" : {
 
@@ -217,6 +255,56 @@
     "%lld completed" : {
 
     },
+    "%lld h %lld min" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld h %2$lld min"
+          }
+        }
+      }
+    },
+    "%lld meeting participants" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld meeting participant"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld meeting participants"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld deelnemer aan de vergadering"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld deelnemers aan de vergadering"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld min" : {
 
     },
@@ -262,6 +350,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld"
           }
         }
       }
@@ -352,6 +450,9 @@
     "%lld percent" : {
 
     },
+    "%lld percent voice match" : {
+
+    },
     "%lld permissions need attention." : {
 
     },
@@ -378,6 +479,46 @@
     },
     "%lld unfinished" : {
 
+    },
+    "%lld words" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld word"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld words"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld woord"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld woorden"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "%lld%%" : {
 
@@ -426,6 +567,12 @@
 
     },
     "A stale list refreshes when you open the meeting picker or start recording." : {
+
+    },
+    "A transcript is needed before action items can be generated." : {
+
+    },
+    "A transcript is needed before analysis can be generated." : {
 
     },
     "A voice is added when you name a speaker in a transcript, or with “Save voice to library” from the speaker menu." : {
@@ -494,6 +641,9 @@
     "Actions for %@" : {
 
     },
+    "Actions, %lld unfinished" : {
+
+    },
     "Active profile" : {
 
     },
@@ -504,10 +654,44 @@
 
     },
     "Add %lld Items" : {
-
-    },
-    "Add 1 Item" : {
-
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Add %lld Item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Add %lld Items"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld item toevoegen"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld items toevoegen"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Add Conversation to Recording Note" : {
 
@@ -581,6 +765,49 @@
     "Add your server URL and key in Settings before recording." : {
 
     },
+    "Added %lld action items." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Added %lld action item."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Added %lld action items."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld actiepunt toegevoegd."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld actiepunten toegevoegd."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Added to the summary." : {
+
+    },
     "Adds the rest of the day to the meeting picker." : {
 
     },
@@ -594,6 +821,9 @@
 
     },
     "After recording" : {
+
+    },
+    "All Recordings" : {
 
     },
     "All calendars" : {
@@ -636,6 +866,15 @@
     "Analysis" : {
 
     },
+    "Analysis and processing" : {
+
+    },
+    "Analysis could not be saved. Your draft is kept. %@" : {
+
+    },
+    "Analysis saved, but the linked Markdown note could not be updated. Your draft is kept so you can retry. %@" : {
+
+    },
     "Analyze tags & sentiment" : {
 
     },
@@ -655,6 +894,15 @@
     "Another recording is processing. Process saves this recording and queues it to run automatically." : {
 
     },
+    "Answer copied" : {
+
+    },
+    "Answered from the most recent part of this live recording." : {
+
+    },
+    "Answered from the most relevant parts of this long recording." : {
+
+    },
     "Answers cite timestamps you can click to jump to that moment." : {
 
     },
@@ -669,6 +917,16 @@
     },
     "Apple Intelligence" : {
 
+    },
+    "Apple Intelligence declined to read %lld of %lld parts, so anything in them may be missing." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Apple Intelligence declined to read %1$lld of %2$lld parts, so anything in them may be missing."
+          }
+        }
+      }
     },
     "Apple Notes" : {
 
@@ -715,6 +973,9 @@
     "Ask about this recording…" : {
 
     },
+    "Ask again" : {
+
+    },
     "Ask anything about this recording" : {
 
     },
@@ -728,6 +989,9 @@
 
     },
     "Ask me" : {
+
+    },
+    "Ask this question again" : {
 
     },
     "Ask this question of every part of the recording, so nothing is missed. Stop cancels it." : {
@@ -761,6 +1025,15 @@
 
     },
     "Attendees omitted: meeting exceeds your limit (%lld invitees)" : {
+
+    },
+    "Audio" : {
+
+    },
+    "Audio export" : {
+
+    },
+    "Audio file" : {
 
     },
     "Audio file is unavailable" : {
@@ -808,6 +1081,9 @@
     "Automatic detection" : {
 
     },
+    "Automatic loading is off. Press Refresh this date." : {
+
+    },
     "Automatic selection" : {
 
     },
@@ -844,6 +1120,9 @@
     "CLI command" : {
 
     },
+    "Cached · refreshed %@" : {
+
+    },
     "Calendar" : {
 
     },
@@ -851,6 +1130,9 @@
 
     },
     "Calendar access blocked. Check Claude connector approval, then press Refresh." : {
+
+    },
+    "Calendar access is blocked. Check connector approval, then refresh this date." : {
 
     },
     "Calendar app" : {
@@ -862,10 +1144,22 @@
     "Calendar attendees are already included with the selected meeting." : {
 
     },
+    "Calendar fetch" : {
+
+    },
     "Calendar linked" : {
 
     },
+    "Calendar meeting linked" : {
+
+    },
     "Calendar name" : {
+
+    },
+    "Calendar refresh failed. Saved meetings remain available." : {
+
+    },
+    "Calendar refresh was incomplete. Saved meetings remain available." : {
 
     },
     "Calendar requests use your Claude usage" : {
@@ -883,6 +1177,9 @@
     "Cancel" : {
 
     },
+    "Cancelled" : {
+
+    },
     "Capture" : {
 
     },
@@ -896,6 +1193,9 @@
 
     },
     "Changes apply to this profile" : {
+
+    },
+    "Chat" : {
 
     },
     "Chat beside a transcript" : {
@@ -931,11 +1231,24 @@
     "Check the whole recording (%@)" : {
 
     },
+    "Checked the whole recording." : {
+
+    },
     "Checking calendar context for profile selection…" : {
 
     },
     "Checking models…" : {
 
+    },
+    "Checking part %lld of %lld…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Checking part %1$lld of %2$lld…"
+          }
+        }
+      }
     },
     "Checking saved recording results…" : {
 
@@ -985,6 +1298,9 @@
     "Choose a voice from the list to give it a name." : {
 
     },
+    "Choose who each voice belongs to." : {
+
+    },
     "Choose…" : {
 
     },
@@ -992,6 +1308,9 @@
 
     },
     "Claude CLI" : {
+
+    },
+    "Claude CLI connector" : {
 
     },
     "Claude Code" : {
@@ -1105,6 +1424,9 @@
     "Completed" : {
 
     },
+    "Completion unconfirmed" : {
+
+    },
     "Compute, warm-up, large files" : {
 
     },
@@ -1144,7 +1466,16 @@
     "Continue" : {
 
     },
+    "Conversation added to the recording note." : {
+
+    },
+    "Conversation copied." : {
+
+    },
     "Conversation options" : {
+
+    },
+    "Conversation saved." : {
 
     },
     "Copied" : {
@@ -1165,6 +1496,9 @@
     "Copy Transcript" : {
 
     },
+    "Copy answer" : {
+
+    },
     "Copy as Plain Text" : {
 
     },
@@ -1175,6 +1509,12 @@
 
     },
     "Copy the transcript (no summary yet)" : {
+
+    },
+    "Copy this answer" : {
+
+    },
+    "Copy to clipboard" : {
 
     },
     "Core ML variants" : {
@@ -1192,6 +1532,12 @@
     "Couldn't create the spoken summary" : {
 
     },
+    "Couldn't delete the recording" : {
+
+    },
+    "Couldn’t add this answer to the recording. Try again, or edit it from the Summary tab." : {
+
+    },
     "Couldn’t export answer" : {
 
     },
@@ -1199,6 +1545,12 @@
 
     },
     "Couldn’t refresh" : {
+
+    },
+    "Couldn’t save the conversation: %@" : {
+
+    },
+    "Couldn’t update the recording note: %@" : {
 
     },
     "Covers %@. Choose Whisper for %@." : {
@@ -1214,6 +1566,12 @@
     "Current model" : {
 
     },
+    "Current results stay readable in the other tabs until the new ones are ready." : {
+
+    },
+    "Current results stay readable while processing; editing is temporarily paused. Successful results replace the current set, with one previous set available to restore. Changes apply only to this attempt." : {
+
+    },
     "Currently using %@" : {
 
     },
@@ -1221,6 +1579,9 @@
 
     },
     "Custom accent color" : {
+
+    },
+    "Custom command" : {
 
     },
     "Custom language code" : {
@@ -1251,13 +1612,22 @@
     "Custom prompts" : {
 
     },
+    "Custom provider" : {
+
+    },
     "Custom…" : {
 
     },
     "Dark mode" : {
 
     },
+    "Data" : {
+
+    },
     "Date" : {
+
+    },
+    "Decisions" : {
 
     },
     "Decrease prompt text size" : {
@@ -1329,10 +1699,16 @@
     "Descending" : {
 
     },
+    "Detect Speakers Again" : {
+
+    },
     "Detect Speakers Again…" : {
 
     },
     "Detect speakers" : {
+
+    },
+    "Detect speakers on-device using the original audio. Transcript words and timings are preserved; existing speaker assignments and names are replaced." : {
 
     },
     "Detected speakers" : {
@@ -1389,6 +1765,9 @@
     "Done with a warning" : {
 
     },
+    "Done: %@" : {
+
+    },
     "Download" : {
 
     },
@@ -1425,6 +1804,9 @@
     "Duplicate" : {
 
     },
+    "Duration" : {
+
+    },
     "Duration %@" : {
 
     },
@@ -1438,6 +1820,9 @@
 
     },
     "Each delivery has an Idempotency-Key; retry unconfirmed sends with Integrations… on the recording" : {
+
+    },
+    "Earlier" : {
 
     },
     "Edit" : {
@@ -1524,6 +1909,9 @@
     "Enter a positive whole number, or leave blank for automatic." : {
 
     },
+    "Enter an AI output language code." : {
+
+    },
     "Error details" : {
 
     },
@@ -1554,6 +1942,12 @@
     "Execution evidence for this recording. No audio, transcript text, prompts, or credentials are stored in the receipt." : {
 
     },
+    "Existing analysis will be kept and marked as based on the previous transcript." : {
+
+    },
+    "Existing results remain unchanged while reprocessing is pending." : {
+
+    },
     "Exit Focus Reader" : {
 
     },
@@ -1578,6 +1972,12 @@
     "Export All…" : {
 
     },
+    "Export Answer as Markdown" : {
+
+    },
+    "Export Answer as Text" : {
+
+    },
     "Export Selected…" : {
 
     },
@@ -1585,6 +1985,9 @@
 
     },
     "Exported Markdown and integrations don't keep this font." : {
+
+    },
+    "Externally managed" : {
 
     },
     "Extract action items" : {
@@ -1608,6 +2011,12 @@
     "Field" : {
 
     },
+    "File size" : {
+
+    },
+    "File system" : {
+
+    },
     "Files dropped in a folder are copied into dBrief and processed like a recording. The original stays where it is." : {
 
     },
@@ -1615,6 +2024,9 @@
 
     },
     "Finish or discard the pending reprocessing attempt to use chat." : {
+
+    },
+    "Finished" : {
 
     },
     "Finished with issues" : {
@@ -1630,6 +2042,9 @@
 
     },
     "Focus Reader" : {
+
+    },
+    "Focus Reader (⇧⌘F)" : {
 
     },
     "Folders" : {
@@ -1680,16 +2095,34 @@
     "Forget voiceprint from %@" : {
 
     },
+    "Format probe" : {
+
+    },
+    "Full width" : {
+
+    },
     "Gemma 4 E4B Local" : {
 
     },
     "Generate Spoken Summary" : {
 
     },
+    "Generate a summary and the other available analysis from this transcript." : {
+
+    },
+    "Generate audio" : {
+
+    },
+    "Generate available analysis from this recording's transcript." : {
+
+    },
     "Generate summary" : {
 
     },
     "Generate summary, actions, and tags" : {
+
+    },
+    "Generated audio" : {
 
     },
     "Generating summary and analysis…" : {
@@ -1749,6 +2182,9 @@
     "Hides this run. The recording and its current results stay; the unfinished run can't be resumed afterwards." : {
 
     },
+    "Hostname" : {
+
+    },
     "How automation works" : {
 
     },
@@ -1778,6 +2214,9 @@
 
     },
     "Improvement request" : {
+
+    },
+    "In Progress" : {
 
     },
     "In progress" : {
@@ -1819,6 +2258,9 @@
     "Instructions" : {
 
     },
+    "Integration" : {
+
+    },
     "Integrations" : {
 
     },
@@ -1826,6 +2268,9 @@
 
     },
     "Interface text" : {
+
+    },
+    "Invalid pattern" : {
 
     },
     "It is downloaded again the next time it's needed, which can take a while." : {
@@ -1867,6 +2312,12 @@
     "Keep the model warm" : {
 
     },
+    "Kept unnamed" : {
+
+    },
+    "Key points" : {
+
+    },
     "Labels who said what. Adds processing time and about 500 MB of memory." : {
 
     },
@@ -1900,6 +2351,9 @@
     "Let everyone know before recording a meeting or call." : {
 
     },
+    "Library options" : {
+
+    },
     "Library unavailable" : {
 
     },
@@ -1912,10 +2366,16 @@
     "Link Calendar Meeting…" : {
 
     },
+    "Link calendar meeting" : {
+
+    },
     "Link meeting" : {
 
     },
     "Links" : {
+
+    },
+    "Listening…" : {
 
     },
     "Live" : {
@@ -1933,6 +2393,9 @@
           }
         }
       }
+    },
+    "Live transcription" : {
+
     },
     "Load / overhead" : {
 
@@ -1971,6 +2434,9 @@
     "Loading library…" : {
 
     },
+    "Loading meetings…" : {
+
+    },
     "Loading recordings…" : {
 
     },
@@ -1998,6 +2464,9 @@
     "Local CLI can't stream, so chat uses this engine." : {
 
     },
+    "Local model" : {
+
+    },
     "Low available memory" : {
 
     },
@@ -2022,6 +2491,9 @@
     "Mark this action unfinished" : {
 
     },
+    "Markdown export" : {
+
+    },
     "Markup and hallucination artifacts are always removed" : {
 
     },
@@ -2043,7 +2515,13 @@
     "Maximum attendees" : {
 
     },
+    "Medium" : {
+
+    },
     "Meeting" : {
+
+    },
+    "Meeting Insights" : {
 
     },
     "Meeting attendees" : {
@@ -2062,6 +2540,12 @@
 
     },
     "Meeting title" : {
+
+    },
+    "Meetings from %@, with likely matches first." : {
+
+    },
+    "Meetings from the recording’s original day, with likely matches first." : {
 
     },
     "Meetings load only when you press Refresh." : {
@@ -2109,6 +2593,9 @@
     "Merge “%@” into…" : {
 
     },
+    "Metadata" : {
+
+    },
     "Mic" : {
 
     },
@@ -2143,6 +2630,9 @@
 
     },
     "Model variant size label; not runtime RAM" : {
+
+    },
+    "Models download on first use." : {
 
     },
     "Monitor %@" : {
@@ -2202,7 +2692,59 @@
     "Name or search" : {
 
     },
+    "Name the %lld voices before the analysis continues." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Name the voice before the analysis continues."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Name the %lld voices before the analysis continues."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Geef de stem een naam voordat de analyse verdergaat."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Geef de %lld stemmen een naam voordat de analyse verdergaat."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Named" : {
+
+    },
+    "Narrow" : {
+
+    },
     "Needs AI analysis." : {
+
+    },
+    "Needs Attention" : {
+
+    },
+    "Needs a name" : {
 
     },
     "Needs attention" : {
@@ -2218,6 +2760,9 @@
 
     },
     "New files use the active profile's After recording choices, engine and folders, and are picked up once they finish copying." : {
+
+    },
+    "New name" : {
 
     },
     "New term" : {
@@ -2247,6 +2792,9 @@
     "No analysis yet" : {
 
     },
+    "No attendees or saved voices yet — type this person’s name above." : {
+
+    },
     "No calendars available" : {
 
     },
@@ -2259,13 +2807,22 @@
     "No endpoint configured" : {
 
     },
+    "No failed jobs." : {
+
+    },
     "No folders yet" : {
 
     },
     "No invitees" : {
 
     },
+    "No matches for this search." : {
+
+    },
     "No matching models" : {
+
+    },
+    "No matching people." : {
 
     },
     "No meeting linked" : {
@@ -2274,7 +2831,19 @@
     "No meetings for this day." : {
 
     },
+    "No meetings found for this date." : {
+
+    },
     "No meetings loaded yet" : {
+
+    },
+    "No meetings were found for this date." : {
+
+    },
+    "No named people in this month's recordings." : {
+
+    },
+    "No new action items found in this answer." : {
 
     },
     "No pending work" : {
@@ -2292,10 +2861,31 @@
     "No profile selected" : {
 
     },
+    "No queued or interrupted work." : {
+
+    },
     "No recordings found" : {
 
     },
+    "No recordings in this folder." : {
+
+    },
     "No recordings in this time range" : {
+
+    },
+    "No recordings processed in the last seven days." : {
+
+    },
+    "No recordings with status %@." : {
+
+    },
+    "No remote AI endpoint is configured. Add one in Settings → AI analysis." : {
+
+    },
+    "No remote transcription service is configured. Add one in Settings → Transcription." : {
+
+    },
+    "No results" : {
 
     },
     "No sample" : {
@@ -2310,6 +2900,9 @@
     "No speakers were identified in the transcript." : {
 
     },
+    "No speech found in this recording" : {
+
+    },
     "No suggestions for %@ on this Mac" : {
 
     },
@@ -2320,6 +2913,9 @@
 
     },
     "No transcription endpoint is set up. Add one in Settings → Transcription." : {
+
+    },
+    "No unfinished actions." : {
 
     },
     "No voices saved yet" : {
@@ -2355,7 +2951,13 @@
     "Not rated" : {
 
     },
+    "Not transcribed yet" : {
+
+    },
     "Notes" : {
+
+    },
+    "Nothing recorded this week." : {
 
     },
     "Nothing to read yet" : {
@@ -2374,6 +2976,9 @@
 
     },
     "Notion" : {
+
+    },
+    "Numbers & dates" : {
 
     },
     "OK" : {
@@ -2445,6 +3050,9 @@
     "Open Recording" : {
 
     },
+    "Open Settings" : {
+
+    },
     "Open System Settings" : {
 
     },
@@ -2457,6 +3065,9 @@
     "Open in the recording library" : {
 
     },
+    "Open issues" : {
+
+    },
     "Open the Markdown notes" : {
 
     },
@@ -2464,6 +3075,9 @@
 
     },
     "Open the recording library (⌘L): every recording with its summary, transcript and assistant" : {
+
+    },
+    "OpenAI-compatible API" : {
 
     },
     "Opens %@ settings" : {
@@ -2482,6 +3096,9 @@
 
     },
     "Or install manually: brew install yt-dlp" : {
+
+    },
+    "Origin not recorded" : {
 
     },
     "Other Font…" : {
@@ -2526,7 +3143,16 @@
     "Parakeet Ultra model card" : {
 
     },
+    "Parakeet detects language automatically. v2 supports English; v3 supports 25 European languages. The spoken language selection does not force Parakeet decoding." : {
+
+    },
     "Parakeet detects the language itself. This choice is kept for other engines." : {
+
+    },
+    "Parakeet model" : {
+
+    },
+    "Participant" : {
 
     },
     "Pause" : {
@@ -2548,6 +3174,12 @@
 
     },
     "Paused" : {
+
+    },
+    "People I Met This Month" : {
+
+    },
+    "People this month" : {
 
     },
     "Permissions" : {
@@ -2616,10 +3248,25 @@
     "Pre-selected after every recording" : {
 
     },
+    "Prepare the voice" : {
+
+    },
     "Prepare your models" : {
 
     },
+    "Preparing audio…" : {
+
+    },
+    "Preparing chat for this long recording… (the first time downloads a ~480 MB on-device search model)" : {
+
+    },
     "Preparing chat…" : {
+
+    },
+    "Preparing live transcription…" : {
+
+    },
+    "Preparing transcript…" : {
 
     },
     "Preparing voice sample…" : {
@@ -2655,7 +3302,13 @@
     "Previous speaker" : {
 
     },
+    "Previously exported files and content sent to integrations are not updated automatically." : {
+
+    },
     "Priority" : {
+
+    },
+    "Privacy" : {
 
     },
     "Privacy receipt" : {
@@ -2691,7 +3344,13 @@
     "Processing" : {
 
     },
+    "Processing can continue without transcript text." : {
+
+    },
     "Processing complete" : {
+
+    },
+    "Processing destinations" : {
 
     },
     "Processing in %lld seconds" : {
@@ -2713,6 +3372,9 @@
 
     },
     "Processing “%@”" : {
+
+    },
+    "Processing…" : {
 
     },
     "Profile" : {
@@ -2743,6 +3405,9 @@
     "Profiles can override each task" : {
 
     },
+    "Prompt improvement" : {
+
+    },
     "Prompt question" : {
 
     },
@@ -2755,10 +3420,16 @@
     "Prompts arrive as DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT and DBRIEF_FULL_PROMPT, and on stdin. If a tool isn't found, use its absolute path (`which <tool>`)." : {
 
     },
+    "Provider" : {
+
+    },
     "Providers" : {
 
     },
     "Question" : {
+
+    },
+    "Questions asked" : {
 
     },
     "Queue" : {
@@ -2780,6 +3451,9 @@
 
     },
     "Queued" : {
+
+    },
+    "Queued / Interrupted" : {
 
     },
     "Queueing in %lld seconds" : {
@@ -2812,13 +3486,25 @@
     "Re-download" : {
 
     },
+    "Re-run AI Analysis" : {
+
+    },
     "Re-run AI Analysis…" : {
+
+    },
+    "Re-run AI analysis to update the summary, action items, and tags using the meeting agenda and participants. Review speaker names in the transcript using the meeting attendees." : {
 
     },
     "Re-run AI analysis…" : {
 
     },
     "Read Aloud" : {
+
+    },
+    "Read answer aloud" : {
+
+    },
+    "Read using the voice selected in Settings → Spoken summary" : {
 
     },
     "Reading options" : {
@@ -2851,6 +3537,12 @@
           }
         }
       }
+    },
+    "Recently Processed" : {
+
+    },
+    "Recently processed" : {
+
     },
     "Recognition %@" : {
 
@@ -2887,7 +3579,13 @@
         }
       }
     },
+    "Recording audio" : {
+
+    },
     "Recording completed" : {
+
+    },
+    "Recording finalization" : {
 
     },
     "Recording library" : {
@@ -2902,13 +3600,25 @@
     "Recording status" : {
 
     },
+    "Recording — live transcript" : {
+
+    },
     "Recording, transcripts, and settings" : {
 
     },
     "Recordings" : {
 
     },
+    "Recording…" : {
+
+    },
+    "Recover Audio" : {
+
+    },
     "Recovery files" : {
+
+    },
+    "Redirected" : {
 
     },
     "Reduce microphone echo" : {
@@ -2941,6 +3651,9 @@
     "Refresh recent recordings" : {
 
     },
+    "Refresh recordings" : {
+
+    },
     "Refresh selected calendar attendees" : {
 
     },
@@ -2948,6 +3661,9 @@
 
     },
     "Refresh today" : {
+
+    },
+    "Refreshing this date…" : {
 
     },
     "Refreshing…" : {
@@ -2968,7 +3684,16 @@
     "Reminders" : {
 
     },
+    "Remote" : {
+
+    },
+    "Remote endpoints" : {
+
+    },
     "Remote service" : {
+
+    },
+    "Remote services" : {
 
     },
     "Remote services only" : {
@@ -3052,6 +3777,9 @@
     "Rename…" : {
 
     },
+    "Replace participants with attendees" : {
+
+    },
     "Replace participants with meeting attendees" : {
 
     },
@@ -3065,6 +3793,15 @@
 
     },
     "Reprocess pending" : {
+
+    },
+    "Reprocess this recording" : {
+
+    },
+    "Reprocessing" : {
+
+    },
+    "Reprocessing is in progress. Your draft has been kept." : {
 
     },
     "Reprocessing is in progress. Your draft is kept; editing is paused." : {
@@ -3094,6 +3831,12 @@
     "Reset to defaults" : {
 
     },
+    "Response format" : {
+
+    },
+    "Response interrupted: %@" : {
+
+    },
     "Restore Previous Results" : {
 
     },
@@ -3121,10 +3864,19 @@
     "Resume" : {
 
     },
+    "Resume Processing" : {
+
+    },
     "Resume Queue" : {
 
     },
+    "Resume Reprocess" : {
+
+    },
     "Resume recording" : {
+
+    },
+    "Retranscribe" : {
 
     },
     "Retranscribe…" : {
@@ -3143,6 +3895,9 @@
 
     },
     "Return confirms all voices" : {
+
+    },
+    "Review Deliveries" : {
 
     },
     "Review delivery status and retry an individual integration" : {
@@ -3169,6 +3924,9 @@
     "Rosters load only when requested for one meeting. Larger meetings omit the roster." : {
 
     },
+    "Run" : {
+
+    },
     "Run AI analysis again, with any engine or endpoint" : {
 
     },
@@ -3191,6 +3949,9 @@
 
     },
     "Save" : {
+
+    },
+    "Save Conversation as Markdown" : {
 
     },
     "Save Conversation as Markdown…" : {
@@ -3217,7 +3978,13 @@
     "Saved as Prompt" : {
 
     },
+    "Saved as a prompt. Manage your prompts in Settings → AI analysis." : {
+
+    },
     "Saved model is absent from the catalog; availability is unverified." : {
+
+    },
+    "Saved results are not ready to open." : {
 
     },
     "Saving recording" : {
@@ -3254,6 +4021,9 @@
 
     },
     "Search transcript" : {
+
+    },
+    "Seeking unavailable" : {
 
     },
     "Select All" : {
@@ -3302,6 +4072,9 @@
 
     },
     "Sends the selected text to this endpoint." : {
+
+    },
+    "Sentiment" : {
 
     },
     "Sentiment · %@" : {
@@ -3442,6 +4215,9 @@
     "Some evidence could not be read. It may be damaged, unavailable, or from an unsupported version." : {
 
     },
+    "Some long evidence was shortened." : {
+
+    },
     "Sort by %@" : {
 
     },
@@ -3454,7 +4230,13 @@
     "Speaker Names" : {
 
     },
+    "Speaker analysis" : {
+
+    },
     "Speaker details are unavailable because no transcript is attached." : {
+
+    },
+    "Speaker detection runs on this Mac. Integration delivery and exports are separate actions." : {
 
     },
     "Speaker names changed — regenerate analysis?" : {
@@ -3469,7 +4251,13 @@
     "Speech recognition" : {
 
     },
+    "Speech synthesis" : {
+
+    },
     "Speed and accuracy are estimates, not measured on this Mac." : {
+
+    },
+    "Spelling correction" : {
 
     },
     "Split large files" : {
@@ -3487,10 +4275,19 @@
     "Spoken summary progress" : {
 
     },
+    "Spoken summary script" : {
+
+    },
+    "Spoken words appear here as you record." : {
+
+    },
     "Start" : {
 
     },
     "Start a new recording" : {
+
+    },
+    "Start also discards this recording's unfinished run in Queue & Recovery. Its saved progress can't be resumed afterwards." : {
 
     },
     "Start at login" : {
@@ -3506,6 +4303,9 @@
 
     },
     "Start using dBrief" : {
+
+    },
+    "Started" : {
 
     },
     "Starts or pauses audio playback" : {
@@ -3544,6 +4344,12 @@
     "Stop processing; saved progress remains available for recovery" : {
 
     },
+    "Stop reading (Esc)" : {
+
+    },
+    "Stop reading answer" : {
+
+    },
     "Stop recording" : {
 
     },
@@ -3559,7 +4365,19 @@
     "Stop watching this folder" : {
 
     },
+    "Stopped checking the whole recording." : {
+
+    },
+    "Stopped generating." : {
+
+    },
+    "Streaming engines show words as they arrive. Other engines show the transcript when transcription finishes." : {
+
+    },
     "Strong voice match" : {
+
+    },
+    "Succeeded" : {
 
     },
     "Suggest improvements" : {
@@ -3578,10 +4396,22 @@
     "Suggested models" : {
 
     },
+    "Suggested name" : {
+
+    },
     "Suggested prompt" : {
 
     },
+    "Suggested · %lld%%" : {
+
+    },
+    "Suggested · %lld%% voice match" : {
+
+    },
     "Suggested: %@ — waiting for the current job" : {
+
+    },
+    "Summarize" : {
 
     },
     "Summary" : {
@@ -3608,10 +4438,16 @@
     "Synthesizing…" : {
 
     },
+    "Synthetic probe audio" : {
+
+    },
     "System Default" : {
 
     },
     "System audio" : {
+
+    },
+    "System clipboard" : {
 
     },
     "System default" : {
@@ -3656,6 +4492,9 @@
     "Testing…" : {
 
     },
+    "Text" : {
+
+    },
     "Text size" : {
 
     },
@@ -3668,6 +4507,9 @@
     "The action may have changed or its recording may be unavailable. Reload the recording and try again." : {
 
     },
+    "The answer is still available in this conversation." : {
+
+    },
     "The audio file is permanently removed from disk. This can’t be undone." : {
 
     },
@@ -3675,6 +4517,21 @@
 
     },
     "The conversation is removed from this recording. This can't be undone." : {
+
+    },
+    "The full calendar context is saved even when these fields are kept." : {
+
+    },
+    "The library is updating. Try again in a moment." : {
+
+    },
+    "The meeting context is saved. Existing generated results are kept until you choose to regenerate them." : {
+
+    },
+    "The new results appear here when reprocessing finishes." : {
+
+    },
+    "The new transcript appears here when reprocessing finishes. Manage it in the menu bar's Queue & Recovery." : {
 
     },
     "The original recording stays unchanged." : {
@@ -3687,6 +4544,12 @@
 
     },
     "The saved language is unavailable with Apple Speech. Choose a supported language or change the transcription engine." : {
+
+    },
+    "The summary was regenerated while you were editing. Copy your text, cancel, and edit the new summary." : {
+
+    },
+    "The transcript text is saved. Rebuild the view from it." : {
 
     },
     "The update is stored in dBrief's support folder." : {
@@ -3709,6 +4572,9 @@
 
     },
     "They said: %@" : {
+
+    },
+    "Thinking…" : {
 
     },
     "This Mac" : {
@@ -3735,7 +4601,16 @@
     "This recording has no saved summary. Use the example or choose a recording with saved insights." : {
 
     },
+    "This recording has other analysis, but no action items were saved." : {
+
+    },
+    "This recording has other analysis, but no summary text was saved." : {
+
+    },
     "This recording · On-device" : {
+
+    },
+    "This week" : {
 
     },
     "TickTick" : {
@@ -3750,6 +4625,15 @@
     "Timings appear after your next transcription." : {
 
     },
+    "Title" : {
+
+    },
+    "To do: %@" : {
+
+    },
+    "Today %@" : {
+
+    },
     "Todoist" : {
 
     },
@@ -3760,6 +4644,9 @@
 
     },
     "Transcribe audio" : {
+
+    },
+    "Transcribe this recording to see its transcript, summary and actions." : {
 
     },
     "Transcribe while recording" : {
@@ -3777,6 +4664,12 @@
     "Transcript density" : {
 
     },
+    "Transcript is passed to your configured Local CLI command, which may use an external service." : {
+
+    },
+    "Transcript view couldn't be loaded" : {
+
+    },
     "Transcription" : {
 
     },
@@ -3787,6 +4680,9 @@
 
     },
     "Transcription models" : {
+
+    },
+    "Transcription pending" : {
 
     },
     "Transcription speed relative to real-time (audio ÷ transcription time)" : {
@@ -3807,6 +4703,9 @@
     "Type a name…" : {
 
     },
+    "Unavailable" : {
+
+    },
     "Unavailable device (reconnect)" : {
 
     },
@@ -3819,10 +4718,19 @@
     "Unfinished" : {
 
     },
+    "Unfinished Actions" : {
+
+    },
+    "Unfinished actions" : {
+
+    },
     "Unknown language" : {
 
     },
     "Unsaved changes" : {
+
+    },
+    "Untitled meeting" : {
 
     },
     "Update yt-dlp" : {
@@ -3893,6 +4801,9 @@
     "Used to fix spelling after transcription and in AI prompts" : {
 
     },
+    "Uses Apple's speech model for the selected language." : {
+
+    },
     "Uses the accent instead of the brand gradient on outlines and the AI sparkle." : {
 
     },
@@ -3909,6 +4820,12 @@
 
     },
     "Uses your configured chat fallback, matching spoken-summary generation." : {
+
+    },
+    "Using current defaults" : {
+
+    },
+    "Using previous attempt settings" : {
 
     },
     "Value" : {
@@ -3937,6 +4854,9 @@
 
     },
     "View transcript" : {
+
+    },
+    "Vocabulary correction" : {
 
     },
     "Voice" : {
@@ -3996,6 +4916,9 @@
     "Welcome to dBrief" : {
 
     },
+    "What did %@ commit to?" : {
+
+    },
     "What would you like to improve?" : {
 
     },
@@ -4020,6 +4943,18 @@
     "Whisper" : {
 
     },
+    "Whisper model" : {
+
+    },
+    "Who’s speaking?" : {
+
+    },
+    "Who’s this voice?" : {
+
+    },
+    "Wide" : {
+
+    },
     "Width" : {
 
     },
@@ -4029,10 +4964,22 @@
     "Works from any app. Defaults to ⌃⌥⌘R." : {
 
     },
+    "Write a spoken script" : {
+
+    },
     "Write a summary" : {
 
     },
     "Write results in" : {
+
+    },
+    "Writing the answer from what was found…" : {
+
+    },
+    "Yesterday %@" : {
+
+    },
+    "You" : {
 
     },
     "You are responsible for how you use dBrief, including informing participants, obtaining any required consent, and following applicable laws and your organisation’s policies." : {
@@ -4084,10 +5031,19 @@
         }
       }
     },
+    "about %lld minutes" : {
+
+    },
+    "about a minute" : {
+
+    },
     "claude" : {
 
     },
     "collapsed" : {
+
+    },
+    "configured endpoint" : {
 
     },
     "dBrief" : {
@@ -4151,6 +5107,9 @@
 
     },
     "slower than usual" : {
+
+    },
+    "takes a few minutes" : {
 
     },
     "um, uh, you know. Off keeps transcripts verbatim." : {

@@ -11,10 +11,10 @@ enum LibraryRowFormat {
     ) -> String {
         var style = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
         let time = date.formatted(style.hour().minute())
-        if calendar.isDate(date, inSameDayAs: now) { return "Today \(time)" }
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "Today \(time)") }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(date, inSameDayAs: yesterday) {
-            return "Yesterday \(time)"
+            return String(localized: "Yesterday \(time)")
         }
         if date <= now, calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
             return date.formatted(style.weekday(.abbreviated).hour().minute())
@@ -260,7 +260,7 @@ struct LiveSidebarRow: View {
     @State private var pulse = false
 
     private var title: String { recording.generatedTitle ?? recording.meetingTitleDraft }
-    private var statusText: String { isProcessing ? "Processing…" : "Recording…" }
+    private var statusText: String { isProcessing ? String(localized: "Processing…") : String(localized: "Recording…") }
     private var dotColor: Color { isProcessing ? .orange : .red }
 
     var body: some View {

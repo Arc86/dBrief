@@ -252,15 +252,15 @@ struct RecordingActionsView: View {
 
     private var emptyDescription: String {
         if isReadOnly {
-            return "Existing results remain unchanged while reprocessing is pending."
+            return String(localized: "Existing results remain unchanged while reprocessing is pending.")
         }
         if hasOtherAnalysis {
-            return "This recording has other analysis, but no action items were saved."
+            return String(localized: "This recording has other analysis, but no action items were saved.")
         }
         if canGenerate {
-            return "Generate available analysis from this recording's transcript."
+            return String(localized: "Generate available analysis from this recording's transcript.")
         }
-        return "A transcript is needed before action items can be generated."
+        return String(localized: "A transcript is needed before action items can be generated.")
     }
 
     private var generatingState: some View {

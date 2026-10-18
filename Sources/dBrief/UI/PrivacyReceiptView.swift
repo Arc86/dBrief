@@ -91,7 +91,7 @@ struct PrivacyReceiptView: View {
     private var recordingTitle: String {
         let title = (recording.generatedTitle ?? recording.meetingTitleDraft)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty ? "This recording" : title
+        return title.isEmpty ? String(localized: "This recording") : title
     }
 
     private var footer: some View {
@@ -242,16 +242,16 @@ struct PrivacyReceiptView: View {
 
     private func attemptDetails(_ attempt: PrivacyAttempt) -> some View {
         Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-            detail("Provider", attempt.operation.destination.provider.receiptLabel)
-            if let model = attempt.operation.destination.model { detail("Model", model) }
-            if let host = attempt.operation.destination.hostname { detail("Hostname", host) }
-            detail("Data", attempt.operation.data.map(\.receiptLabel).sorted().joined(separator: ", "))
-            if let format = attempt.operation.responseFormat { detail("Response format", format.rawValue) }
-            detail("Started", attempt.startedAt.formatted(date: .abbreviated, time: .standard))
+            detail(String(localized: "Provider"), attempt.operation.destination.provider.receiptLabel)
+            if let model = attempt.operation.destination.model { detail(String(localized: "Model"), model) }
+            if let host = attempt.operation.destination.hostname { detail(String(localized: "Hostname"), host) }
+            detail(String(localized: "Data"), attempt.operation.data.map(\.receiptLabel).sorted().joined(separator: ", "))
+            if let format = attempt.operation.responseFormat { detail(String(localized: "Response format"), format.rawValue) }
+            detail(String(localized: "Started"), attempt.startedAt.formatted(date: .abbreviated, time: .standard))
             if let finished = attempt.finishedAt {
-                detail("Finished", finished.formatted(date: .abbreviated, time: .standard))
+                detail(String(localized: "Finished"), finished.formatted(date: .abbreviated, time: .standard))
             }
-            detail("Run", attempt.runID.uuidString)
+            detail(String(localized: "Run"), attempt.runID.uuidString)
         }
         .uiFont(.system(size: 12))
     }
@@ -272,11 +272,11 @@ struct PrivacyReceiptView: View {
 private extension PrivacyAttempt.Outcome {
     var receiptLabel: String {
         switch self {
-        case .started: "Completion unconfirmed"
-        case .succeeded: "Succeeded"
-        case .failed: "Failed"
-        case .cancelled: "Cancelled"
-        case .redirected: "Redirected"
+        case .started: String(localized: "Completion unconfirmed")
+        case .succeeded: String(localized: "Succeeded")
+        case .failed: String(localized: "Failed")
+        case .cancelled: String(localized: "Cancelled")
+        case .redirected: String(localized: "Redirected")
         }
     }
 
@@ -294,9 +294,9 @@ private extension PrivacyAttempt.Outcome {
 private extension PrivacyDestination.Location {
     var receiptLabel: String {
         switch self {
-        case .local: "On this Mac"
-        case .remote: "Remote"
-        case .externallyManaged: "Externally managed"
+        case .local: String(localized: "On this Mac")
+        case .remote: String(localized: "Remote")
+        case .externallyManaged: String(localized: "Externally managed")
         }
     }
 
@@ -312,26 +312,26 @@ private extension PrivacyDestination.Location {
 private extension PrivacyOperation.Stage {
     var receiptLabel: String {
         switch self {
-        case .finalization: "Recording finalization"
-        case .transcription: "Transcription"
-        case .liveTranscription: "Live transcription"
-        case .formatProbe: "Format probe"
-        case .speakerAnalysis: "Speaker analysis"
-        case .spelling: "Spelling correction"
-        case .analysis: "AI analysis"
-        case .summary: "Summary"
-        case .actionItems: "Action items"
-        case .tags: "Tags"
-        case .title: "Title"
-        case .chat: "Chat"
-        case .promptImprovement: "Prompt improvement"
-        case .markdownExport: "Markdown export"
-        case .integration: "Integration"
-        case .clipboardExport: "Copy to clipboard"
-        case .spokenSummaryScript: "Spoken summary script"
-        case .speechSynthesis: "Speech synthesis"
-        case .audioExport: "Audio export"
-        case .calendarFetch: "Calendar fetch"
+        case .finalization: String(localized: "Recording finalization")
+        case .transcription: String(localized: "Transcription")
+        case .liveTranscription: String(localized: "Live transcription")
+        case .formatProbe: String(localized: "Format probe")
+        case .speakerAnalysis: String(localized: "Speaker analysis")
+        case .spelling: String(localized: "Spelling correction")
+        case .analysis: String(localized: "AI analysis")
+        case .summary: String(localized: "Summary")
+        case .actionItems: String(localized: "Action items")
+        case .tags: String(localized: "Tags")
+        case .title: String(localized: "Title")
+        case .chat: String(localized: "Chat")
+        case .promptImprovement: String(localized: "Prompt improvement")
+        case .markdownExport: String(localized: "Markdown export")
+        case .integration: String(localized: "Integration")
+        case .clipboardExport: String(localized: "Copy to clipboard")
+        case .spokenSummaryScript: String(localized: "Spoken summary script")
+        case .speechSynthesis: String(localized: "Speech synthesis")
+        case .audioExport: String(localized: "Audio export")
+        case .calendarFetch: String(localized: "Calendar fetch")
         }
     }
 }
@@ -339,11 +339,11 @@ private extension PrivacyOperation.Stage {
 private extension PrivacyOperation.DataCategory {
     var receiptLabel: String {
         switch self {
-        case .recordingAudio: "Recording audio"
-        case .syntheticAudio: "Synthetic probe audio"
-        case .generatedAudio: "Generated audio"
-        case .text: "Text"
-        case .metadata: "Metadata"
+        case .recordingAudio: String(localized: "Recording audio")
+        case .syntheticAudio: String(localized: "Synthetic probe audio")
+        case .generatedAudio: String(localized: "Generated audio")
+        case .text: String(localized: "Text")
+        case .metadata: String(localized: "Metadata")
         }
     }
 }
@@ -351,11 +351,11 @@ private extension PrivacyOperation.DataCategory {
 private extension PrivacyDestination.Provider {
     var receiptLabel: String {
         switch self {
-        case .openAICompatible: "OpenAI-compatible API"
+        case .openAICompatible: String(localized: "OpenAI-compatible API")
         case .anthropic: "Anthropic"
         case .deepgram: "Deepgram"
         case .elevenLabs: "ElevenLabs"
-        case .custom: "Custom provider"
+        case .custom: String(localized: "Custom provider")
         case .whisper: "Whisper"
         case .speakerKit: "SpeakerKit"
         case .parakeet: "Parakeet"
@@ -363,19 +363,19 @@ private extension PrivacyDestination.Provider {
         case .appleSpeech: "Apple Speech"
         case .speechAnalyzer: "Apple SpeechAnalyzer"
         case .appleIntelligence: "Apple Intelligence"
-        case .localModel: "Local model"
-        case .localCLI: "Custom command"
+        case .localModel: String(localized: "Local model")
+        case .localCLI: String(localized: "Custom command")
         case .appleNotes: "Apple Notes"
         case .appleReminders: "Apple Reminders"
         case .webhook: "Webhook"
         case .tickTick: "TickTick"
         case .todoist: "Todoist"
         case .notion: "Notion"
-        case .fileSystem: "File system"
-        case .clipboard: "System clipboard"
+        case .fileSystem: String(localized: "File system")
+        case .clipboard: String(localized: "System clipboard")
         case .ttsKit: "TTSKit"
         case .kokoro: "Kokoro"
-        case .claudeCLI: "Claude CLI connector"
+        case .claudeCLI: String(localized: "Claude CLI connector")
         }
     }
 }

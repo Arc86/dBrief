@@ -18,6 +18,22 @@
 			<string>%lld genodigden geladen</string>
 		</dict>
 	</dict>
+	<key>%lld meeting participants</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld deelnemer aan de vergadering</string>
+			<key>other</key>
+			<string>%lld deelnemers aan de vergadering</string>
+		</dict>
+	</dict>
 	<key>%lld need attention</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -48,6 +64,70 @@
 			<string>%lld deelnemer</string>
 			<key>other</key>
 			<string>%lld deelnemers</string>
+		</dict>
+	</dict>
+	<key>%lld words</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld woord</string>
+			<key>other</key>
+			<string>%lld woorden</string>
+		</dict>
+	</dict>
+	<key>Add %lld Items</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld item toevoegen</string>
+			<key>other</key>
+			<string>%lld items toevoegen</string>
+		</dict>
+	</dict>
+	<key>Added %lld action items.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld actiepunt toegevoegd.</string>
+			<key>other</key>
+			<string>%lld actiepunten toegevoegd.</string>
+		</dict>
+	</dict>
+	<key>Name the %lld voices before the analysis continues.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Geef de stem een naam voordat de analyse verdergaat.</string>
+			<key>other</key>
+			<string>Geef de %lld stemmen een naam voordat de analyse verdergaat.</string>
 		</dict>
 	</dict>
 </dict>

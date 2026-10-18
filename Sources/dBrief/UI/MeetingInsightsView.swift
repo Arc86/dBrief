@@ -95,7 +95,7 @@ struct MeetingInsightsPresentation {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         title = rawTitle.isEmpty ? nil : rawTitle
         date = recording.date
-        duration = recording.duration.isFinite && recording.duration > 0 ? recording.formattedDuration : "Unavailable"
+        duration = recording.duration.isFinite && recording.duration > 0 ? recording.formattedDuration : String(localized: "Unavailable")
 
         let audioURL = recording.finalizedAudioURL ?? recording.fileURL
         let rawFileName = audioURL.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -135,19 +135,19 @@ struct MeetingInsightsPresentation {
         var origins: [Origin] = []
         if hasSummary {
             origins.append(Origin(
-                id: "summary", label: "Summary",
+                id: "summary", label: String(localized: "Summary"),
                 modelName: Self.nonempty(provenance?.summary ?? recordingProvenance?.summary)
             ))
         }
         if hasActions {
             origins.append(Origin(
-                id: "actions", label: "Actions",
+                id: "actions", label: String(localized: "Actions"),
                 modelName: Self.nonempty(provenance?.actionItems ?? recordingProvenance?.actionItems)
             ))
         }
         if hasTagsOrSentiment {
             origins.append(Origin(
-                id: "tags", label: "Tags and sentiment",
+                id: "tags", label: String(localized: "Tags and sentiment"),
                 modelName: Self.nonempty(provenance?.tags ?? recordingProvenance?.tags)
             ))
         }
@@ -219,14 +219,14 @@ private struct MeetingInformationCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            MeetingCardHeading(title: "Recording", symbol: "record.circle")
-            MeetingFactRow(label: "Date", value: content.date.formatted(date: .complete, time: .shortened))
-            MeetingFactRow(label: "Duration", value: content.duration)
+            MeetingCardHeading(title: String(localized: "Recording"), symbol: "record.circle")
+            MeetingFactRow(label: String(localized: "Date"), value: content.date.formatted(date: .complete, time: .shortened))
+            MeetingFactRow(label: String(localized: "Duration"), value: content.duration)
             if let audioFileName = content.audioFileName {
-                MeetingFactRow(label: "Audio file", value: audioFileName, selectable: true)
+                MeetingFactRow(label: String(localized: "Audio file"), value: audioFileName, selectable: true)
             }
             if let fileSize = content.fileSize {
-                MeetingFactRow(label: "File size", value: fileSize)
+                MeetingFactRow(label: String(localized: "File size"), value: fileSize)
             }
         }
         .padding(18)
@@ -243,7 +243,7 @@ private struct MeetingParticipantsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            MeetingCardHeading(title: "Attendees", symbol: "person.2")
+            MeetingCardHeading(title: String(localized: "Attendees"), symbol: "person.2")
             Text(names.joined(separator: ", "))
                 .font(ViewerFonts.font(for: reading, effectiveMode: mode))
                 .lineSpacing(ViewerFonts.additionalLineSpacing(for: reading, effectiveMode: mode))
@@ -267,7 +267,7 @@ private struct MeetingSpeakersCard<SpeakerContent: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            MeetingCardHeading(title: "Speakers", symbol: "person.wave.2")
+            MeetingCardHeading(title: String(localized: "Speakers"), symbol: "person.wave.2")
             if speakers.isEmpty {
                 Text(transcriptAvailable
                      ? "No speakers were identified in the transcript."
@@ -298,12 +298,12 @@ private struct MeetingProcessingCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            MeetingCardHeading(title: "Analysis and processing", symbol: "sparkles")
+            MeetingCardHeading(title: String(localized: "Analysis and processing"), symbol: "sparkles")
             if !tags.isEmpty {
-                MeetingFactRow(label: "Tags", value: tags.map { "#\($0)" }.joined(separator: "  "), selectable: true)
+                MeetingFactRow(label: String(localized: "Tags"), value: tags.map { "#\($0)" }.joined(separator: "  "), selectable: true)
             }
             if let sentiment {
-                MeetingFactRow(label: "Sentiment", value: sentiment, selectable: true)
+                MeetingFactRow(label: String(localized: "Sentiment"), value: sentiment, selectable: true)
             }
             if !origins.isEmpty {
                 VStack(alignment: .leading, spacing: 9) {
@@ -311,7 +311,7 @@ private struct MeetingProcessingCard: View {
                         .uiFont(.system(size: 12, weight: .semibold))
                         .foregroundStyle(palette.secondary.color)
                     ForEach(origins) { origin in
-                        MeetingFactRow(label: origin.label, value: origin.modelName ?? "Origin not recorded")
+                        MeetingFactRow(label: origin.label, value: origin.modelName ?? String(localized: "Origin not recorded"))
                     }
                 }
             }
@@ -349,7 +349,7 @@ private struct MeetingPrivacyCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            MeetingCardHeading(title: "Privacy", symbol: "hand.raised")
+            MeetingCardHeading(title: String(localized: "Privacy"), symbol: "hand.raised")
             Button(action: onPrivacyReceipt) {
                 Label("View privacy receipt", systemImage: "doc.text.magnifyingglass")
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -159,7 +159,7 @@ struct ProcessingQueueView: View {
             expanded: expandedItem == key, toggle: { expandedItem = expandedItem == key ? nil : key }) {
                 Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(palette.secondary.color)
             } metadata: {
-                Text("\(request?.options.operation.title ?? "Reprocessing") · \(attempt.status == .queued ? "Queued" : "Needs attention")")
+                Text("\(request?.options.operation.title ?? String(localized: "Reprocessing")) · \(attempt.status == .queued ? String(localized: "Queued") : String(localized: "Needs attention"))")
             } actions: {
                 VStack(alignment: .leading, spacing: 6) {
                     if let message = attempt.message {

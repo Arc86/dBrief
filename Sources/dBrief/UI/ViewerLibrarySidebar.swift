@@ -320,14 +320,14 @@ struct ViewerLibrarySidebar<Results: View>: View {
 
     private var utilities: some View {
         HStack(spacing: 4) {
-            SidebarUtilityButton(symbol: "arrow.clockwise", label: "Refresh recordings",
+            SidebarUtilityButton(symbol: "arrow.clockwise", label: String(localized: "Refresh recordings"),
                                  isBusy: isRefreshing, action: onRefresh)
-            SidebarUtilityMenu(symbol: "ellipsis", label: "Library options") {
+            SidebarUtilityMenu(symbol: "ellipsis", label: String(localized: "Library options")) {
                 Button("Rebuild Search Index", systemImage: "arrow.clockwise", action: onRebuildSearchIndex)
                     .disabled(isRefreshing)
             }
             Spacer(minLength: 8)
-            SidebarUtilityButton(symbol: "gearshape", label: "Open Settings", action: onSettings)
+            SidebarUtilityButton(symbol: "gearshape", label: String(localized: "Open Settings"), action: onSettings)
         }
     }
 }
@@ -363,8 +363,8 @@ struct ViewerSidebarStatusFilterMenu: View {
         .buttonStyle(.typographyBorderless)
         .menuIndicator(.hidden)
         .accessibilityLabel("Filter by recording status")
-        .accessibilityValue(status?.title ?? "Any status")
-        .help("Status: \(status?.title ?? "Any status")")
+        .accessibilityValue(status?.title ?? String(localized: "Any status"))
+        .help("Status: \(status?.title ?? String(localized: "Any status"))")
     }
 }
 
@@ -393,7 +393,7 @@ private struct SidebarUtilityButton: View {
         .disabled(isBusy)
         .background(hovering && !isBusy ? palette.selected.color : .clear, in: RoundedRectangle(cornerRadius: 7))
         .onHover { hovering = $0 }
-        .help(isBusy ? "Refreshing…" : label)
+        .help(isBusy ? String(localized: "Refreshing…") : label)
         .accessibilityLabel(label)
         .accessibilityValue(isBusy ? "In progress" : "")
     }

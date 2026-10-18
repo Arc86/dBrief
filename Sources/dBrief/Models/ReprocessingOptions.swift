@@ -7,9 +7,9 @@ enum ReprocessingOperation: String, Codable, Sendable, CaseIterable {
 
     var title: String {
         switch self {
-        case .transcribe: "Retranscribe"
-        case .analysis: "Re-run AI Analysis"
-        case .speakers: "Detect Speakers Again"
+        case .transcribe: String(localized: "Retranscribe")
+        case .analysis: String(localized: "Re-run AI Analysis")
+        case .speakers: String(localized: "Detect Speakers Again")
         }
     }
     var displayName: String { title }

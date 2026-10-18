@@ -18,6 +18,15 @@ COMPILED="$ROOT/Sources/dBrief/Resources/Localizations"
 OUT="$ROOT/.build/loc"
 
 compile() {
+    # Keep xcstringstool's layout for empty entries ("{", blank line, "}"), so a
+    # catalog edited by a script doesn't churn on the next sync.
+    python3 - "$CATALOG" <<'PY'
+import re, sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+text = re.sub(r"^( *)(.*) : \{\}(,?)$", lambda m: f"{m[1]}{m[2]} : {{\n\n{m[1]}}}{m[3]}", text, flags=re.M)
+open(path, "w", encoding="utf-8").write(text)
+PY
     rm -rf "$COMPILED"
     mkdir -p "$COMPILED"
     xcrun xcstringstool compile "$CATALOG" --output-directory "$COMPILED"

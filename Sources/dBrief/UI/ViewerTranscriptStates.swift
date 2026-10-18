@@ -53,15 +53,15 @@ struct ViewerNoTranscriptState: View {
     }
 
     private var title: String {
-        if isPending { return "Transcription pending" }
-        return canRebuild ? "Transcript view couldn't be loaded" : "Not transcribed yet"
+        if isPending { return String(localized: "Transcription pending") }
+        return canRebuild ? String(localized: "Transcript view couldn't be loaded") : String(localized: "Not transcribed yet")
     }
 
     private var message: String {
-        if isPending { return "The new transcript appears here when reprocessing finishes. Manage it in the menu bar's Queue & Recovery." }
+        if isPending { return String(localized: "The new transcript appears here when reprocessing finishes. Manage it in the menu bar's Queue & Recovery.") }
         return canRebuild
-            ? "The transcript text is saved. Rebuild the view from it."
-            : "Transcribe this recording to see its transcript, summary and actions."
+            ? String(localized: "The transcript text is saved. Rebuild the view from it.")
+            : String(localized: "Transcribe this recording to see its transcript, summary and actions.")
     }
 }
 
@@ -82,7 +82,7 @@ struct ViewerLiveStatus: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 PulsingDot(color: isProcessing ? Brand.processing : Brand.recording, size: 8)
-                Text(isProcessing ? (step?.name ?? "Processing…") : "Recording — live transcript")
+                Text(isProcessing ? (step?.name ?? String(localized: "Processing…")) : String(localized: "Recording — live transcript"))
                     .uiFont(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                 Spacer()

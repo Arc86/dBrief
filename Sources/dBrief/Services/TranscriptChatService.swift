@@ -450,7 +450,7 @@ final class TranscriptChatService {
                                             canRetrieve: !chatTurns.isEmpty)
                 messages[assistantIdx].content = "Error: \(error.localizedDescription)"
             } else {
-                streamingNotice = "Response interrupted: \(error.localizedDescription)"
+                streamingNotice = String(localized: "Response interrupted: \(error.localizedDescription)")
             }
         }
     }
@@ -466,9 +466,9 @@ final class TranscriptChatService {
             messages[idx].content = Self.scanStoppedNote
             coverage = nil
             offerScan = false
-            streamingNotice = "Stopped checking the whole recording."
+            streamingNotice = String(localized: "Stopped checking the whole recording.")
         } else {
-            streamingNotice = "Stopped generating."
+            streamingNotice = String(localized: "Stopped generating.")
             if messages.last?.role == .assistant, messages.last?.content.isEmpty == true {
                 messages.removeLast()
             }
@@ -775,7 +775,7 @@ final class TranscriptChatService {
 
     private func showIndexingStatus() {
         guard !invalidated else { return }
-        indexingStatus = "Preparing chat for this long recording… (the first time downloads a ~480 MB on-device search model)"
+        indexingStatus = String(localized: "Preparing chat for this long recording… (the first time downloads a ~480 MB on-device search model)")
     }
 
     /// Transcript excerpts for one question: cosine (when the index has vectors)
@@ -975,7 +975,7 @@ final class TranscriptChatService {
             for part in parts {
                 try checkScan(sendID)
                 scanProgress = (part.index, part.total)
-                scanStatus = "Checking part \(part.index) of \(part.total)…"
+                scanStatus = String(localized: "Checking part \(part.index) of \(part.total)…")
                 let texts: [String]
                 switch engine {
                 case .gemma(let plugin):
@@ -1004,7 +1004,7 @@ final class TranscriptChatService {
 
             // Reduce: answer from the findings, per group when they don't fit one prompt.
             scanProgress = nil
-            scanStatus = "Writing the answer from what was found…"
+            scanStatus = String(localized: "Writing the answer from what was found…")
             var budget = profile.scanFindingsTokens
             var answer = ""
             var evidenceShortened = false
@@ -1051,11 +1051,11 @@ final class TranscriptChatService {
             }
             publish(answer)
             coverage = .full
-            var note = "Checked the whole recording."
+            var note = String(localized: "Checked the whole recording.")
             if declinedParts > 0 {
-                note += " Apple Intelligence declined to read \(declinedParts) of \(parts.count) parts, so anything in them may be missing."
+                note += " " + String(localized: "Apple Intelligence declined to read \(declinedParts) of \(parts.count) parts, so anything in them may be missing.")
             }
-            if evidenceShortened { note += " Some long evidence was shortened." }
+            if evidenceShortened { note += " " + String(localized: "Some long evidence was shortened.") }
             scanFootnote = (assistantID, note)
         } catch {
             guard !invalidated, !Task.isCancelled, activeSendID == sendID,
