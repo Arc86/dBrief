@@ -60,6 +60,38 @@ struct ChatScrollFollowTests {
         #expect(controller.shouldFollow)
     }
 
+    @Test("A notched wheel without live-scroll notifications still pauses and resumes")
+    func notchedWheel() async throws {
+        let (scroll, controller) = fixture()
+        // Scrolling toward older messages pauses before AppKit moves the view,
+        // so a streaming token cannot pull it back to the bottom first.
+        controller.wheelScrolled(deltaY: 3)
+        #expect(!controller.shouldFollow)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 500))
+        // Scrolling down without reaching the bottom keeps the pause.
+        controller.wheelScrolled(deltaY: -3)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!controller.shouldFollow)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 900))
+        controller.wheelScrolled(deltaY: -3)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(controller.shouldFollow)
+    }
+
+    @Test("The observer attaches when it joins its scroll view after creation")
+    func lateAttachment() {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        scroll.documentView = DocumentView(frame: NSRect(x: 0, y: 0, width: 400, height: 1200))
+        let window = NSWindow(contentRect: scroll.frame, styleMask: [.titled], backing: .buffered, defer: true)
+        window.contentView = scroll
+        let controller = ChatScrollFollowController()
+        defer { controller.detach() }
+        let observer = ChatScrollFollowObserver.AttachingView(controller: controller)
+        scroll.documentView?.addSubview(observer)
+        NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+        #expect(!controller.shouldFollow)
+    }
+
     @Test("Sending a new prompt resumes a paused conversation")
     func newPrompt() {
         let (scroll, controller) = fixture()
