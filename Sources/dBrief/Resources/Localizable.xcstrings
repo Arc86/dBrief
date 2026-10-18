@@ -56,6 +56,9 @@
     "%@  All day" : {
 
     },
+    "%@  ·  Recommended" : {
+
+    },
     "%@ (%lld)" : {
       "localizations" : {
         "en" : {
@@ -1314,6 +1317,9 @@
     "A voice is added when you name a speaker in a transcript, or with “Save voice to library” from the speaker menu." : {
 
     },
+    "AI Analysis" : {
+
+    },
     "AI CLI effort is saved but inactive until Claude Code is selected as its effort provider." : {
 
     },
@@ -2345,6 +2351,9 @@
 
     },
     "Capture" : {
+
+    },
+    "Captures system audio (other people on calls)" : {
 
     },
     "Captures the other side of calls (system audio)." : {
@@ -3903,6 +3912,9 @@
     "Font" : {
 
     },
+    "For built-in Apple transcription" : {
+
+    },
     "For on-device and Local CLI analysis" : {
 
     },
@@ -4042,6 +4054,9 @@
 
     },
     "Google Keep token is required" : {
+
+    },
+    "Grant" : {
 
     },
     "Granted" : {
@@ -4474,6 +4489,9 @@
 
     },
     "Line spacing" : {
+
+    },
+    "Link Calendar Meeting" : {
 
     },
     "Link Calendar Meeting…" : {
@@ -5827,6 +5845,9 @@
     "Post-processing" : {
 
     },
+    "Pre-fills meeting title and participants" : {
+
+    },
     "Pre-fills meeting titles and attendees." : {
 
     },
@@ -6445,6 +6466,9 @@
     "Recording…" : {
 
     },
+    "Records your voice" : {
+
+    },
     "Recover Audio" : {
 
     },
@@ -6997,6 +7021,9 @@
     "Saving…" : {
 
     },
+    "Screen Recording" : {
+
+    },
     "Screen recording" : {
 
     },
@@ -7397,6 +7424,9 @@
 
     },
     "Speakers" : {
+
+    },
+    "Speech Recognition" : {
 
     },
     "Speech recognition" : {
@@ -9367,6 +9397,26 @@
     },
     "~%.1f GiB RAM" : {
 
+    },
+    "~%.1f of %.0f GiB RAM" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "~%1$.1f of %2$.0f GiB RAM"
+          }
+        }
+      }
+    },
+    "~%.1f of %.0f GiB RAM · includes speakers" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "~%1$.1f of %2$.0f GiB RAM · includes speakers"
+          }
+        }
+      }
     },
     "~%@ GiB RAM" : {
 

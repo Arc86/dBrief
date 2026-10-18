@@ -149,29 +149,29 @@ struct OnboardingView: View {
             VStack(spacing: 8) {
                 permissionRow(
                     state: recordingManager.microphoneAuthorizationState,
-                    title: "Microphone",
-                    subtitle: "Records your voice",
+                    title: String(localized: "Microphone"),
+                    subtitle: String(localized: "Records your voice"),
                     action: handleMicrophonePermission
                 )
 
                 permissionRow(
                     state: systemAudioPermissionState,
-                    title: "Screen Recording",
-                    subtitle: "Captures system audio (other people on calls)",
+                    title: String(localized: "Screen Recording"),
+                    subtitle: String(localized: "Captures system audio (other people on calls)"),
                     action: handleScreenRecordingPermission
                 )
 
                 permissionRow(
                     state: speechPermissionState,
-                    title: "Speech Recognition",
-                    subtitle: "For built-in Apple transcription",
+                    title: String(localized: "Speech Recognition"),
+                    subtitle: String(localized: "For built-in Apple transcription"),
                     action: handleSpeechPermission
                 )
 
                 permissionRow(
                     state: calendarPermissionState,
-                    title: "Calendar",
-                    subtitle: "Pre-fills meeting title and participants",
+                    title: String(localized: "Calendar"),
+                    subtitle: String(localized: "Pre-fills meeting title and participants"),
                     action: handleCalendarPermission
                 )
             }
@@ -274,8 +274,8 @@ struct OnboardingView: View {
 
     private func permissionActionTitle(for state: PermissionAuthorizationState) -> String? {
         switch PermissionRecoveryPolicy.action(for: state) {
-        case .requestAccess: "Grant"
-        case .openSystemSettings: "Open Settings"
+        case .requestAccess: String(localized: "Grant")
+        case .openSystemSettings: String(localized: "Open Settings")
         case .explainRestriction, .none: nil
         }
     }
@@ -370,7 +370,7 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 enginePicker(
-                    title: "Transcription",
+                    title: String(localized: "Transcription"),
                     selection: $settings.transcriptionEngine,
                     cases: AppSettings.TranscriptionEngine.allCases,
                     label: { $0.displayName },
@@ -379,7 +379,7 @@ struct OnboardingView: View {
                 )
 
                 enginePicker(
-                    title: "AI Analysis",
+                    title: String(localized: "AI Analysis"),
                     selection: $settings.aiEngine,
                     cases: AppSettings.AIEngine.allCases,
                     label: { $0.displayName },
@@ -448,7 +448,7 @@ struct OnboardingView: View {
 
             Picker(title, selection: selection) {
                 ForEach(cases, id: \.self) { item in
-                    Text(recommended(item) ? "\(label(item))  ·  Recommended" : label(item))
+                    Text(recommended(item) ? String(localized: "\(label(item))  ·  Recommended") : label(item))
                         .tag(item)
                 }
             }

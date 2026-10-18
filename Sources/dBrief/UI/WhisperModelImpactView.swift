@@ -19,10 +19,15 @@ struct WhisperModelImpactView: View {
                         .tint(fraction <= 0.25 ? .green : fraction <= 0.5 ? .yellow : .orange)
                         .frame(width: 80)
                         .accessibilityLabel("Estimated share of installed RAM")
-                        .accessibilityValue(String(format: "%.0f percent", fraction * 100))
-                    Text(String(format: "~%.1f of %.0f GiB RAM%@", total,
-                                Double(physicalMemoryBytes) / 1_073_741_824,
-                                identifySpeakers ? " · includes speakers" : ""))
+                        .accessibilityValue(Text("\(fraction * 100, specifier: "%.0f") percent"))
+                    Group {
+                        let installed = Double(physicalMemoryBytes) / 1_073_741_824
+                        if identifySpeakers {
+                            Text("~\(total, specifier: "%.1f") of \(installed, specifier: "%.0f") GiB RAM · includes speakers")
+                        } else {
+                            Text("~\(total, specifier: "%.1f") of \(installed, specifier: "%.0f") GiB RAM")
+                        }
+                    }
                         .uiFont(.caption).foregroundStyle(.secondary)
                 }
                 if fraction > 0.5 {
