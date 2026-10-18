@@ -330,6 +330,9 @@ struct TranscriptDetailView: View, Equatable {
         // what actually removes the duplicate.
         .navigationTitle("")
         .focusedSceneValue(\.recordingViewer, viewerActions)
+        .modifier(ViewerAnnouncements(saveError: analysisSaveError, copied: copied, isGenerating: isGenerating,
+                                      hasInsights: insights != nil, offerReanalysis: offerReanalysis,
+                                      announcer: context.appState.announcer))
         .task(id: context.recordingManager.reprocessingRecoveryReady) {
             await loadTranscript()
         }
@@ -677,7 +680,7 @@ struct TranscriptDetailView: View, Equatable {
             ForEach(ViewerPresentationPolicy.mountedModes(visited: visitedModes, current: mode), id: \.self) { tab in
                 let isCurrent = tab == mode
                 documentContent(for: tab)
-                    .modifier(ViewerMountedTab(isCurrent: isCurrent))
+                    .modifier(ViewerMountedTab(isCurrent: isCurrent, disablesWhenHidden: tab != .transcript))
             }
         }
         .onChange(of: mode, initial: true) { previous, current in
@@ -1731,13 +1734,22 @@ struct TranscriptDetailView: View, Equatable {
             // Surface results: jump to the transcript view if elsewhere.
             if isSearching, mode != .transcript { mode = .transcript }
             searchScrollTick &+= 1
+            if isSearching { announceSearchPosition() }
         }
+    }
+
+    /// The count and the current match, spoken: highlights alone are invisible to VoiceOver.
+    private func announceSearchPosition() {
+        let texts = Dictionary(displayedTurns.map { ($0.id, $0.text) }, uniquingKeysWith: { first, _ in first })
+        context.appState.announcer.announce(
+            TranscriptSearch.announcement(for: searchResult, current: currentMatchIndex) { texts[$0] })
     }
 
     private func gotoNextMatch() {
         guard !searchResult.matches.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex + 1) % searchResult.matches.count
         searchScrollTick &+= 1
+        announceSearchPosition()
     }
 
     private func gotoPrevMatch() {
@@ -1745,6 +1757,7 @@ struct TranscriptDetailView: View, Equatable {
         let n = searchResult.matches.count
         currentMatchIndex = (currentMatchIndex - 1 + n) % n
         searchScrollTick &+= 1
+        announceSearchPosition()
     }
 
     /// Zero-size buttons that register Find keyboard shortcuts without adding any
@@ -1877,6 +1890,7 @@ struct TranscriptDetailView: View, Equatable {
                     }
                 }
             }
+            context.appState.announcer.announce("Analysis saved")
             return true
         } catch {
             analysisSaveError = "Analysis could not be saved. Your draft is kept. \(error.localizedDescription)"
@@ -2058,14 +2072,17 @@ private struct PresenceDotAnimation: View {
     }
 }
 
-/// A document tab that stays mounted while hidden. No `.disabled`: it writes
+/// A document tab that stays mounted while hidden. A hidden tab is disabled so Tab
+/// can't land on its invisible buttons, except the transcript: `.disabled` writes
 /// `isEnabled` into the environment, which bypasses the Equatable transcript rows
 /// and re-renders every one of them on each tab switch.
 struct ViewerMountedTab: ViewModifier {
     let isCurrent: Bool
+    var disablesWhenHidden = true
 
     func body(content: Content) -> some View {
         content
+            .disabled(disablesWhenHidden && !isCurrent)
             .opacity(isCurrent ? 1 : 0)
             .allowsHitTesting(isCurrent)
             .accessibilityHidden(!isCurrent)

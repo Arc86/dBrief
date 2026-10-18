@@ -38,6 +38,9 @@ struct SpokenSummaryPlayerView: View {
             header
             content
         }
+        .onChange(of: phase.announcement, initial: true) { _, text in
+            if let text { AccessibilityAnnouncer.shared.announce(text, priority: phase.isFailure ? .high : .normal) }
+        }
         .padding(20)
         .frame(width: 440)
         .background(palette.surface.color)

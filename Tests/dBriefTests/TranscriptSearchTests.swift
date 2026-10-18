@@ -91,4 +91,23 @@ struct TranscriptSearchTests {
         let result = TranscriptSearch.search(turns: [turn("Hello world")], query: "x*")
         #expect(result.matches.isEmpty)
     }
+
+    @Test("VoiceOver hears the count and the text around the current match")
+    func announcement() {
+        let id = UUID()
+        let text = "We agreed to ship the new onboarding flow on Friday after the review."
+        let result = TranscriptSearch.search(turns: [turn(text, id)], query: "friday")
+        #expect(TranscriptSearch.announcement(for: result, current: 0) { $0 == id ? text : nil }
+                == "Match 1 of 1: …the new onboarding flow on Friday after the review.")
+        #expect(TranscriptSearch.announcement(for: TranscriptSearch.search(turns: [turn(text)], query: "zebra"),
+                                              current: 0) { _ in nil } == "No results")
+        #expect(TranscriptSearch.announcement(for: TranscriptSearch.search(turns: [turn(text)], query: "("),
+                                              current: 0) { _ in nil } == "Invalid search pattern")
+    }
+
+    @Test func snippetMarksOnlyCutEnds() {
+        #expect(TranscriptSearch.snippet("short text", location: 0, length: 5) == "short text")
+        #expect(TranscriptSearch.snippet("abcdefghij", location: 5, length: 1, context: 2) == "…defgh…")
+        #expect(TranscriptSearch.snippet("one two three four five", location: 8, length: 5, context: 5) == "…two three four…")
+    }
 }
