@@ -15,7 +15,7 @@ struct FolderPathControl: NSViewRepresentable {
         let control = NSPathControl()
         control.pathStyle = .standard
         control.isEditable = false
-        control.focusRingType = .none
+        control.focusRingType = .default
         control.controlSize = .small
         control.font = AppFontStyle.system(size: NSFont.smallSystemFontSize).nsFont(using: typography)
         control.backgroundColor = .clear

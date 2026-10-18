@@ -3,6 +3,7 @@ import SwiftUI
 struct PromptImprovementPanel: View {
     @Bindable var session: PromptEditorSession
     @State private var showRequest = true
+    @FocusState private var requestFocused: Bool
     @Environment(\.viewerPalette) private var palette
     var body: some View {
         ScrollView {
@@ -24,8 +25,10 @@ struct PromptImprovementPanel: View {
                             .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .strokeBorder(palette.divider.color, lineWidth: 1)
+                                    .strokeBorder(requestFocused ? palette.accentText.color : palette.divider.color,
+                                                  lineWidth: requestFocused ? 2 : 1)
                             }
+                            .focused($requestFocused)
                             .accessibilityLabel("What would you like to improve?")
                         ViewerWrapLayout(spacing: 6, lineSpacing: 6) { shortcuts }.buttonStyle(.settingsSecondary)
                         Text("Uses this prompt and your request. No recording is sent.")

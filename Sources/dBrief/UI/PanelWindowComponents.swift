@@ -132,6 +132,7 @@ extension View {
 private struct PanelTextFieldModifier: ViewModifier {
     let height: CGFloat
     @Environment(\.viewerPalette) private var palette
+    @FocusState private var focused: Bool
 
     func body(content: Content) -> some View {
         content
@@ -141,11 +142,13 @@ private struct PanelTextFieldModifier: ViewModifier {
             .padding(.horizontal, 10)
             .frame(height: height)
             .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            // A plain field draws no focus ring, so the border shows where typing goes.
             .overlay {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(palette.divider.color, lineWidth: 1)
+                    .strokeBorder(focused ? palette.accentText.color : palette.divider.color, lineWidth: focused ? 2 : 1)
                     .allowsHitTesting(false)
             }
+            .focused($focused)
     }
 }
 
