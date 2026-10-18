@@ -89,6 +89,7 @@ struct OnboardingModelDownloadView: View {
                     Button("Continue", action: onContinue)
                         .buttonStyle(.typographyProminent)
                         .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
                         .disabled(checkingCache)
                 } else {
                     Button(isDownloading ? "Downloading…" : "Download models") {
@@ -96,6 +97,7 @@ struct OnboardingModelDownloadView: View {
                     }
                     .buttonStyle(.typographyProminent)
                     .controlSize(.large)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(checkingCache || isDownloading || !recordingManager.canDownloadModels)
                 }
             }
@@ -130,7 +132,20 @@ private struct OnboardingModelDownloadCard: View {
     let onDownload: () -> Void
     let onCancel: () -> Void
 
+    /// Downloads take minutes; the result is spoken when it lands.
+    private var statusAnnouncement: String? {
+        switch phase {
+        case .idle: checkingCache ? nil : cached ? "\(title) ready" : nil
+        case .downloading: "Downloading \(title)"
+        case .failed(let message): "\(title) download failed. \(message)"
+        }
+    }
+
     var body: some View {
+        content.announcing(statusAnnouncement, priority: { if case .failed = phase { .high } else { .normal } }())
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(purpose).uiFont(.caption).foregroundStyle(.secondary)
             Text(title).uiFont(.callout.weight(.medium))
@@ -224,6 +239,7 @@ struct OnboardingRecordingResponsibilityView: View {
             }
             .buttonStyle(.typographyProminent)
             .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
             .disabled(!acknowledged)
         }
     }

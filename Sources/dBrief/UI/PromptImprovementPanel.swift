@@ -42,10 +42,15 @@ struct PromptImprovementPanel: View {
                             .disabled(session.configuration == nil || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                if let error = session.improvementError { Text(error).foregroundStyle(palette.secondary.color).textSelection(.enabled) }
+                if let error = session.improvementError {
+                    Text(error).foregroundStyle(palette.secondary.color).textSelection(.enabled)
+                        .onAppear { AccessibilityAnnouncer.shared.announce(error, priority: .high) }
+                }
                 if let suggestion = session.suggestion {
                     palette.divider.color.frame(height: 1)
                     Text("Suggested prompt").uiFont(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                        .onAppear { AccessibilityAnnouncer.shared.announce("Suggestion ready") }
                     ForEach(Array(suggestion.response.changes.enumerated()), id: \.offset) { _, change in
                         Text("• \(change)").uiFont(.callout).foregroundStyle(palette.secondary.color)
                     }

@@ -168,6 +168,7 @@ private struct ReprocessingEditor: View {
         .task {
             discoveredWhisperModels = await manager.fetchAvailableWhisperModels()
         }
+        .announcing(error, priority: .high)
     }
 
     private func close() {

@@ -31,3 +31,12 @@ struct ViewerAnnouncementsTests {
         #expect(SpokenSummaryService.Phase.failed(message: "x").isFailure)
     }
 }
+
+@Suite("Onboarding step announcements")
+struct OnboardingStepTests {
+    @Test func stepPositionCountsOnlyVisibleSteps() {
+        #expect(OnboardingStep.announcement(step: 1, visibleSteps: [0, 1, 2, 4]) == "Step 2 of 4: Permissions")
+        #expect(OnboardingStep.announcement(step: 4, visibleSteps: [0, 1, 2, 4]) == "Step 4 of 4: Before you record")
+        #expect(OnboardingStep.announcement(step: 3, visibleSteps: [0, 1, 2, 3, 4]) == "Step 4 of 5: Prepare your models")
+    }
+}

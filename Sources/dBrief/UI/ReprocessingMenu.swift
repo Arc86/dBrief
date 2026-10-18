@@ -132,8 +132,13 @@ struct ReprocessingMenu: View {
         isRestoring = true
         Task {
             defer { isRestoring = false }
-            do { try await manager.restoreReprocessingResults(for: recording) }
-            catch { self.error = error.localizedDescription }
+            do {
+                try await manager.restoreReprocessingResults(for: recording)
+                AccessibilityAnnouncer.shared.announce("Previous results restored")
+            } catch {
+                self.error = error.localizedDescription
+                AccessibilityAnnouncer.shared.announce(error.localizedDescription, priority: .high)
+            }
         }
     }
 }
@@ -165,5 +170,6 @@ struct ReprocessingRecoveryView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .announcing(manager.reprocessingRecoveryError, priority: .high)
     }
 }

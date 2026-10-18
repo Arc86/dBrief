@@ -25,6 +25,10 @@ struct LibraryWorkDetailView: View {
     }
 
     var body: some View {
+        content.announcing(error, priority: .high)
+    }
+
+    private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(item.title).uiFont(.title).textSelection(.enabled)

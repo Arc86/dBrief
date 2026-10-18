@@ -641,8 +641,10 @@ struct SettingsIntegrationsTab: View {
             // Created per test: the service owns an EKEventStore, too costly for view init.
             try await IntegrationDispatchService().testConnection(destination: destination, settings: appSettings)
             testOutcomes[destination] = .success
+            AccessibilityAnnouncer.shared.announce("\(destination.displayName): connected")
         } catch {
             testOutcomes[destination] = .failure(error.localizedDescription)
+            AccessibilityAnnouncer.shared.announce("\(destination.displayName): connection failed. \(error.localizedDescription)", priority: .high)
         }
         if destination == .tickTick { tickTickAuth.reload() }
     }

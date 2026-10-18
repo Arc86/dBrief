@@ -27,6 +27,16 @@ struct ViewerAnnouncements: ViewModifier {
     }
 }
 
+extension View {
+    /// Speaks `text` whenever it changes to a non-empty value: a status or error line
+    /// that appears without moving focus.
+    func announcing(_ text: String?, priority: AnnouncementPriority = .normal) -> some View {
+        onChange(of: text) { _, text in
+            if let text { AccessibilityAnnouncer.shared.announce(text, priority: priority) }
+        }
+    }
+}
+
 extension SpokenSummaryService.Phase {
     /// What VoiceOver says when the spoken summary moves on; one line per step, so
     /// download progress isn't read out.

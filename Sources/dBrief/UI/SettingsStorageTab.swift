@@ -99,7 +99,7 @@ struct SettingsStorageTab: View {
         if enabled.wrappedValue {
             SettingsRow(verbatim: "Clean up now", caption: cleanupMessage[category]) {
                 HStack(spacing: 8) {
-                    if runningCleanup == category { ProgressView().controlSize(.small) }
+                    if runningCleanup == category { ProgressView().controlSize(.small).accessibilityLabel("Cleaning up") }
                     Button(category == .recordings ? "Delete old recordings…" : "Delete old transcripts…") {
                         pendingCleanup = category
                     }
@@ -159,6 +159,7 @@ struct SettingsStorageTab: View {
                     ? RecordingBlock.unreadableRecords.message
                     : "Cleanup could not finish safely. Check storage before retrying."
             }
+            if let message = cleanupMessage[category] { AccessibilityAnnouncer.shared.announce(message) }
             runningCleanup = nil
         }
     }
