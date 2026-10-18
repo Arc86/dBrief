@@ -17,7 +17,9 @@ final class RecordingLibraryModel {
     /// Only advances after complete discovery, never when publishing a warm
     /// cache. Selection may be validated against this revision's item list.
     private(set) var refreshedRevision = 0
-    var error: String? { queryError ?? refreshError }
+    /// A failed refresh can leave the index unpopulated, so later queries fail
+    /// too; report the refresh's cause rather than that downstream symptom.
+    var error: String? { refreshError ?? queryError }
     var hasMatches: Bool { !matches.isEmpty || !workMatches.isEmpty || !peopleGroups.isEmpty }
     private var queryError: String?
     private var refreshError: String?
