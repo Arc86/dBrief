@@ -24,13 +24,13 @@ enum RecordingStatus {
 
     var label: String {
         switch self {
-        case .recorded: "Not processed"
-        case .analyzed: "Analyzed"
-        case .transcribed: "Transcribed"
-        case .queued: "Queued"
-        case .processing: "Processing"
-        case .reprocessPending: "Reprocess pending"
-        case .needsAttention: "Needs attention"
+        case .recorded: String(localized: "Not processed")
+        case .analyzed: String(localized: "Analyzed")
+        case .transcribed: String(localized: "Transcribed")
+        case .queued: String(localized: "Queued")
+        case .processing: String(localized: "Processing")
+        case .reprocessPending: String(localized: "Reprocess pending")
+        case .needsAttention: String(localized: "Needs attention")
         }
     }
 
@@ -117,8 +117,8 @@ struct RecordingHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            RecordingListSectionHeader(title: "Recent recordings", count: nil, expanded: $expanded) {
-                RecordingListIconButton(title: "Refresh recent recordings", systemImage: "arrow.clockwise") {
+            RecordingListSectionHeader(title: String(localized: "Recent recordings"), count: nil, expanded: $expanded) {
+                RecordingListIconButton(title: String(localized: "Refresh recent recordings"), systemImage: "arrow.clockwise") {
                     loadRecordings()
                 }
             }
@@ -127,7 +127,7 @@ struct RecordingHistoryView: View {
                 if !recordingManager.reprocessingRecoveryReady {
                     ReprocessingRecoveryView().frame(height: 170)
                 } else if recordings.isEmpty {
-                    RecordingListEmptyState(title: "No recordings found", message: "Your recent recordings will appear here.", systemImage: "waveform")
+                    RecordingListEmptyState(title: String(localized: "No recordings found"), message: String(localized: "Your recent recordings will appear here."), systemImage: "waveform")
                 } else {
                     // A short list that grows the panel instead of a scroll box inside
                     // the panel's own scroll view; everything else lives in the library.
@@ -209,7 +209,8 @@ struct RecordingHistoryView: View {
             // grid never reflows between recordings.
             Grid(horizontalSpacing: 6, verticalSpacing: 6) {
                 GridRow {
-                    actionTile(title: copiedItem == item.id ? "Copied" : (item.hasInsights ? "Copy Notes" : "Copy Transcript"),
+                    actionTile(title: copiedItem == item.id ? String(localized: "Copied")
+                                : item.hasInsights ? String(localized: "Copy Notes") : String(localized: "Copy Transcript"),
                                systemImage: copiedItem == item.id ? "checkmark" : "doc.on.doc") {
                         Task {
                             guard let text = await RecordingNotesText.load(for: item.url),
@@ -222,7 +223,7 @@ struct RecordingHistoryView: View {
                     .disabled(!item.hasTranscript)
                     .help(item.hasInsights ? "Copy the summary and action items" : "Copy the transcript (no summary yet)")
 
-                    actionTile(title: "Show in Finder", systemImage: "folder") {
+                    actionTile(title: String(localized: "Show in Finder"), systemImage: "folder") {
                         MenuBarPanel.reveal(item.url)
                     }
 
@@ -235,10 +236,10 @@ struct RecordingHistoryView: View {
                 }
                 GridRow {
                     // The viewer can also transcribe or rebuild a recording without a transcript.
-                    actionTile(title: "Open", systemImage: "doc.text") { openInLibrary(item) }
+                    actionTile(title: String(localized: "Open"), systemImage: "doc.text") { openInLibrary(item) }
                     .help("Open in the recording library")
 
-                    actionTile(title: "Integrations", systemImage: "paperplane") {
+                    actionTile(title: String(localized: "Integrations"), systemImage: "paperplane") {
                         Task { await recordingManager.reviewIntegrationDeliveries(for: item.url) }
                     }
                     .disabled(appState.processingJob != nil || recordingManager.reviewingIntegrationDeliveries)
@@ -246,7 +247,7 @@ struct RecordingHistoryView: View {
                         ? "Wait for processing to finish to review integration deliveries"
                         : "Review delivery status and retry an individual integration")
 
-                    actionTile(title: "Delete", systemImage: "trash", destructive: true) {
+                    actionTile(title: String(localized: "Delete"), systemImage: "trash", destructive: true) {
                         deleteItem(item)
                     }
                     .recordingBlock(recordingManager.eligibility(for: item.url, .delete), help: "Delete this recording")

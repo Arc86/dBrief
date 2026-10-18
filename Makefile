@@ -128,7 +128,7 @@ app: build
 	cp -R Sources/dBrief/Resources/3dPartyIcons $(RESOURCES)/3dPartyIcons
 	cp -R Sources/dBrief/Resources/MarkdownEditor $(RESOURCES)/MarkdownEditor
 	: 'UI translations, compiled from Localizable.xcstrings by `make strings`.'
-	: 'English is the source language: its strings are the keys, so en.lproj stays empty.'
+	: 'English is the source language: its strings are the keys, so en.lproj only holds plural rules.'
 	mkdir -p $(RESOURCES)/en.lproj
 	if ls Sources/dBrief/Resources/Localizations/*.lproj >/dev/null 2>&1; then cp -R Sources/dBrief/Resources/Localizations/*.lproj $(RESOURCES)/; fi
 	@set -e; \

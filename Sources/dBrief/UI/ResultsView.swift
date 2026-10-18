@@ -163,7 +163,7 @@ struct ResultsView: View {
         }
         if let tags = recording.tags, !tags.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text(recording.sentiment.map { "Tags · \($0)" } ?? "Tags")
+                Text(recording.sentiment.map { String(localized: "Tags · \($0)") } ?? String(localized: "Tags"))
                     .uiFont(.system(size: 12, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                 FlowLayout(spacing: 6) {

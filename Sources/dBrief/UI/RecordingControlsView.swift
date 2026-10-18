@@ -77,7 +77,7 @@ struct RecordingControlsView: View {
                let recording = appState.currentRecording {
                 MenuPanelHairline()
                 ObsidianFolderPicker(
-                    title: "Obsidian output folder",
+                    title: String(localized: "Obsidian output folder"),
                     currentRelativePath: recording.obsidianFolderRelativePath ?? appSettings.effectiveObsidianDefaultFolderRelativePath
                 ) { relativePath in
                     // This recording only; the default lives in Settings → Integrations.

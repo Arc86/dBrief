@@ -41,7 +41,7 @@ struct RecordingContextMenu: View {
 
 /// The delete confirmation and its outcome, shared by the menu panel and the library.
 @MainActor enum RecordingDeletion {
-    static let message = "This permanently deletes the recording, its transcript and notes in dBrief, and anything queued for it. Markdown notes exported elsewhere and content already sent to integrations are kept."
+    static let message: LocalizedStringResource = "This permanently deletes the recording, its transcript and notes in dBrief, and anything queued for it. Markdown notes exported elsewhere and content already sent to integrations are kept."
 
     static func confirmAndDelete(_ url: URL, title: String, manager: RecordingManager, appState: AppState) async -> Bool {
         guard DestructiveConfirmation.confirm("Delete “\(title)”?", message: message, button: "Delete Recording") else { return false }
@@ -51,7 +51,7 @@ struct RecordingContextMenu: View {
         } catch let blocked as RecordingBlockedError {
             appState.post(.error, blocked.localizedDescription, source: .library)
         } catch {
-            appState.post(.error, "Deletion could not finish. Some files may remain; check storage before retrying.",
+            appState.post(.error, String(localized: "Deletion could not finish. Some files may remain; check storage before retrying."),
                           source: .library, recordingURL: url)
         }
         return false

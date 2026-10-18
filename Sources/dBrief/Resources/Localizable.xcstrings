@@ -2,16 +2,27 @@
   "sourceLanguage" : "en",
   "strings" : {
     "" : {},
-    "%@ %@" : {
+    "%.1f / %.0f GB" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ %2$@"
+            "value" : "%1$.1f / %2$.0f GB"
           }
         }
       }
     },
+    "%.1f of %.0f gigabytes used" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$.1f of %2$.0f gigabytes used"
+          }
+        }
+      }
+    },
+    "%@  All day" : {},
     "%@ (%lld)" : {
       "localizations" : {
         "en" : {
@@ -141,11 +152,100 @@
       }
     },
     "%lld MB" : {},
+    "%lld attendees loaded" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld attendee loaded"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld attendees loaded"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld genodigde geladen"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld genodigden geladen"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld completed" : {},
     "%lld min" : {},
     "%lld minutes" : {},
     "%lld models · nothing downloads until first use" : {},
-    "%lld need attention" : {},
+    "%lld need attention" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld needs attention"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld need attention"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vraagt aandacht"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld vragen aandacht"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld of %lld done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld done"
+          }
+        }
+      }
+    },
     "%lld of %lld overridden" : {
       "localizations" : {
         "en" : {
@@ -176,11 +276,52 @@
         }
       }
     },
+    "%lld participants" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld participant"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld participants"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld deelnemer"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld deelnemers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld people selected" : {},
     "%lld percent" : {},
     "%lld permissions need attention." : {},
     "%lld points" : {},
     "%lld pt" : {},
+    "%lld queued" : {},
     "%lld s" : {},
     "%lld seconds" : {},
     "%lld segments" : {},
@@ -188,6 +329,7 @@
     "%lld unfinished" : {},
     "%lld%%" : {},
     "%lld/5" : {},
+    "(untitled)" : {},
     "**%@** overrides %lld setting%@ on this page." : {
       "localizations" : {
         "en" : {
@@ -284,6 +426,8 @@
     "Allow…" : {},
     "Already recording" : {},
     "Analysis" : {},
+    "Analyze tags & sentiment" : {},
+    "Analyzed" : {},
     "Another person is already named “%@”. Merge “%@” into them?" : {
       "localizations" : {
         "en" : {
@@ -337,6 +481,7 @@
     "Audio position cannot be changed." : {},
     "Audio quality" : {},
     "Audio saving progress" : {},
+    "Audio unavailable" : {},
     "Auto-delete" : {},
     "Auto-detect" : {},
     "Auto-detect works best for mixed-language meetings." : {},
@@ -355,6 +500,7 @@
     "Between 5 and 1440." : {},
     "Blank is automatic (%@ tokens). Covers analysis and chat, including reasoning." : {},
     "Blocked by a device management profile or Screen Time." : {},
+    "Brief ready" : {},
     "CLI command" : {},
     "Calendar" : {},
     "Calendar access" : {},
@@ -410,6 +556,7 @@
     "Claude default" : {},
     "Claude launcher" : {},
     "Cleanup" : {},
+    "Clear Chat" : {},
     "Clear Chat…" : {},
     "Clear cached meetings" : {},
     "Clear filter" : {},
@@ -420,6 +567,7 @@
     "Clear settings search" : {},
     "Clear stats" : {},
     "Clear this brief from the menu; the recording stays in your library" : {},
+    "Clear this chat?" : {},
     "Clear “This is me”" : {},
     "Clearer" : {},
     "Click to edit this name" : {},
@@ -460,6 +608,7 @@
     "Copy %@" : {},
     "Copy Conversation" : {},
     "Copy Notes" : {},
+    "Copy Transcript" : {},
     "Copy as Plain Text" : {},
     "Copy the message" : {},
     "Copy the summary and action items" : {},
@@ -471,6 +620,7 @@
     "Couldn't create the spoken summary" : {},
     "Couldn’t export answer" : {},
     "Couldn’t finish: %@ Try again, or choose another action." : {},
+    "Couldn’t refresh" : {},
     "Covers %@. Choose Whisper for %@." : {
       "localizations" : {
         "en" : {
@@ -520,9 +670,11 @@
     "Delete recording" : {},
     "Delete selected profile" : {},
     "Delete this prompt" : {},
+    "Delete this recording" : {},
     "Delete this recording?" : {},
     "Delete “%@”?" : {},
     "Delete…" : {},
+    "Deletion could not finish. Some files may remain; check storage before retrying." : {},
     "Denied" : {},
     "Descending" : {},
     "Detect Speakers Again…" : {},
@@ -536,6 +688,8 @@
     "Discard Run and Transcribe…" : {},
     "Discard changes to the summary?" : {},
     "Discard spoken summary" : {},
+    "Discard this reprocess?" : {},
+    "Discard your changes?" : {},
     "Discards this reprocess. The recording's current results stay." : {},
     "Dismiss" : {},
     "Dismiss speaker-name prompt" : {},
@@ -619,6 +773,7 @@
     "Files dropped in a folder are copied into dBrief and processed like a recording. The original stays where it is." : {},
     "Filter by recording status" : {},
     "Finish or discard the pending reprocessing attempt to use chat." : {},
+    "Finished with issues" : {},
     "Finishing save… Please keep dBrief open." : {},
     "Floating recording window" : {},
     "FluidAudio Apple Silicon implementation" : {},
@@ -634,11 +789,14 @@
     "Forget" : {},
     "Forget %lld" : {},
     "Forget %lld voices" : {},
+    "Forget Voiceprint" : {},
     "Forget this voiceprint" : {},
+    "Forget this voiceprint?" : {},
     "Forget voice" : {},
     "Forget voiceprint from %@" : {},
     "Gemma 4 E4B Local" : {},
     "Generate Spoken Summary" : {},
+    "Generate summary" : {},
     "Generate summary, actions, and tags" : {},
     "Generating summary and analysis…" : {},
     "Get Started" : {},
@@ -662,6 +820,7 @@
     "How automation works" : {},
     "I understand my responsibility to use dBrief lawfully and obtain any required consent." : {},
     "Identify speakers" : {},
+    "Import Audio File…" : {},
     "Import…" : {
       "localizations" : {
         "nl" : {
@@ -682,6 +841,7 @@
     "Include in the page" : {},
     "Include the transcript" : {},
     "Includes approximately 0.5 GiB for speaker identification." : {},
+    "Incomplete" : {},
     "Increase prompt text size" : {},
     "Independent on-device evaluation" : {},
     "Input device" : {},
@@ -690,6 +850,8 @@
     "Integrations" : {},
     "Integrations…" : {},
     "Interface text" : {},
+    "It is downloaded again the next time it's needed, which can take a while." : {},
+    "Its saved API key is deleted too. Profiles that use it switch to the default provider." : {},
     "Jump to latest message" : {},
     "Jump to this point" : {},
     "Keep" : {},
@@ -732,6 +894,7 @@
     },
     "Load / overhead" : {},
     "Load calendar attendees" : {},
+    "Load during processing" : {},
     "Load now" : {},
     "Load on demand" : {},
     "Load template" : {},
@@ -794,7 +957,9 @@
     "Merge into" : {},
     "Merge into…" : {},
     "Merge “%@” into…" : {},
+    "Mic" : {},
     "Microphone" : {},
+    "Microphone input" : {},
     "Microsoft OneNote" : {},
     "Model" : {},
     "Model download" : {},
@@ -811,9 +976,12 @@
     "More specific" : {},
     "Move Aside" : {},
     "Move all “%@” to" : {},
+    "Move down" : {},
     "Move this record into an Unreadable folder next to it. Nothing is deleted." : {},
     "Move this turn to" : {},
     "Move to" : {},
+    "Move to first" : {},
+    "Move up" : {},
     "Multilingual" : {},
     "Must print a JSON object (title_concept, summary, action_items, tags, sentiment). Runs with your login shell's PATH." : {},
     "NVIDIA model evaluation" : {},
@@ -840,13 +1008,17 @@
     "No custom phrases. Built-in phrases always apply while this is on." : {},
     "No endpoint configured" : {},
     "No folders yet" : {},
+    "No invitees" : {},
     "No matching models" : {},
+    "No meeting linked" : {},
     "No meetings for this day." : {},
     "No meetings loaded yet" : {},
+    "No pending work" : {},
     "No people match your search." : {},
     "No performance data yet" : {},
     "No processing attempts are available. Missing evidence does not mean processing stayed on this Mac." : {},
     "No profile selected" : {},
+    "No recordings found" : {},
     "No recordings in this time range" : {},
     "No sample" : {},
     "No saved prompts yet. In the chat, right-click a question and choose Save as Prompt." : {},
@@ -865,7 +1037,9 @@
     "Not available with %@. Your choice is kept for other engines." : {},
     "Not downloaded" : {},
     "Not now" : {},
+    "Not processed" : {},
     "Not rated" : {},
+    "Notes" : {},
     "Nothing to read yet" : {},
     "Notice when a call starts" : {},
     "Noticed when the meeting app stops using the microphone. On older macOS, only when it quits." : {},
@@ -874,6 +1048,7 @@
     "Notion" : {},
     "OK" : {},
     "Obsidian" : {},
+    "Obsidian output folder" : {},
     "Off" : {},
     "Off sends only the summary, action items and tags." : {},
     "Off shows only the red record dot." : {},
@@ -923,6 +1098,7 @@
     "Parakeet Ultra model card" : {},
     "Parakeet detects the language itself. This choice is kept for other engines." : {},
     "Pause" : {},
+    "Pause %@" : {},
     "Pause Queue" : {},
     "Pause prevents the next job from starting; the current job can finish. This setting survives a restart." : {},
     "Pause recording" : {},
@@ -932,6 +1108,7 @@
     "Pick how recordings are turned into text and summaries. The defaults run fully on-device — no account or server needed." : {},
     "Pinch on the trackpad or press ⌘+ / ⌘− to resize." : {},
     "Play" : {},
+    "Play %@" : {},
     "Play %lld s" : {},
     "Play Spoken Summary" : {},
     "Play a sample of this voice (⌥Space)" : {},
@@ -964,17 +1141,24 @@
     "Previous speaker" : {},
     "Priority" : {},
     "Privacy receipt" : {},
+    "Process Now" : {},
     "Process Queue" : {},
+    "Process Queue (%lld)" : {},
     "Process next" : {},
     "Process recording" : {},
     "Process this recording now" : {},
     "Process this recording now, even if the queue is paused" : {},
+    "Processed “%@”" : {},
     "Processes this recording as soon as the current one finishes" : {},
+    "Processing" : {},
+    "Processing complete" : {},
     "Processing in %lld seconds" : {},
     "Processing may slow down. Closing other apps helps." : {},
     "Processing origin" : {},
+    "Processing recording" : {},
     "Processing settings" : {},
     "Processing warnings" : {},
+    "Processing “%@”" : {},
     "Profile" : {
       "localizations" : {
         "nl" : {
@@ -998,9 +1182,12 @@
     "Providers" : {},
     "Question" : {},
     "Queue" : {},
+    "Queue & Recovery" : {},
+    "Queue a recording for later to add it here." : {},
     "Queue for later" : {},
     "Queue needs attention" : {},
     "Queue position %lld" : {},
+    "Queued" : {},
     "Queueing in %lld seconds" : {},
     "Quick pick" : {},
     "Quit dBrief" : {},
@@ -1056,6 +1243,7 @@
         }
       }
     },
+    "Recording completed" : {},
     "Recording library" : {},
     "Recording recovery needs attention" : {},
     "Recording sidebar width" : {},
@@ -1071,6 +1259,8 @@
     "Refresh incomplete; saved meetings remain available." : {},
     "Refresh interval" : {},
     "Refresh meeting list" : {},
+    "Refresh queue and recovery" : {},
+    "Refresh recent recordings" : {},
     "Refresh selected calendar attendees" : {},
     "Refresh this date" : {},
     "Refresh today" : {},
@@ -1083,8 +1273,11 @@
     "Remote service" : {},
     "Remote services only" : {},
     "Remote transcription" : {},
+    "Remove" : {},
     "Remove %@" : {},
     "Remove Downloaded Model…" : {},
+    "Remove Model" : {},
+    "Remove Provider" : {},
     "Remove action" : {},
     "Remove condition" : {},
     "Remove filler words" : {},
@@ -1092,6 +1285,8 @@
     "Remove from Queue" : {},
     "Remove from the queue without deleting the recording" : {},
     "Remove header" : {},
+    "Remove the downloaded %@ model?" : {},
+    "Remove “%@”?" : {},
     "Removes all per-model benchmark history. The total minutes transcribed is kept." : {},
     "Removes meeting audio your microphone picks up from the speakers. Skipped automatically with headphones." : {},
     "Removes whole lines such as “Thanks for watching”. Real speech that contains a phrase is kept." : {},
@@ -1106,6 +1301,7 @@
     "Replace participants with meeting attendees" : {},
     "Replaces `claude` in the managed command, e.g. `cswap run 1 --` for another account. Ignored when a CLI command is set." : {},
     "Replaces the draft. Save when you’re ready." : {},
+    "Reprocess pending" : {},
     "Reprocessing is in progress. Your draft is kept; editing is paused." : {},
     "Reprocessing is in progress. Your draft is retained; editing is temporarily unavailable." : {},
     "Reprocessing pending" : {},
@@ -1125,6 +1321,7 @@
     "Results language" : {},
     "Resume" : {},
     "Resume Queue" : {},
+    "Resume recording" : {},
     "Retranscribe…" : {},
     "Retries" : {},
     "Retry" : {},
@@ -1139,6 +1336,7 @@
     "Reviewed" : {},
     "Rosters are never loaded. Invite bodies are never saved." : {},
     "Rosters load only when requested for one meeting. Larger meetings omit the roster." : {},
+    "Run AI analysis again, with any engine or endpoint" : {},
     "Run test" : {},
     "Runs at launch and then daily while dBrief is open, in these folders and every profile's folders" : {},
     "Runs your command once per recording" : {},
@@ -1200,6 +1398,8 @@
     "Shorter" : {},
     "Show" : {},
     "Show %@ recordings" : {},
+    "Show Files" : {},
+    "Show Queue & Recovery" : {},
     "Show actions for %@" : {},
     "Show again" : {},
     "Show all" : {},
@@ -1254,12 +1454,14 @@
     "Status" : {},
     "Status: %@" : {},
     "Stop" : {},
+    "Stop Processing" : {},
     "Stop Reading" : {},
     "Stop generating" : {},
     "Stop generating (Esc)" : {},
     "Stop playback" : {},
     "Stop processing" : {},
     "Stop processing; saved progress remains available for recovery" : {},
+    "Stop recording" : {},
     "Stop the voice sample (⌥Space)" : {},
     "Stop voice sample" : {},
     "Stop watching %@" : {},
@@ -1287,6 +1489,7 @@
     "Support report" : {},
     "Symbol" : {},
     "Synthesizing…" : {},
+    "System Default" : {},
     "System audio" : {},
     "System default" : {},
     "System language" : {},
@@ -1308,8 +1511,10 @@
     "The action may have changed or its recording may be unavailable. Reload the recording and try again." : {},
     "The audio file is permanently removed from disk. This can’t be undone." : {},
     "The calendar CLI call failed. Check the claude command and its login." : {},
+    "The conversation is removed from this recording. This can't be undone." : {},
     "The original recording stays unchanged." : {},
     "The prompt, request, or AI configuration changed. Generate a new suggestion." : {},
+    "The recording's current results stay. The unfinished reprocess can't be resumed afterwards." : {},
     "The saved language is unavailable with Apple Speech. Choose a supported language or change the transcription engine." : {},
     "The update is stored in dBrief's support folder." : {},
     "The voiceprints of %@ move into “%@”, and %@ removed. This cannot be undone." : {
@@ -1327,6 +1532,7 @@
     "They said: %@" : {},
     "This Mac" : {},
     "This is me" : {},
+    "This permanently deletes the recording, its transcript and notes in dBrief, and anything queued for it. Markdown notes exported elsewhere and content already sent to integrations are kept." : {},
     "This profile and its overrides will be removed. This can’t be undone." : {},
     "This receipt covers recorded attempts, including retries. It makes no claims about earlier activity or provider retention. Externally managed apps and processes may sync or send data elsewhere. A start without a completion does not prove whether data was received." : {},
     "This recording" : {},
@@ -1340,7 +1546,9 @@
     "Todoist" : {},
     "Transcribe" : {},
     "Transcribe an audio file or a YouTube or video link" : {},
+    "Transcribe audio" : {},
     "Transcribe while recording" : {},
+    "Transcribed" : {},
     "Transcribe…" : {},
     "Transcript" : {},
     "Transcript density" : {},
@@ -1455,9 +1663,11 @@
     "YouTube or video link" : {},
     "YouTube or video link…" : {},
     "Your command determines where the selected text is processed." : {},
+    "Your edits to the action items and tags are lost." : {},
     "Your meetings never leave your Mac. No telemetry, analytics or accounts." : {},
     "Your own prompts in Ask dBrief AI" : {},
     "Your prompts" : {},
+    "Your recent recordings will appear here." : {},
     "Your recordings" : {},
     "Your saved profile. Controls on this page edit app defaults." : {},
     "Zoom, Teams, Meet and others" : {},
@@ -1475,6 +1685,7 @@
     "collapsed" : {},
     "dBrief" : {},
     "dBrief does not notify participants or obtain consent on your behalf." : {},
+    "dBrief keeps recognising %@ from their other voiceprints." : {},
     "dBrief needs calendar access to match meetings." : {},
     "dBrief, %lld queued" : {},
     "dBrief, paused" : {},
@@ -1489,6 +1700,7 @@
     "iCal matching will return no meetings." : {},
     "model speed, faster than real-time" : {},
     "name@company.com" : {},
+    "no participants" : {},
     "or drop audio on the menu bar icon" : {},
     "seconds" : {},
     "slower than usual" : {},

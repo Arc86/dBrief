@@ -19,13 +19,13 @@ enum MenuPanelStatus: Equatable {
 
     var label: String {
         switch self {
-        case .ready: "Ready"
-        case .recording: "Recording"
-        case .paused: "Paused"
-        case .processing: "Processing"
-        case .recordingCompleted: "Recording completed"
-        case .briefReady: "Brief ready"
-        case .finishedWithIssues: "Finished with issues"
+        case .ready: String(localized: "Ready")
+        case .recording: String(localized: "Recording")
+        case .paused: String(localized: "Paused")
+        case .processing: String(localized: "Processing")
+        case .recordingCompleted: String(localized: "Recording completed")
+        case .briefReady: String(localized: "Brief ready")
+        case .finishedWithIssues: String(localized: "Finished with issues")
         }
     }
 
@@ -43,7 +43,7 @@ enum MenuPanelProgress {
     static func doneLabel(_ steps: [ProcessingStep]) -> String? {
         guard !steps.isEmpty else { return nil }
         let done = steps.filter { if case .completed = $0.status { true } else { false } }.count
-        return "\(done) of \(steps.count) done"
+        return String(localized: "\(done) of \(steps.count) done")
     }
 
     /// Whether the brief should offer "More details": anything beyond the
@@ -58,14 +58,14 @@ enum MenuPanelProgress {
 
     static func processingHeading(title: String?, complete: Bool) -> String {
         guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
-            return complete ? "Processing complete" : "Processing recording"
+            return complete ? String(localized: "Processing complete") : String(localized: "Processing recording")
         }
-        return complete ? "Processed “\(title)”" : "Processing “\(title)”"
+        return complete ? String(localized: "Processed “\(title)”") : String(localized: "Processing “\(title)”")
     }
 
     /// During record-while-processing two Stop buttons are on screen; name the job's one.
     static func stopProcessingTitle(isCapturing: Bool) -> String {
-        isCapturing ? "Stop processing" : "Stop"
+        isCapturing ? String(localized: "Stop processing") : String(localized: "Stop")
     }
 
     /// A deferred profile switch happens on its own when the current job ends, so
@@ -80,7 +80,8 @@ enum MenuPanelProgress {
     }
 
     static func briefContents(summary: Bool, actions: Bool, tags: Bool, notes: Bool) -> String? {
-        let parts = [(summary, "Summary"), (actions, "Actions"), (tags, "Tags"), (notes, "Notes")]
+        let parts = [(summary, String(localized: "Summary")), (actions, String(localized: "Actions")),
+                     (tags, String(localized: "Tags")), (notes, String(localized: "Notes"))]
             .filter { $0.0 }.map { $0.1 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }

@@ -42,7 +42,7 @@ struct TranscriptionProgressView: View {
                             .uiFont(.system(size: 11, weight: .semibold))
                             .foregroundStyle(palette.heading.color)
                         Spacer()
-                        Text(String(format: "%.1f / %.0f GB", usedGB, totalGB))
+                        Text("\(usedGB, specifier: "%.1f") / \(totalGB, specifier: "%.0f") GB")
                             .uiFont(.system(size: 11))
                             .monospacedDigit()
                             .foregroundStyle(palette.secondary.color)
@@ -65,7 +65,7 @@ struct TranscriptionProgressView: View {
                 .background(status.warning.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Memory is running low")
-                .accessibilityValue(String(format: "%.1f of %.0f gigabytes used", usedGB, totalGB))
+                .accessibilityValue(Text("\(usedGB, specifier: "%.1f") of \(totalGB, specifier: "%.0f") gigabytes used"))
             }
         }
     }
