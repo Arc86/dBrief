@@ -72,7 +72,13 @@ final class AppState {
     /// Errors, warnings and results the user should see, newest first.
     var notices = NoticeList()
 
-    func post(_ notice: AppNotice) { notices.post(notice) }
+    /// Error notices are also spoken by VoiceOver.
+    func post(_ notice: AppNotice) {
+        notices.post(notice)
+        let message = notice.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if notice.tone == .error, !message.isEmpty { announcer.announce(.error(message)) }
+    }
+    @ObservationIgnored var announcer: AccessibilityAnnouncer = .shared
 
     func post(_ tone: AppNotice.Tone, _ message: String, source: AppNotice.Source,
               recordingURL: URL? = nil, actions: [NoticeAction] = []) {
