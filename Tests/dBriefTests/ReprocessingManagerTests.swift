@@ -26,8 +26,13 @@ struct ReprocessingManagerTests {
                 try await Task.sleep(for: .milliseconds(1100))
                 #expect(fixture.state.processingSteps[0].progress == nil)
                 bridge.applyPluginState(.transcribing)
-                // A slow backend emits no words yet, but still needs progress feedback.
-                try await Task.sleep(for: .milliseconds(1200))
+                // A slow backend emits no words yet, but still needs progress feedback. The
+                // estimate ticks once a second; a loaded CI runner can run that tick late, so
+                // wait for it rather than for a fixed time.
+                let deadline = ContinuousClock.now + .seconds(5)
+                while (fixture.state.processingSteps[0].progress ?? 0) == 0, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(100))
+                }
                 #expect((fixture.state.processingSteps[0].progress ?? 0) > 0)
                 #expect(fixture.state.processingSteps[0].detail?.contains("left") == true)
                 throw Finished()
