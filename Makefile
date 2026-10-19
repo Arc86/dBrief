@@ -52,7 +52,7 @@ NOTARY_PROFILE ?=
 DMG_STAGING = .build/dmg
 DMG_NAME = $(APP_NAME)-$(VERSION).dmg
 
-.PHONY: app run clean build sign dmg package-dmg notarize beta run-beta icons strings
+.PHONY: app run clean build sign dmg package-dmg notarize beta run-beta icons strings strings-check strings-report
 
 build:
 	# SwiftPM currently stamps the deployment target (14.0) as the linked SDK.
@@ -66,6 +66,15 @@ build:
 # `scripts/sync-strings.sh --compile-only`.
 strings:
 	./scripts/sync-strings.sh
+
+# CI guard: fails when a UI string isn't in the catalog, a translation breaks its
+# placeholders, or the committed compiled translations are stale.
+strings-check:
+	./scripts/sync-strings.sh --check
+
+# Translated share per language (Markdown table).
+strings-report:
+	@python3 scripts/strings_check.py report Sources/dBrief/Resources/Localizable.xcstrings
 
 # Regenerate the Tahoe icon with Xcode 26+. Keep the compiled catalog tracked
 # so normal builds still work with Command Line Tools alone.

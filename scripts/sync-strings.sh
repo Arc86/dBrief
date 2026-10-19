@@ -3,6 +3,8 @@
 # then compiles it into the tracked Resources/Localizations/<lang>.lproj files that
 # `make app` copies (xcstringstool needs Xcode; the app build doesn't).
 # `--compile-only` skips the source scan, e.g. after editing a translation.
+# `--check` changes nothing: it fails when the catalog or the compiled files are
+# out of step with the source, or a translation's placeholders don't match (CI).
 #
 # The compiler extracts every localizable string (with exact placeholders) while
 # building into a separate scratch path, so the normal build cache is untouched.
@@ -44,8 +46,8 @@ mkdir -p "$OUT"
 swift build --package-path "$ROOT" --product dBrief --scratch-path "$ROOT/.build/l10n" \
     -Xswiftc -emit-localized-strings -Xswiftc -emit-localized-strings-path -Xswiftc "$OUT"
 
-FILES=()
-while IFS= read -r file; do FILES+=(--stringsdata "$file"); done < <(
+STRINGSDATA=()
+while IFS= read -r file; do STRINGSDATA+=("$file"); done < <(
     python3 - "$OUT" "$ROOT" <<'EOF'
 import json, pathlib, sys
 out, root = pathlib.Path(sys.argv[1]), sys.argv[2]
@@ -57,6 +59,13 @@ for path in sorted(out.glob("*.stringsdata")):
 EOF
 )
 
+if [ "${1:-}" = "--check" ]; then
+    exec python3 "$ROOT/scripts/strings_check.py" check "$CATALOG" "$COMPILED" \
+        "$ROOT/Sources/dBrief/Resources/InfoPlist.xcstrings" "${STRINGSDATA[@]}"
+fi
+
+FILES=()
+for file in "${STRINGSDATA[@]}"; do FILES+=(--stringsdata "$file"); done
 xcrun xcstringstool sync "$CATALOG" "${FILES[@]}"
 echo "Synced $(( ${#FILES[@]} / 2 )) source files into ${CATALOG#"$ROOT"/}"
 compile
