@@ -10,6 +10,7 @@ final class ChatScrollFollowController: NSObject {
         didSet { if followsBottom != oldValue { onFollowChange?(followsBottom) } }
     }
     private var isUserScrolling = false
+    private var wheelMonitor: Any?
     /// Called when the user scrolls away from, or back to, the bottom.
     var onFollowChange: ((Bool) -> Void)?
 
@@ -30,12 +31,41 @@ final class ChatScrollFollowController: NSObject {
                            name: NSScrollView.didLiveScrollNotification, object: scrollView)
         center.addObserver(self, selector: #selector(scrollEnded),
                            name: NSScrollView.didEndLiveScrollNotification, object: scrollView)
+        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            MainActor.assumeIsolated { self?.notchedWheel(event) }
+            return event
+        }
     }
 
     func detach() {
         NotificationCenter.default.removeObserver(self)
+        if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
+        wheelMonitor = nil
         scrollView = nil
         isUserScrolling = false
+    }
+
+    /// Notched mouse wheels post no live-scroll notifications at all, so watch
+    /// their events directly. Gesture devices (no empty phases) are handled above.
+    private func notchedWheel(_ event: NSEvent) {
+        guard event.phase.isEmpty, event.momentumPhase.isEmpty,
+              let scrollView, event.window === scrollView.window,
+              scrollView.bounds.contains(scrollView.convert(event.locationInWindow, from: nil)) else { return }
+        wheelScrolled(deltaY: event.scrollingDeltaY)
+    }
+
+    /// Runs before AppKit applies the event. Moving toward older messages pauses
+    /// immediately, so a streaming token cannot pull the view back first; moving
+    /// down resumes only once the scroll has landed at the bottom.
+    func wheelScrolled(deltaY: CGFloat) {
+        if deltaY > 0 {
+            followsBottom = false
+        } else if deltaY < 0 {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isAtBottom else { return }
+                self.followsBottom = true
+            }
+        }
     }
 
     @objc private func scrollStarted(_ notification: Notification) {
@@ -69,7 +99,7 @@ struct ChatScrollFollowObserver: NSViewRepresentable {
     func makeCoordinator() -> ChatScrollFollowController { controller }
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+        let view = AttachingView(controller: controller)
         attach(from: view)
         return view
     }
@@ -86,6 +116,27 @@ struct ChatScrollFollowObserver: NSViewRepresentable {
         // SwiftUI attaches the background after make/updateNSView returns.
         DispatchQueue.main.async { [weak view] in
             guard let scrollView = view?.enclosingScrollView else { return }
+            controller.attach(to: scrollView)
+        }
+    }
+
+    /// The deferred lookup above can run before SwiftUI has placed the view in
+    /// its scroll view, and nothing retries it; the chat then never learns the
+    /// user scrolled. Joining a window guarantees the hierarchy is in place.
+    final class AttachingView: NSView {
+        private let controller: ChatScrollFollowController
+
+        init(controller: ChatScrollFollowController) {
+            self.controller = controller
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard window != nil, let scrollView = enclosingScrollView else { return }
             controller.attach(to: scrollView)
         }
     }

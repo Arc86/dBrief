@@ -54,6 +54,35 @@ struct LibraryModelSmartViewTests {
         #expect(model.items.count == 2)
         #expect(model.matches.map(\.name) == ["open"])
     }
+
+    @Test func failedRefreshReportsItsCauseInsteadOfTheFollowOnQueryFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let folder = root.appendingPathComponent("recordings")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data([1]).write(to: folder.appendingPathComponent("Meeting.wav"))
+        // A remembered queue folder that has since disappeared (e.g. a dangling
+        // symlink) aborts the refresh, so the never-populated index also fails
+        // every query. The sidebar must name the cause, not the symptom.
+        let missing = root.appendingPathComponent("moved-away/Recordings/2026/09").path
+        let queue = root.appendingPathComponent("Queue")
+        try FileManager.default.createDirectory(at: queue, withIntermediateDirectories: true)
+        try JSONEncoder().encode(QueueSchedule(knownFolders: [missing]))
+            .write(to: queue.appendingPathComponent("schedule.json"))
+        let suite = "dBrief-smart-model-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = RecordingLibraryModel(index: LibraryIndex(cacheRoot: root.appendingPathComponent("cache"),
+            jobsRoot: root.appendingPathComponent("jobs")), selectionStore: .init(defaults: defaults))
+        model.selectView(.all)
+        model.open(folder)
+        try await waitForQuery(model)
+        #expect(model.error == LibraryIndex.Failure.unavailableFolder.localizedDescription)
+        // Window activation re-queries; that query fails on the empty index.
+        model.refreshTimeContext()
+        try await waitForQuery(model)
+        #expect(model.error == LibraryIndex.Failure.unavailableFolder.localizedDescription)
+    }
     private func waitForQuery(_ model: RecordingLibraryModel) async throws {
         let deadline = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while (model.isRefreshing || model.isQuerying) && ContinuousClock.now < deadline {
