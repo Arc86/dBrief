@@ -194,6 +194,22 @@
 			<string>%lld permissions need attention.</string>
 		</dict>
 	</dict>
+	<key>%lld recordings found</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld recording found</string>
+			<key>other</key>
+			<string>%lld recordings found</string>
+		</dict>
+	</dict>
 	<key>%lld seconds</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -336,6 +352,38 @@
 			<string>Connected — the connector answered the test window (%lld event).</string>
 			<key>other</key>
 			<string>Connected — the connector answered the test window (%lld events).</string>
+		</dict>
+	</dict>
+	<key>Connected, %lld events</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Connected, %lld event</string>
+			<key>other</key>
+			<string>Connected, %lld events</string>
+		</dict>
+	</dict>
+	<key>Connected, %lld models found</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Connected, %lld model found</string>
+			<key>other</key>
+			<string>Connected, %lld models found</string>
 		</dict>
 	</dict>
 	<key>Deleted %lld files (%@).</key>

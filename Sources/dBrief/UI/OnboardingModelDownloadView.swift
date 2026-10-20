@@ -135,9 +135,9 @@ private struct OnboardingModelDownloadCard: View {
     /// Downloads take minutes; the result is spoken when it lands.
     private var statusAnnouncement: String? {
         switch phase {
-        case .idle: checkingCache ? nil : cached ? "\(title) ready" : nil
-        case .downloading: "Downloading \(title)"
-        case .failed(let message): "\(title) download failed. \(message)"
+        case .idle: checkingCache ? nil : cached ? String(localized: "\(title) ready") : nil
+        case .downloading: String(localized: "Downloading \(title)")
+        case .failed(let message): String(localized: "\(title) download failed. \(message)")
         }
     }
 

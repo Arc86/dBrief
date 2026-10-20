@@ -1904,7 +1904,7 @@ struct TranscriptDetailView: View, Equatable {
                     }
                 }
             }
-            context.appState.announcer.announce("Analysis saved")
+            context.appState.announcer.announce(String(localized: "Analysis saved"))
             return true
         } catch {
             analysisSaveError = String(localized: "Analysis could not be saved. Your draft is kept. \(error.localizedDescription)")

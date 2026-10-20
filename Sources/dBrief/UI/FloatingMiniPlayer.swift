@@ -26,7 +26,7 @@ final class FloatingMiniPlayerController {
         // Borderless: a titled panel reserves an invisible title bar and macOS
         // keeps titled windows below the menu bar, so it couldn't reach the top.
         // Keyable, so VoiceOver and keyboard users can operate its buttons.
-        let panel = KeyablePanel(size: NSSize(width: Self.panelWidth, height: 0), title: "Recording controls")
+        let panel = KeyablePanel(size: NSSize(width: Self.panelWidth, height: 0), title: String(localized: "Recording controls"))
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

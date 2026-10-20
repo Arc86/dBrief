@@ -289,10 +289,10 @@ struct SettingsAITab: View {
             do {
                 let output = try await LocalCLIService().runTest(config: config)
                 cliTestSuccess = String(output.prefix(500))
-                AccessibilityAnnouncer.shared.announce("Command ran")
+                AccessibilityAnnouncer.shared.announce(String(localized: "Command ran"))
             } catch {
                 cliTestError = error.localizedDescription
-                AccessibilityAnnouncer.shared.announce("Command test failed. \(error.localizedDescription)", priority: .high)
+                AccessibilityAnnouncer.shared.announce(String(localized: "Command test failed. \(error.localizedDescription)"), priority: .high)
             }
             isTestingCLI = false
         }

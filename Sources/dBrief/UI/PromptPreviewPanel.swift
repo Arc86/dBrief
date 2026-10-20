@@ -115,7 +115,7 @@ struct PromptPreviewPanel: View {
             } else {
                 Text("Preview result").uiFont(.headline)
                     .accessibilityAddTraits(.isHeader)
-                    .onAppear { AccessibilityAnnouncer.shared.announce("Preview ready") }
+                    .onAppear { AccessibilityAnnouncer.shared.announce(String(localized: "Preview ready")) }
             }
             Text(result.text).uiFont(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
         } else {

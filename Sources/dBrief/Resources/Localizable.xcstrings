@@ -237,6 +237,16 @@
         }
       }
     },
+    "%@ call detected" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@-gesprek gedetecteerd"
+          }
+        }
+      }
+    },
     "%@ changed since this attempt started. The saved candidate has been preserved." : {
       "localizations" : {
         "nl" : {
@@ -253,6 +263,32 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "%@ is niet voltooid"
+          }
+        }
+      }
+    },
+    "%@ download failed. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ download failed. %2$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Download van %1$@ mislukt. %2$@"
+          }
+        }
+      }
+    },
+    "%@ ended" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ beëindigd"
           }
         }
       }
@@ -313,12 +349,114 @@
         }
       }
     },
+    "%@ kept unnamed. All voices reviewed. Press Return to confirm." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ naamloos gelaten. Alle stemmen gecontroleerd. Druk op Return om te bevestigen."
+          }
+        }
+      }
+    },
+    "%@ kept unnamed. Now %@, ^[%lld voice](inflect: true) left." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ kept unnamed. Now %2$@, ^[%3$lld voice](inflect: true) left."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ naamloos gelaten. Nu %2$@, nog %#@n@."
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 3,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg stem"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg stemmen"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%@ mins" : {
       "localizations" : {
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "%@ min"
+          }
+        }
+      }
+    },
+    "%@ named %@. All voices reviewed. Press Return to confirm." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ named %2$@. All voices reviewed. Press Return to confirm."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ heet nu %2$@. Alle stemmen gecontroleerd. Druk op Return om te bevestigen."
+          }
+        }
+      }
+    },
+    "%@ named %@. Now %@, ^[%lld voice](inflect: true) left." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ named %2$@. Now %3$@, ^[%4$lld voice](inflect: true) left."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ heet nu %2$@. Nu %3$@, nog %#@n@."
+          },
+          "substitutions" : {
+            "n" : {
+              "argNum" : 4,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg stem"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%arg stemmen"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -405,6 +543,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%@ ready" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ gereed"
           }
         }
       }
@@ -724,11 +872,28 @@
       }
     },
     "%@, %@" : {
+      "comment" : "A recording's title and date, spoken by VoiceOver",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "%@, %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$lld of %3$lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@, %2$lld van %3$lld"
           }
         }
       }
@@ -775,6 +940,22 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "%@, niet beschikbaar"
+          }
+        }
+      }
+    },
+    "%@. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@. %2$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@. %2$@"
           }
         }
       }
@@ -855,6 +1036,32 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "%@: %@ is mislukt. Open om het opnieuw te proberen."
+          }
+        }
+      }
+    },
+    "%@: connected" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@: verbonden"
+          }
+        }
+      }
+    },
+    "%@: connection failed. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: connection failed. %2$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@: verbinding mislukt. %2$@"
           }
         }
       }
@@ -1437,6 +1644,46 @@
         }
       }
     },
+    "%lld recordings found" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld recording found"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld recordings found"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld opname gevonden"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld opnamen gevonden"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld s" : {
 
     },
@@ -1979,6 +2226,16 @@
         }
       }
     },
+    "A call detected" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gesprek gedetecteerd"
+          }
+        }
+      }
+    },
     "A clear view of your meeting." : {
       "localizations" : {
         "nl" : {
@@ -2375,6 +2632,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Toegang"
+          }
+        }
+      }
+    },
+    "Access blocked" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Toegang geblokkeerd"
           }
         }
       }
@@ -3000,6 +3267,7 @@
       }
     },
     "Advanced" : {
+      "comment" : "Summary editor: / menu group",
       "localizations" : {
         "nl" : {
           "stringUnit" : {
@@ -3325,6 +3593,26 @@
         }
       }
     },
+    "Analysis ready" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Analyse gereed"
+          }
+        }
+      }
+    },
+    "Analysis saved" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Analyse bewaard"
+          }
+        }
+      }
+    },
     "Analysis saved, but the linked Markdown note could not be updated. Your draft is kept so you can retry. %@" : {
       "localizations" : {
         "nl" : {
@@ -3467,6 +3755,26 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Antwoord gekopieerd"
+          }
+        }
+      }
+    },
+    "Answer ready" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Antwoord gereed"
+          }
+        }
+      }
+    },
+    "Answer ready. %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Antwoord gereed. %@"
           }
         }
       }
@@ -4779,6 +5087,12 @@
         }
       }
     },
+    "Block moved down" : {
+
+    },
+    "Block moved up" : {
+
+    },
     "Blocked by a device management profile or Screen Time." : {
       "localizations" : {
         "nl" : {
@@ -4789,6 +5103,9 @@
         }
       }
     },
+    "Blocks" : {
+      "comment" : "Summary editor: VoiceOver name of the / menu"
+    },
     "Blue" : {
       "localizations" : {
         "nl" : {
@@ -4798,6 +5115,9 @@
           }
         }
       }
+    },
+    "Bold" : {
+      "comment" : "Summary editor: toolbar"
     },
     "Brief ready" : {
       "localizations" : {
@@ -4868,6 +5188,9 @@
           }
         }
       }
+    },
+    "Bullet List" : {
+
     },
     "CAF/LPCM per track (system + mic separate)" : {
       "localizations" : {
@@ -5109,12 +5432,32 @@
         }
       }
     },
+    "Calendar refreshed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Agenda vernieuwd"
+          }
+        }
+      }
+    },
     "Calendar requests use your Claude usage" : {
       "localizations" : {
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Agendaverzoeken tellen mee voor je Claude-gebruik"
+          }
+        }
+      }
+    },
+    "Calendar test failed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Agendatest mislukt"
           }
         }
       }
@@ -5165,6 +5508,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Gespreksdetectie staat uit"
+          }
+        }
+      }
+    },
+    "Call ended" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gesprek beëindigd"
           }
         }
       }
@@ -6047,6 +6400,16 @@
         }
       }
     },
+    "Cleaning up" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bezig met opruimen"
+          }
+        }
+      }
+    },
     "Cleanup" : {
       "localizations" : {
         "nl" : {
@@ -6203,6 +6566,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Deze chat wissen?"
+          }
+        }
+      }
+    },
+    "Clear “This Is Me”" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wis “Dit ben ik”"
           }
         }
       }
@@ -6429,6 +6802,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Test van commando mislukt"
+          }
+        }
+      }
+    },
+    "Command test failed. %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Test van commando mislukt. %@"
           }
         }
       }
@@ -6683,12 +7066,102 @@
         }
       }
     },
+    "Connected, %lld events" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Connected, %lld event"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Connected, %lld events"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verbonden, %lld afspraak"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verbonden, %lld afspraken"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Connected, %lld models found" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Connected, %lld model found"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Connected, %lld models found"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verbonden, %lld model gevonden"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Verbonden, %lld modellen gevonden"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Connected, but no models were returned by the provider." : {
       "localizations" : {
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Verbonden, maar de aanbieder gaf geen modellen terug."
+          }
+        }
+      }
+    },
+    "Connected, partial data" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verbonden, gedeeltelijke gegevens"
           }
         }
       }
@@ -6709,6 +7182,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Verbinding mislukt"
+          }
+        }
+      }
+    },
+    "Connection failed. %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verbinding mislukt. %@"
           }
         }
       }
@@ -7033,6 +7516,16 @@
         }
       }
     },
+    "Couldn't create the spoken summary. %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kan de gesproken samenvatting niet maken. %@"
+          }
+        }
+      }
+    },
     "Couldn't delete the recording" : {
       "localizations" : {
         "nl" : {
@@ -7281,6 +7774,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Maak een interne integratie en verbind je pagina of database ermee (••• → Connections)."
+          }
+        }
+      }
+    },
+    "Creating audio" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Audio maken"
           }
         }
       }
@@ -8287,6 +8790,9 @@
         }
       }
     },
+    "Divider" : {
+      "comment" : "Summary editor: horizontal rule block"
+    },
     "Do nothing" : {
       "localizations" : {
         "nl" : {
@@ -8343,6 +8849,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Download"
+          }
+        }
+      }
+    },
+    "Download failed. %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Download mislukt. %@"
           }
         }
       }
@@ -8413,6 +8929,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Eenmalig gedownload van Hugging Face. Voert analyse en chat uit op deze Mac."
+          }
+        }
+      }
+    },
+    "Downloading %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ downloaden"
           }
         }
       }
@@ -10613,6 +11139,15 @@
         }
       }
     },
+    "Heading 1" : {
+
+    },
+    "Heading 2" : {
+
+    },
+    "Heading 3" : {
+
+    },
     "Hear the difference" : {
       "localizations" : {
         "nl" : {
@@ -11113,6 +11648,9 @@
         }
       }
     },
+    "Inline code" : {
+      "comment" : "Summary editor: toolbar"
+    },
     "Input device" : {
       "localizations" : {
         "nl" : {
@@ -11343,6 +11881,16 @@
         }
       }
     },
+    "Invalid search pattern" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ongeldig zoekpatroon"
+          }
+        }
+      }
+    },
     "Invalid transcription endpoint URL." : {
       "localizations" : {
         "nl" : {
@@ -11372,6 +11920,9 @@
           }
         }
       }
+    },
+    "Italic" : {
+      "comment" : "Summary editor: toolbar"
     },
     "Its saved API key is deleted too. Profiles that use it switch to the default provider." : {
       "localizations" : {
@@ -11819,6 +12370,9 @@
         }
       }
     },
+    "Link" : {
+      "comment" : "Summary editor: toolbar"
+    },
     "Link Calendar Meeting" : {
       "localizations" : {
         "nl" : {
@@ -11870,6 +12424,7 @@
       }
     },
     "List" : {
+      "comment" : "Summary editor: / menu group",
       "localizations" : {
         "nl" : {
           "stringUnit" : {
@@ -12595,6 +13150,38 @@
         }
       }
     },
+    "Match %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Match %1$lld of %2$lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Resultaat %1$lld van %2$lld"
+          }
+        }
+      }
+    },
+    "Match %lld of %lld: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Match %1$lld of %2$lld: %3$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Resultaat %1$lld van %2$lld: %3$@"
+          }
+        }
+      }
+    },
     "Match field" : {
       "localizations" : {
         "nl" : {
@@ -13115,6 +13702,16 @@
         }
       }
     },
+    "Model downloaded" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Model gedownload"
+          }
+        }
+      }
+    },
     "Model families" : {
       "localizations" : {
         "nl" : {
@@ -13295,6 +13892,16 @@
         }
       }
     },
+    "Move this turn to %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verplaats deze beurt naar %@"
+          }
+        }
+      }
+    },
     "Move to" : {
       "localizations" : {
         "nl" : {
@@ -13405,7 +14012,18 @@
         }
       }
     },
+    "Name for %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Naam voor %@"
+          }
+        }
+      }
+    },
     "Name or search" : {
+      "extractionState" : "stale",
       "localizations" : {
         "nl" : {
           "stringUnit" : {
@@ -14615,6 +15233,16 @@
         }
       }
     },
+    "Notes copied" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Notities gekopieerd"
+          }
+        }
+      }
+    },
     "Nothing recorded this week." : {
       "localizations" : {
         "nl" : {
@@ -15425,6 +16053,9 @@
         }
       }
     },
+    "Ordered List" : {
+
+    },
     "Origin not recorded" : {
       "localizations" : {
         "nl" : {
@@ -15761,6 +16392,9 @@
         }
       }
     },
+    "Paste link..." : {
+      "comment" : "Summary editor: link field placeholder"
+    },
     "Paste your Notion integration secret first." : {
       "localizations" : {
         "nl" : {
@@ -15811,6 +16445,16 @@
         }
       }
     },
+    "Pause Recording" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pauzeer opname"
+          }
+        }
+      }
+    },
     "Pause prevents the next job from starting; the current job can finish. This setting survives a restart." : {
       "localizations" : {
         "nl" : {
@@ -15827,6 +16471,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Pauzeer opname"
+          }
+        }
+      }
+    },
+    "Pause recording (⌥⌘P)" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pauzeer opname (⌥⌘P)"
           }
         }
       }
@@ -16281,12 +16935,32 @@
         }
       }
     },
+    "Preparing the voice" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stem voorbereiden"
+          }
+        }
+      }
+    },
     "Preparing transcript…" : {
       "localizations" : {
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Transcript voorbereiden…"
+          }
+        }
+      }
+    },
+    "Preparing voice" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stem voorbereiden"
           }
         }
       }
@@ -16391,6 +17065,16 @@
         }
       }
     },
+    "Preview ready" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Voorvertoning gereed"
+          }
+        }
+      }
+    },
     "Preview result" : {
       "localizations" : {
         "nl" : {
@@ -16407,6 +17091,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Vorige overeenkomst (⌘⇧G)"
+          }
+        }
+      }
+    },
+    "Previous results restored" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vorige resultaten hersteld"
           }
         }
       }
@@ -17383,6 +18077,9 @@
         }
       }
     },
+    "Quote" : {
+      "comment" : "Summary editor: quote block"
+    },
     "Qwen3 TTS 0.6B (lighter)" : {
       "localizations" : {
         "nl" : {
@@ -17723,6 +18420,16 @@
         }
       }
     },
+    "Record this call and create a meeting brief." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neem dit gesprek op en maak een vergaderbriefing."
+          }
+        }
+      }
+    },
     "Record, transcribe, and analyze meetings and voice notes — right from your menu bar." : {
       "localizations" : {
         "nl" : {
@@ -17783,12 +18490,32 @@
         }
       }
     },
+    "Recording being processed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opname wordt verwerkt"
+          }
+        }
+      }
+    },
     "Recording completed" : {
       "localizations" : {
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Opname voltooid"
+          }
+        }
+      }
+    },
+    "Recording controls" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opnameregelaars"
           }
         }
       }
@@ -17829,6 +18556,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Opname via %@"
+          }
+        }
+      }
+    },
+    "Recording in progress" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opname bezig"
           }
         }
       }
@@ -18139,6 +18876,16 @@
         }
       }
     },
+    "Refresh blocked" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vernieuwen geblokkeerd"
+          }
+        }
+      }
+    },
     "Refresh blocked — check Claude connector approval, then retry." : {
       "localizations" : {
         "nl" : {
@@ -18159,12 +18906,32 @@
         }
       }
     },
+    "Refresh failed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vernieuwen mislukt"
+          }
+        }
+      }
+    },
     "Refresh failed — showing saved meetings if available. Press Refresh to retry." : {
       "localizations" : {
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Vernieuwen mislukt — bewaarde vergaderingen worden getoond indien beschikbaar. Klik op Vernieuw om het opnieuw te proberen."
+          }
+        }
+      }
+    },
+    "Refresh incomplete" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vernieuwen onvolledig"
           }
         }
       }
@@ -18649,6 +19416,16 @@
         }
       }
     },
+    "Rename Speaker…" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wijzig naam van spreker…"
+          }
+        }
+      }
+    },
     "Rename Voice" : {
       "localizations" : {
         "nl" : {
@@ -18685,6 +19462,32 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Wijzig naam in"
+          }
+        }
+      }
+    },
+    "Rename “%@” to %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rename “%1$@” to %2$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wijzig naam van “%1$@” in %2$@"
+          }
+        }
+      }
+    },
+    "Rename “%@”…" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wijzig naam van “%@”…"
           }
         }
       }
@@ -19161,6 +19964,16 @@
         }
       }
     },
+    "Resume Recording" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hervat opname"
+          }
+        }
+      }
+    },
     "Resume Reprocess" : {
       "localizations" : {
         "nl" : {
@@ -19177,6 +19990,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Hervat opname"
+          }
+        }
+      }
+    },
+    "Resume recording (⌥⌘P)" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hervat opname (⌥⌘P)"
           }
         }
       }
@@ -20401,6 +21224,16 @@
         }
       }
     },
+    "Set your mailbox first" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stel eerst je mailbox in"
+          }
+        }
+      }
+    },
     "Settings" : {
       "localizations" : {
         "nl" : {
@@ -21111,6 +21944,16 @@
         }
       }
     },
+    "Speaker names changed. You can regenerate the analysis." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sprekersnamen gewijzigd. Je kunt de analyse opnieuw genereren."
+          }
+        }
+      }
+    },
     "Speaker names were saved, but processing couldn't save its progress. Resume it from Queue & Recovery." : {
       "localizations" : {
         "nl" : {
@@ -21311,6 +22154,16 @@
         }
       }
     },
+    "Spoken summary ready" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gesproken samenvatting gereed"
+          }
+        }
+      }
+    },
     "Spoken summary script" : {
       "localizations" : {
         "nl" : {
@@ -21357,6 +22210,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Start"
+          }
+        }
+      }
+    },
+    "Start Recording" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Start opname"
           }
         }
       }
@@ -21511,6 +22374,22 @@
         }
       }
     },
+    "Step %lld of %lld: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Step %1$lld of %2$lld: %3$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stap %1$lld van %2$lld: %3$@"
+          }
+        }
+      }
+    },
     "Stop" : {
       "localizations" : {
         "nl" : {
@@ -21537,6 +22416,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Stop voorlezen"
+          }
+        }
+      }
+    },
+    "Stop Recording" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stop opname"
           }
         }
       }
@@ -21627,6 +22516,26 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Stop opname"
+          }
+        }
+      }
+    },
+    "Stop recording (⌥⌘.)" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stop opname (⌥⌘.)"
+          }
+        }
+      }
+    },
+    "Stop recording and create the meeting brief?" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opname stoppen en de vergaderbriefing maken?"
           }
         }
       }
@@ -21751,6 +22660,9 @@
         }
       }
     },
+    "Strikethrough" : {
+      "comment" : "Summary editor: toolbar"
+    },
     "Strong" : {
       "localizations" : {
         "nl" : {
@@ -21863,6 +22775,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Voorgesteld: %@ — wacht op de huidige taak"
+          }
+        }
+      }
+    },
+    "Suggestion ready" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suggestie gereed"
           }
         }
       }
@@ -22017,6 +22939,16 @@
         }
       }
     },
+    "Synthesizing sample" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Voorbeeld synthetiseren"
+          }
+        }
+      }
+    },
     "Synthesizing…" : {
       "localizations" : {
         "nl" : {
@@ -22107,6 +23039,9 @@
         }
       }
     },
+    "Table" : {
+      "comment" : "Summary editor: table block"
+    },
     "Tags" : {
       "localizations" : {
         "nl" : {
@@ -22176,6 +23111,9 @@
           }
         }
       }
+    },
+    "Task List" : {
+
     },
     "Task defaults" : {
       "localizations" : {
@@ -22277,6 +23215,16 @@
         }
       }
     },
+    "Testing command" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Commando testen"
+          }
+        }
+      }
+    },
     "Testing…" : {
       "localizations" : {
         "nl" : {
@@ -22288,6 +23236,7 @@
       }
     },
     "Text" : {
+      "comment" : "Summary editor: / menu group\nSummary editor: plain text block",
       "localizations" : {
         "nl" : {
           "stringUnit" : {
@@ -23440,6 +24389,16 @@
         }
       }
     },
+    "Thinking" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Denkt na"
+          }
+        }
+      }
+    },
     "Thinking…" : {
       "localizations" : {
         "nl" : {
@@ -23476,6 +24435,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Deze Claude CLI ondersteunt de gekozen inspanning niet. Werk Claude CLI bij of kies CLI-standaard."
+          }
+        }
+      }
+    },
+    "This Is Me" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dit ben ik"
           }
         }
       }
@@ -24745,11 +25714,22 @@
       }
     },
     "Type / to add a block · drag a block's handle to move it · ⌘S saves · Esc cancels" : {
+      "extractionState" : "stale",
       "localizations" : {
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Typ / om een blok toe te voegen · sleep de greep van een blok om het te verplaatsen · ⌘S bewaart · Esc annuleert"
+          }
+        }
+      }
+    },
+    "Type / to add a block · ⌥⇧↑↓ or drag a block's handle to move it · ⌘S saves · Esc cancels" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Typ / om een blok toe te voegen · ⌥⇧↑↓ of sleep de greep van een blok om het te verplaatsen · ⌘S bewaart · Esc annuleert"
           }
         }
       }
@@ -24770,6 +25750,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Typ een naam…"
+          }
+        }
+      }
+    },
+    "Type to search people or enter a new name" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Typ om mensen te zoeken of voer een nieuwe naam in"
           }
         }
       }
@@ -25652,6 +26642,16 @@
         }
       }
     },
+    "Voice preview failed. %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stemvoorbeeld mislukt. %@"
+          }
+        }
+      }
+    },
     "Voice style" : {
       "localizations" : {
         "nl" : {
@@ -26268,6 +27268,9 @@
         }
       }
     },
+    "Write the summary, or type / for blocks" : {
+
+    },
     "Writing Markdown" : {
       "localizations" : {
         "nl" : {
@@ -26284,6 +27287,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Antwoord schrijven op basis van wat er is gevonden…"
+          }
+        }
+      }
+    },
+    "Writing the spoken summary" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gesproken samenvatting schrijven"
           }
         }
       }
@@ -27460,6 +28473,16 @@
     },
     "“%@”" : {
       "comment" : "A meeting title in quotation marks"
+    },
+    "“%@” Is Me" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“%@” ben ik"
+          }
+        }
+      }
     },
     "•" : {
 

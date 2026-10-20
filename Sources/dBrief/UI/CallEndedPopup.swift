@@ -10,7 +10,7 @@ struct CallEndedPopup: View {
         CallAlertCard(
             title: text.title,
             message: text.message,
-            dismissLabel: "Keep recording",
+            dismissLabel: String(localized: "Keep recording"),
             onDismiss: { appState.showCallEndedPopup = false }
         ) {
             Button("Keep recording") {

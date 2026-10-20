@@ -1,6 +1,24 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "NSAppleEventsUsageDescription" : {
+      "comment" : "Permission prompt shown by macOS. Keep in step with Info.plist.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dBrief controls Notes to save your meeting notes when the Apple Notes integration is on."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief bestuurt Notities om je vergaderaantekeningen te bewaren wanneer de Apple Notes-integratie aan staat."
+          }
+        }
+      }
+    },
     "NSCalendarsFullAccessUsageDescription" : {
       "comment" : "Permission prompt shown by macOS. Keep in step with Info.plist.",
       "extractionState" : "manual",

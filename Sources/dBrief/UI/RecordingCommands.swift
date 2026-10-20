@@ -126,12 +126,12 @@ struct RecordingCommands: Commands {
                 .disabled(viewer?.reprocess == nil || viewer?.hasTranscript != true)
             Button("Detect Speakers Again…") { viewer?.reprocess?(.speakers) }
                 .disabled(viewer?.reprocess == nil || viewer?.hasTranscript != true)
-            Button(viewer?.currentSpeakerName.map { "Rename “\($0)”…" } ?? "Rename Speaker…") {
+            Button(viewer?.currentSpeakerName.map { String(localized: "Rename “\($0)”…") } ?? String(localized: "Rename Speaker…")) {
                 viewer?.renameCurrentSpeaker?()
             }
             .disabled(viewer?.renameCurrentSpeaker == nil)
-            Button(viewer?.currentSpeakerIsMe == true ? "Clear “This Is Me”"
-                   : viewer?.currentSpeakerName.map { "“\($0)” Is Me" } ?? "This Is Me") {
+            Button(viewer?.currentSpeakerIsMe == true ? String(localized: "Clear “This Is Me”")
+                   : viewer?.currentSpeakerName.map { String(localized: "“\($0)” Is Me") } ?? String(localized: "This Is Me")) {
                 viewer?.toggleCurrentSpeakerIsMe?()
             }
             .disabled(viewer?.toggleCurrentSpeakerIsMe == nil)

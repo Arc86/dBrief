@@ -40,10 +40,16 @@
 	<string>%@ en alle bijbehorende stemafdrukken worden verwijderd. Dit kan niet ongedaan worden gemaakt.</string>
 	<key>%@ audio</key>
 	<string>%@ audio</string>
+	<key>%@ call detected</key>
+	<string>%@-gesprek gedetecteerd</string>
 	<key>%@ changed since this attempt started. The saved candidate has been preserved.</key>
 	<string>%@ is gewijzigd sinds deze poging begon. De bewaarde kandidaat is behouden.</string>
 	<key>%@ didn’t finish</key>
 	<string>%@ is niet voltooid</string>
+	<key>%@ download failed. %@</key>
+	<string>Download van %1$@ mislukt. %2$@</string>
+	<key>%@ ended</key>
+	<string>%@ beëindigd</string>
 	<key>%@ has new results.</key>
 	<string>%@ heeft nieuwe resultaten.</string>
 	<key>%@ is not available</key>
@@ -54,12 +60,18 @@
 	<string>%@ is getranscribeerd.</string>
 	<key>%@ isn't available with %@, so English is used.</key>
 	<string>%@ is niet beschikbaar met %@, dus wordt Engels gebruikt.</string>
+	<key>%@ kept unnamed. All voices reviewed. Press Return to confirm.</key>
+	<string>%@ naamloos gelaten. Alle stemmen gecontroleerd. Druk op Return om te bevestigen.</string>
 	<key>%@ mins</key>
 	<string>%@ min</string>
+	<key>%@ named %@. All voices reviewed. Press Return to confirm.</key>
+	<string>%1$@ heet nu %2$@. Alle stemmen gecontroleerd. Druk op Return om te bevestigen.</string>
 	<key>%@ of %@</key>
 	<string>%@ van %@</string>
 	<key>%@ of unknown duration</key>
 	<string>%@ van onbekende duur</string>
+	<key>%@ ready</key>
+	<string>%@ gereed</string>
 	<key>%@ recordings</key>
 	<string>Opnamen: %@</string>
 	<key>%@ requires %.1f GB but only %.1f GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps if it stalls.</key>
@@ -88,6 +100,8 @@
 	<string>%@ · standaardprofiel</string>
 	<key>%@ — All day</key>
 	<string>%@ — Hele dag</string>
+	<key>%@, %lld of %lld</key>
+	<string>%1$@, %2$lld van %3$lld</string>
 	<key>%@, %lld out of 5, estimated</key>
 	<string>%@, %lld van 5, geschat</string>
 	<key>%@, dark mode theme</key>
@@ -96,10 +110,16 @@
 	<string>%@, licht thema</string>
 	<key>%@, unavailable</key>
 	<string>%@, niet beschikbaar</string>
+	<key>%@. %@</key>
+	<string>%1$@. %2$@</string>
 	<key>%@: %@ didn't finish. Open it to retry.</key>
 	<string>%@: %@ is niet voltooid. Open om het opnieuw te proberen.</string>
 	<key>%@: %@ failed. Open it to retry.</key>
 	<string>%@: %@ is mislukt. Open om het opnieuw te proberen.</string>
+	<key>%@: connected</key>
+	<string>%@: verbonden</string>
+	<key>%@: connection failed. %@</key>
+	<string>%1$@: verbinding mislukt. %2$@</string>
 	<key>%@: current results were kept. Open it to retry.</key>
 	<string>%@: huidige resultaten zijn bewaard. Open om het opnieuw te proberen.</string>
 	<key>%lld European languages</key>
@@ -182,6 +202,8 @@
 	<string>Een balans tussen nauwkeurigheid, snelheid en geheugengebruik.</string>
 	<key>A better prompt</key>
 	<string>Een betere prompt</string>
+	<key>A call detected</key>
+	<string>Gesprek gedetecteerd</string>
 	<key>A clear view of your meeting.</key>
 	<string>Een helder overzicht van je vergadering.</string>
 	<key>A profile can use its own list instead of this one.</key>
@@ -270,6 +292,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Accentkleur</string>
 	<key>Access</key>
 	<string>Toegang</string>
+	<key>Access blocked</key>
+	<string>Toegang geblokkeerd</string>
 	<key>Access blocked — check the Claude login and connector permission, then retest.</key>
 	<string>Toegang geblokkeerd — controleer de Claude-login en connectortoestemming en test opnieuw.</string>
 	<key>Account name</key>
@@ -442,6 +466,10 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>De analyse kon na het bewaren niet worden gecontroleerd.</string>
 	<key>Analysis failed</key>
 	<string>Analyse mislukt</string>
+	<key>Analysis ready</key>
+	<string>Analyse gereed</string>
+	<key>Analysis saved</key>
+	<string>Analyse bewaard</string>
 	<key>Analysis saved, but the linked Markdown note could not be updated. Your draft is kept so you can retry. %@</key>
 	<string>Analyse bewaard, maar de gekoppelde Markdown-notitie kon niet worden bijgewerkt. Je concept blijft behouden zodat je het opnieuw kunt proberen. %@</string>
 	<key>Analysis version %lld is not supported.</key>
@@ -470,6 +498,10 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Er wordt een andere opname verwerkt. Verwerk bewaart deze opname en zet hem in de wachtrij om automatisch te verwerken.</string>
 	<key>Answer copied</key>
 	<string>Antwoord gekopieerd</string>
+	<key>Answer ready</key>
+	<string>Antwoord gereed</string>
+	<key>Answer ready. %@</key>
+	<string>Antwoord gereed. %@</string>
 	<key>Answered from the most recent part of this live recording.</key>
 	<string>Beantwoord op basis van het meest recente deel van deze live opname.</string>
 	<key>Answered from the most relevant parts of this long recording.</key>
@@ -794,8 +826,12 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Vernieuwen van agenda mislukt. Bewaarde vergaderingen blijven beschikbaar.</string>
 	<key>Calendar refresh was incomplete. Saved meetings remain available.</key>
 	<string>Vernieuwen van agenda was onvolledig. Bewaarde vergaderingen blijven beschikbaar.</string>
+	<key>Calendar refreshed</key>
+	<string>Agenda vernieuwd</string>
 	<key>Calendar requests use your Claude usage</key>
 	<string>Agendaverzoeken tellen mee voor je Claude-gebruik</string>
+	<key>Calendar test failed</key>
+	<string>Agendatest mislukt</string>
 	<key>Calendar title</key>
 	<string>Agendatitel</string>
 	<key>Calendars</key>
@@ -806,6 +842,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Gespreksdetectie</string>
 	<key>Call detection is off</key>
 	<string>Gespreksdetectie staat uit</string>
+	<key>Call ended</key>
+	<string>Gesprek beëindigd</string>
 	<key>Cancel</key>
 	<string>Annuleer</string>
 	<key>Cancelled</key>
@@ -978,6 +1016,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Claude-starter</string>
 	<key>Clean up now</key>
 	<string>Schoon nu op</string>
+	<key>Cleaning up</key>
+	<string>Bezig met opruimen</string>
 	<key>Cleanup</key>
 	<string>Opschonen</string>
 	<key>Cleanup could not finish safely. Check storage before retrying.</key>
@@ -1010,6 +1050,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Haal deze briefing uit het menu; de opname blijft in je bibliotheek</string>
 	<key>Clear this chat?</key>
 	<string>Deze chat wissen?</string>
+	<key>Clear “This Is Me”</key>
+	<string>Wis “Dit ben ik”</string>
 	<key>Clear “This is me”</key>
 	<string>Wis “Dit ben ik”</string>
 	<key>Clearer</key>
@@ -1054,6 +1096,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Commando uitgevoerd</string>
 	<key>Command test failed</key>
 	<string>Test van commando mislukt</string>
+	<key>Command test failed. %@</key>
+	<string>Test van commando mislukt. %@</string>
 	<key>Compact</key>
 	<string>Compact</string>
 	<key>Company</key>
@@ -1098,10 +1142,14 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Verbonden — de connector heeft gereageerd voor het testvenster.</string>
 	<key>Connected, but no models were returned by the provider.</key>
 	<string>Verbonden, maar de aanbieder gaf geen modellen terug.</string>
+	<key>Connected, partial data</key>
+	<string>Verbonden, gedeeltelijke gegevens</string>
 	<key>Connection</key>
 	<string>Verbinding</string>
 	<key>Connection failed</key>
 	<string>Verbinding mislukt</string>
+	<key>Connection failed. %@</key>
+	<string>Verbinding mislukt. %@</string>
 	<key>Connection successful</key>
 	<string>Verbinding geslaagd</string>
 	<key>Connection test returned invalid response</key>
@@ -1166,6 +1214,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Kan audio niet bewaren: %@</string>
 	<key>Couldn't create the spoken summary</key>
 	<string>Kan de gesproken samenvatting niet maken</string>
+	<key>Couldn't create the spoken summary. %@</key>
+	<string>Kan de gesproken samenvatting niet maken. %@</string>
 	<key>Couldn't delete the recording</key>
 	<string>Kan de opname niet verwijderen</string>
 	<key>Couldn't discard the reprocess: %@</key>
@@ -1214,6 +1264,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Ondersteunt %@. Kies Whisper voor %@.</string>
 	<key>Create an internal integration, then connect your page or database to it (••• → Connections).</key>
 	<string>Maak een interne integratie en verbind je pagina of database ermee (••• → Connections).</string>
+	<key>Creating audio</key>
+	<string>Audio maken</string>
 	<key>Current model</key>
 	<string>Huidig model</string>
 	<key>Current results stay readable in the other tabs until the new ones are ready.</key>
@@ -1404,6 +1456,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Afgerond: %@</string>
 	<key>Download</key>
 	<string>Download</string>
+	<key>Download failed. %@</key>
+	<string>Download mislukt. %@</string>
 	<key>Download failed: %@</key>
 	<string>Download mislukt: %@</string>
 	<key>Download model</key>
@@ -1418,6 +1472,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Gedownload</string>
 	<key>Downloaded once from Hugging Face. Runs analysis and chat on this Mac.</key>
 	<string>Eenmalig gedownload van Hugging Face. Voert analyse en chat uit op deze Mac.</string>
+	<key>Downloading %@</key>
+	<string>%@ downloaden</string>
 	<key>Downloading Gemma model</key>
 	<string>Gemma-model downloaden</string>
 	<key>Downloading Gemma…</key>
@@ -1994,6 +2050,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Ongeldige reactie van AI-server.</string>
 	<key>Invalid response from transcription server.</key>
 	<string>Ongeldige reactie van transcriptieserver.</string>
+	<key>Invalid search pattern</key>
+	<string>Ongeldig zoekpatroon</string>
 	<key>Invalid transcription endpoint URL.</key>
 	<string>Ongeldige URL voor transcriptie-endpoint.</string>
 	<key>It is downloaded again the next time it's needed, which can take a while.</key>
@@ -2234,6 +2292,10 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Opmaak en hallucinatie-artefacten worden altijd verwijderd</string>
 	<key>Master output</key>
 	<string>Hoofdbestand</string>
+	<key>Match %lld of %lld</key>
+	<string>Resultaat %1$lld van %2$lld</string>
+	<key>Match %lld of %lld: %@</key>
+	<string>Resultaat %1$lld van %2$lld: %3$@</string>
 	<key>Match field</key>
 	<string>Overeenkomstveld</string>
 	<key>Match transcript</key>
@@ -2342,6 +2404,8 @@ Mix: amix normalize=0</string>
 	<string>Acties voor modeldownload</string>
 	<key>Model download progress</key>
 	<string>Voortgang modeldownload</string>
+	<key>Model downloaded</key>
+	<string>Model gedownload</string>
 	<key>Model families</key>
 	<string>Modelfamilies</string>
 	<key>Model list</key>
@@ -2378,6 +2442,8 @@ Mix: amix normalize=0</string>
 	<string>Verplaats dit record naar een map Unreadable ernaast. Er wordt niets verwijderd.</string>
 	<key>Move this turn to</key>
 	<string>Verplaats deze beurt naar</string>
+	<key>Move this turn to %@</key>
+	<string>Verplaats deze beurt naar %@</string>
 	<key>Move to</key>
 	<string>Verplaats naar</string>
 	<key>Move to first</key>
@@ -2400,6 +2466,8 @@ Mix: amix normalize=0</string>
 	<string>Naam</string>
 	<key>Name already exists</key>
 	<string>Naam bestaat al</string>
+	<key>Name for %@</key>
+	<string>Naam voor %@</string>
 	<key>Name or search</key>
 	<string>Naam of zoekterm</string>
 	<key>Named</key>
@@ -2634,6 +2702,8 @@ Mix: amix normalize=0</string>
 	<string>Notitieblok-ID</string>
 	<key>Notes</key>
 	<string>Notities</string>
+	<key>Notes copied</key>
+	<string>Notities gekopieerd</string>
 	<key>Nothing recorded this week.</key>
 	<string>Niets opgenomen deze week.</string>
 	<key>Nothing to delete.</key>
@@ -2872,10 +2942,14 @@ Mix: amix normalize=0</string>
 	<string>Pauzeer %@</string>
 	<key>Pause Queue</key>
 	<string>Pauzeer wachtrij</string>
+	<key>Pause Recording</key>
+	<string>Pauzeer opname</string>
 	<key>Pause prevents the next job from starting; the current job can finish. This setting survives a restart.</key>
 	<string>Pauzeren voorkomt dat de volgende taak start; de huidige taak kan afronden. Deze instelling blijft behouden na een herstart.</string>
 	<key>Pause recording</key>
 	<string>Pauzeer opname</string>
+	<key>Pause recording (⌥⌘P)</key>
+	<string>Pauzeer opname (⌥⌘P)</string>
 	<key>Pause spoken summary</key>
 	<string>Pauzeer gesproken samenvatting</string>
 	<key>Pause to review speaker names before analysis.</key>
@@ -2966,8 +3040,12 @@ Mix: amix normalize=0</string>
 	<string>Live transcriptie voorbereiden…</string>
 	<key>Preparing speakers</key>
 	<string>Sprekers voorbereiden</string>
+	<key>Preparing the voice</key>
+	<string>Stem voorbereiden</string>
 	<key>Preparing transcript…</key>
 	<string>Transcript voorbereiden…</string>
+	<key>Preparing voice</key>
+	<string>Stem voorbereiden</string>
 	<key>Preparing voice sample…</key>
 	<string>Stemfragment voorbereiden…</string>
 	<key>Preparing voice…</key>
@@ -2988,10 +3066,14 @@ Mix: amix normalize=0</string>
 	<string>Druk op toetscombinatie…</string>
 	<key>Preview</key>
 	<string>Voorvertoning</string>
+	<key>Preview ready</key>
+	<string>Voorvertoning gereed</string>
 	<key>Preview result</key>
 	<string>Voorvertoning resultaat</string>
 	<key>Previous match (⌘⇧G)</key>
 	<string>Vorige overeenkomst (⌘⇧G)</string>
+	<key>Previous results restored</key>
+	<string>Vorige resultaten hersteld</string>
 	<key>Previous search match</key>
 	<string>Vorige zoekresultaat</string>
 	<key>Previous speaker</key>
@@ -3234,6 +3316,8 @@ Mix: amix normalize=0</string>
 	<string>Neem gesprek op</string>
 	<key>Record meeting</key>
 	<string>Vergadering opnemen</string>
+	<key>Record this call and create a meeting brief.</key>
+	<string>Neem dit gesprek op en maak een vergaderbriefing.</string>
 	<key>Record, transcribe, and analyze meetings and voice notes — right from your menu bar.</key>
 	<string>Neem vergaderingen en spraakmemo's op, transcribeer en analyseer ze — direct vanuit je menubalk.</string>
 	<key>Recorded attempts</key>
@@ -3246,8 +3330,12 @@ Mix: amix normalize=0</string>
 	<string>Opname- en transcriptmappen</string>
 	<key>Recording audio</key>
 	<string>Audio opnemen</string>
+	<key>Recording being processed</key>
+	<string>Opname wordt verwerkt</string>
 	<key>Recording completed</key>
 	<string>Opname voltooid</string>
+	<key>Recording controls</key>
+	<string>Opnameregelaars</string>
 	<key>Recording failed</key>
 	<string>Opname mislukt</string>
 	<key>Recording finalization</key>
@@ -3256,6 +3344,8 @@ Mix: amix normalize=0</string>
 	<string>Opnamemap</string>
 	<key>Recording from %@</key>
 	<string>Opname via %@</string>
+	<key>Recording in progress</key>
+	<string>Opname bezig</string>
 	<key>Recording indicators</key>
 	<string>Opname-indicatoren</string>
 	<key>Recording library</key>
@@ -3316,12 +3406,18 @@ Mix: amix normalize=0</string>
 	<string>Verminder microfoonecho</string>
 	<key>Refresh</key>
 	<string>Vernieuw</string>
+	<key>Refresh blocked</key>
+	<string>Vernieuwen geblokkeerd</string>
 	<key>Refresh blocked — check Claude connector approval, then retry.</key>
 	<string>Vernieuwen geblokkeerd — controleer de goedkeuring van de Claude-connector en probeer het opnieuw.</string>
 	<key>Refresh device list</key>
 	<string>Vernieuw apparatenlijst</string>
+	<key>Refresh failed</key>
+	<string>Vernieuwen mislukt</string>
 	<key>Refresh failed — showing saved meetings if available. Press Refresh to retry.</key>
 	<string>Vernieuwen mislukt — bewaarde vergaderingen worden getoond indien beschikbaar. Klik op Vernieuw om het opnieuw te proberen.</string>
+	<key>Refresh incomplete</key>
+	<string>Vernieuwen onvolledig</string>
 	<key>Refresh incomplete; saved meetings remain available.</key>
 	<string>Vernieuwen onvolledig; bewaarde vergaderingen blijven beschikbaar.</string>
 	<key>Refresh interval</key>
@@ -3418,6 +3514,8 @@ Mix: amix normalize=0</string>
 	<string>Verwijderen bewaart de opname. Uitgestelde items wachten op Verwerk wachtrij; automatische items kunnen eerder worden verwerkt.</string>
 	<key>Rename</key>
 	<string>Wijzig naam</string>
+	<key>Rename Speaker…</key>
+	<string>Wijzig naam van spreker…</string>
 	<key>Rename Voice</key>
 	<string>Wijzig naam van stem</string>
 	<key>Rename profile</key>
@@ -3426,6 +3524,10 @@ Mix: amix normalize=0</string>
 	<string>Wijzig naam van opname</string>
 	<key>Rename to</key>
 	<string>Wijzig naam in</string>
+	<key>Rename “%@” to %@</key>
+	<string>Wijzig naam van “%1$@” in %2$@</string>
+	<key>Rename “%@”…</key>
+	<string>Wijzig naam van “%@”…</string>
 	<key>Renamed %lld.</key>
 	<string>%lld hernoemd.</string>
 	<key>Rename…</key>
@@ -3518,10 +3620,14 @@ Mix: amix normalize=0</string>
 	<string>Hervat verwerking</string>
 	<key>Resume Queue</key>
 	<string>Hervat wachtrij</string>
+	<key>Resume Recording</key>
+	<string>Hervat opname</string>
 	<key>Resume Reprocess</key>
 	<string>Hervat opnieuw verwerken</string>
 	<key>Resume recording</key>
 	<string>Hervat opname</string>
+	<key>Resume recording (⌥⌘P)</key>
+	<string>Hervat opname (⌥⌘P)</string>
 	<key>Resuming interrupted processing.</key>
 	<string>Onderbroken verwerking wordt hervat.</string>
 	<key>Retranscribe</key>
@@ -3766,6 +3872,8 @@ Mix: amix normalize=0</string>
 	<string>Stel later in</string>
 	<key>Set your mailbox before refreshing.</key>
 	<string>Stel je mailbox in voordat je vernieuwt.</string>
+	<key>Set your mailbox first</key>
+	<string>Stel eerst je mailbox in</string>
 	<key>Settings</key>
 	<string>Instellingen</string>
 	<key>Settings always shows one while it's open.</key>
@@ -3908,6 +4016,8 @@ Mix: amix normalize=0</string>
 	<string>Sprekers herkennen gebeurt op deze Mac. Integratie-aflevering en exports zijn aparte acties.</string>
 	<key>Speaker names changed — regenerate analysis?</key>
 	<string>Sprekersnamen gewijzigd — analyse opnieuw genereren?</string>
+	<key>Speaker names changed. You can regenerate the analysis.</key>
+	<string>Sprekersnamen gewijzigd. Je kunt de analyse opnieuw genereren.</string>
 	<key>Speaker names were saved, but processing couldn't save its progress. Resume it from Queue &amp; Recovery.</key>
 	<string>Sprekersnamen zijn bewaard, maar de verwerking kon de voortgang niet bewaren. Hervat via Wachtrij en herstel.</string>
 	<key>Speaker review needed</key>
@@ -3948,6 +4058,8 @@ Mix: amix normalize=0</string>
 	<string>Voortgang gesproken samenvatting</string>
 	<key>Spoken summary prompt</key>
 	<string>Prompt voor gesproken samenvatting</string>
+	<key>Spoken summary ready</key>
+	<string>Gesproken samenvatting gereed</string>
 	<key>Spoken summary script</key>
 	<string>Script voor gesproken samenvatting</string>
 	<key>Spoken voice</key>
@@ -3958,6 +4070,8 @@ Mix: amix normalize=0</string>
 	<string>Stabiel</string>
 	<key>Start</key>
 	<string>Start</string>
+	<key>Start Recording</key>
+	<string>Start opname</string>
 	<key>Start a new recording</key>
 	<string>Start een nieuwe opname</string>
 	<key>Start also discards this recording's unfinished run in Queue &amp; Recovery. Its saved progress can't be resumed afterwards.</key>
@@ -3988,12 +4102,16 @@ Mix: amix normalize=0</string>
 	<string>Status</string>
 	<key>Status: %@</key>
 	<string>Status: %@</string>
+	<key>Step %lld of %lld: %@</key>
+	<string>Stap %1$lld van %2$lld: %3$@</string>
 	<key>Stop</key>
 	<string>Stop</string>
 	<key>Stop Processing</key>
 	<string>Stop verwerking</string>
 	<key>Stop Reading</key>
 	<string>Stop voorlezen</string>
+	<key>Stop Recording</key>
+	<string>Stop opname</string>
 	<key>Stop automatically</key>
 	<string>Stop automatisch</string>
 	<key>Stop generating</key>
@@ -4012,6 +4130,10 @@ Mix: amix normalize=0</string>
 	<string>Stop voorlezen van antwoord</string>
 	<key>Stop recording</key>
 	<string>Stop opname</string>
+	<key>Stop recording (⌥⌘.)</key>
+	<string>Stop opname (⌥⌘.)</string>
+	<key>Stop recording and create the meeting brief?</key>
+	<string>Opname stoppen en de vergaderbriefing maken?</string>
 	<key>Stop the voice sample (⌥Space)</key>
 	<string>Stop het stemvoorbeeld (⌥Space)</string>
 	<key>Stop voice sample</key>
@@ -4058,6 +4180,8 @@ Mix: amix normalize=0</string>
 	<string>Voorgesteld · %lld%% stemovereenkomst</string>
 	<key>Suggested: %@ — waiting for the current job</key>
 	<string>Voorgesteld: %@ — wacht op de huidige taak</string>
+	<key>Suggestion ready</key>
+	<string>Suggestie gereed</string>
 	<key>Summaries, action items, tags and Ask dBrief AI.</key>
 	<string>Samenvattingen, actiepunten, tags en Vraag dBrief AI.</string>
 	<key>Summarize</key>
@@ -4088,6 +4212,8 @@ Mix: amix normalize=0</string>
 	<string>Overgeschakeld naar %@</string>
 	<key>Symbol</key>
 	<string>Symbool</string>
+	<key>Synthesizing sample</key>
+	<string>Voorbeeld synthetiseren</string>
 	<key>Synthesizing…</key>
 	<string>Synthetiseren…</string>
 	<key>Synthetic probe audio</key>
@@ -4140,6 +4266,8 @@ Mix: amix normalize=0</string>
 	<string>Test het commando</string>
 	<key>Test the connection</key>
 	<string>Test de verbinding</string>
+	<key>Testing command</key>
+	<string>Commando testen</string>
 	<key>Testing…</key>
 	<string>Testen…</string>
 	<key>Text</key>
@@ -4362,6 +4490,8 @@ Mix: amix normalize=0</string>
 	<string>Deze keuzes gelden zodra je het inschakelt.</string>
 	<key>They said: %@</key>
 	<string>Deze stem zei: %@</string>
+	<key>Thinking</key>
+	<string>Denkt na</string>
 	<key>Thinking…</key>
 	<string>Denkt na…</string>
 	<key>This CLI does not support the selected effort. Update Claude CLI or choose CLI default in Settings → AI analysis.</key>
@@ -4370,6 +4500,8 @@ Mix: amix normalize=0</string>
 	<string>Deze CLI ondersteunt de gekozen inspanning niet. Werk Claude CLI bij of kies CLI-standaard.</string>
 	<key>This Claude CLI does not support the selected effort. Update Claude CLI or choose CLI default.</key>
 	<string>Deze Claude CLI ondersteunt de gekozen inspanning niet. Werk Claude CLI bij of kies CLI-standaard.</string>
+	<key>This Is Me</key>
+	<string>Dit ben ik</string>
 	<key>This Mac</key>
 	<string>Deze Mac</string>
 	<key>This Whisper model supports English only. Choose a multilingual model for this language.</key>
@@ -4622,10 +4754,14 @@ Sentiment: %@</string>
 	<string>Twee letters, bijvoorbeeld DE of FR.</string>
 	<key>Type / to add a block · drag a block's handle to move it · ⌘S saves · Esc cancels</key>
 	<string>Typ / om een blok toe te voegen · sleep de greep van een blok om het te verplaatsen · ⌘S bewaart · Esc annuleert</string>
+	<key>Type / to add a block · ⌥⇧↑↓ or drag a block's handle to move it · ⌘S saves · Esc cancels</key>
+	<string>Typ / om een blok toe te voegen · ⌥⇧↑↓ of sleep de greep van een blok om het te verplaatsen · ⌘S bewaart · Esc annuleert</string>
 	<key>Type a name, or search people…</key>
 	<string>Typ een naam of zoek mensen…</string>
 	<key>Type a name…</key>
 	<string>Typ een naam…</string>
+	<key>Type to search people or enter a new name</key>
+	<string>Typ om mensen te zoeken of voer een nieuwe naam in</string>
 	<key>UI font and size</key>
 	<string>Interfacelettertype en -grootte</string>
 	<key>URL</key>
@@ -4798,6 +4934,8 @@ Sentiment: %@</string>
 	<string>Stemmodel</string>
 	<key>Voice preview failed</key>
 	<string>Stemvoorbeeld mislukt</string>
+	<key>Voice preview failed. %@</key>
+	<string>Stemvoorbeeld mislukt. %@</string>
 	<key>Voice style</key>
 	<string>Stemstijl</string>
 	<key>Voice style requires the Qwen 1.7B voice model. Your prompt is preserved.</key>
@@ -4924,6 +5062,8 @@ Sentiment: %@</string>
 	<string>Markdown schrijven</string>
 	<key>Writing the answer from what was found…</key>
 	<string>Antwoord schrijven op basis van wat er is gevonden…</string>
+	<key>Writing the spoken summary</key>
+	<string>Gesproken samenvatting schrijven</string>
 	<key>Yesterday %@</key>
 	<string>Gisteren %@</string>
 	<key>You</key>
@@ -5126,6 +5266,8 @@ Sentiment: %@</string>
 	<string>· Uitgesteld</string>
 	<key>· You</key>
 	<string>· Jij</string>
+	<key>“%@” Is Me</key>
+	<string>“%@” ben ik</string>
 	<key>↑↓ to choose · Return to assign · ⌘↓ next voice</key>
 	<string>↑↓ om te kiezen · Return om toe te wijzen · ⌘↓ volgende stem</string>
 	<key>⌘↑ and ⌘↓ move between voices</key>

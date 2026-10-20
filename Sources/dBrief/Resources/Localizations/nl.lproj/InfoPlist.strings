@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>dBrief bestuurt Notities om je vergaderaantekeningen te bewaren wanneer de Apple Notes-integratie aan staat.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>dBrief gebruikt je agenda om de titel, deelnemers en agenda van een vergadering in te vullen wanneer je opneemt.</string>
 	<key>NSMicrophoneUsageDescription</key>

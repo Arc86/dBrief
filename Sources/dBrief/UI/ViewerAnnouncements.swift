@@ -16,13 +16,13 @@ struct ViewerAnnouncements: ViewModifier {
                 if let error { announcer.announce(error, priority: .high) }
             }
             .onChange(of: copied) { _, copied in
-                if copied { announcer.announce("Copied") }
+                if copied { announcer.announce(String(localized: "Copied")) }
             }
             .onChange(of: isGenerating) { wasGenerating, generating in
-                if wasGenerating, !generating, hasInsights { announcer.announce("Analysis ready") }
+                if wasGenerating, !generating, hasInsights { announcer.announce(String(localized: "Analysis ready")) }
             }
             .onChange(of: offerReanalysis) { _, offered in
-                if offered { announcer.announce("Speaker names changed. You can regenerate the analysis.") }
+                if offered { announcer.announce(String(localized: "Speaker names changed. You can regenerate the analysis.")) }
             }
     }
 }
@@ -43,11 +43,11 @@ extension SpokenSummaryService.Phase {
     var announcement: String? {
         switch self {
         case .idle: nil
-        case .rewriting: "Writing the spoken summary"
-        case .preparingVoice: "Preparing the voice"
-        case .synthesizing: "Creating audio"
-        case .ready: "Spoken summary ready"
-        case .failed(let message): "Couldn't create the spoken summary. \(message)"
+        case .rewriting: String(localized: "Writing the spoken summary")
+        case .preparingVoice: String(localized: "Preparing the voice")
+        case .synthesizing: String(localized: "Creating audio")
+        case .ready: String(localized: "Spoken summary ready")
+        case .failed(let message): String(localized: "Couldn't create the spoken summary. \(message)")
         }
     }
 
@@ -64,8 +64,9 @@ enum ChatAnnouncement {
             .replacingOccurrences(of: #"[*_#`>]"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if plain.hasPrefix("Error:") { return (plain, .high) }
-        guard !plain.isEmpty else { return ("Answer ready", .normal) }
-        return ("Answer ready. \(firstSentence(plain))", .normal)
+        guard !plain.isEmpty else { return (String(localized: "Answer ready"), .normal) }
+        let sentence = firstSentence(plain)
+        return (String(localized: "Answer ready. \(sentence)"), .normal)
     }
 
     static func firstSentence(_ text: String, limit: Int = 200) -> String {

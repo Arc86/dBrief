@@ -275,11 +275,12 @@ struct SettingsCalendarCLISection: View {
         switch state {
         case .idle, .running: nil
         case .reachable(let events, let partial):
-            partial ? (refresh ? "Refresh incomplete" : "Connected, partial data")
-                : refresh ? "Calendar refreshed" : "Connected\(events > 0 ? ", \(events) events" : "")"
-        case .blocked: refresh ? "Refresh blocked" : "Access blocked"
-        case .unconfigured: "Set your mailbox first"
-        case .failed: refresh ? "Refresh failed" : "Calendar test failed"
+            partial ? (refresh ? String(localized: "Refresh incomplete") : String(localized: "Connected, partial data"))
+                : refresh ? String(localized: "Calendar refreshed")
+                : events > 0 ? String(localized: "Connected, \(events) events") : String(localized: "Connected")
+        case .blocked: refresh ? String(localized: "Refresh blocked") : String(localized: "Access blocked")
+        case .unconfigured: String(localized: "Set your mailbox first")
+        case .failed: refresh ? String(localized: "Refresh failed") : String(localized: "Calendar test failed")
         }
     }
 

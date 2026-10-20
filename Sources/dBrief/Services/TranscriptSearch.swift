@@ -61,13 +61,14 @@ enum TranscriptSearch {
     /// What VoiceOver says for a search: "No results", "Invalid search pattern" or
     /// "Match 2 of 5: …the text around it…". `text` returns a turn's displayed text.
     static func announcement(for result: Result, current: Int, text: (UUID) -> String?) -> String {
-        guard result.isValid else { return "Invalid search pattern" }
-        guard !result.matches.isEmpty else { return "No results" }
+        guard result.isValid else { return String(localized: "Invalid search pattern") }
+        guard !result.matches.isEmpty else { return String(localized: "No results") }
         let index = min(max(current, 0), result.matches.count - 1)
         let match = result.matches[index]
-        let position = "Match \(index + 1) of \(result.matches.count)"
-        guard let turnText = text(match.turnId) else { return position }
-        return "\(position): \(snippet(turnText, location: match.location, length: match.length))"
+        let position = index + 1, total = result.matches.count
+        guard let turnText = text(match.turnId) else { return String(localized: "Match \(position) of \(total)") }
+        let around = snippet(turnText, location: match.location, length: match.length)
+        return String(localized: "Match \(position) of \(total): \(around)")
     }
 
     /// The match with up to `context` characters either side, marked "…" where cut.

@@ -38,7 +38,7 @@ final class SpeakerReviewDraft {
         let target = min(max(current + offset, 0), items.count - 1)
         guard target != current else { return }
         selectSpeaker(items[target].id)
-        announce("\(items[target].id), \(target + 1) of \(items.count)")
+        announce(String(localized: "\(items[target].id), \(target + 1) of \(items.count)"))
     }
 
     func clearInput() {
@@ -78,8 +78,16 @@ final class SpeakerReviewDraft {
 
     /// "Speaker 1 named Alice. Now Speaker 2, 1 voice left." or "… All voices reviewed."
     static func announcement(for speakerID: String, answer: ConfirmedSpeaker, next: String?, left: Int) -> String {
-        let done = answer.name == speakerID ? "\(speakerID) kept unnamed." : "\(speakerID) named \(answer.name)."
-        guard let next else { return "\(done) All voices reviewed. Press Return to confirm." }
-        return "\(done) Now \(next), \(left) \(left == 1 ? "voice" : "voices") left."
+        let unnamed = answer.name == speakerID
+        guard let next else {
+            return unnamed
+                ? String(localized: "\(speakerID) kept unnamed. All voices reviewed. Press Return to confirm.")
+                : String(localized: "\(speakerID) named \(answer.name). All voices reviewed. Press Return to confirm.")
+        }
+        // Inflected so English reads "1 voice" without the catalog (tests); the catalog has the plural variants.
+        let text = unnamed
+            ? AttributedString(localized: "\(speakerID) kept unnamed. Now \(next), ^[\(left) voice](inflect: true) left.")
+            : AttributedString(localized: "\(speakerID) named \(answer.name). Now \(next), ^[\(left) voice](inflect: true) left.")
+        return String(text.characters)
     }
 }

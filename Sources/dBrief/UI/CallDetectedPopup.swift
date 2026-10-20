@@ -9,7 +9,7 @@ struct CallDetectedPopup: View {
         CallAlertCard(
             title: text.title,
             message: text.message,
-            dismissLabel: "Dismiss",
+            dismissLabel: String(localized: "Dismiss"),
             onDismiss: { appState.showCallDetectedPopup = false }
         ) {
             Button("Not now") {
@@ -42,16 +42,16 @@ struct CallPromptText: Equatable {
     let message: String
 
     static func detected(app: String?) -> CallPromptText {
-        CallPromptText(title: "\(app.map { "\($0) call" } ?? "A call") detected",
-                       message: "Record this call and create a meeting brief.")
+        CallPromptText(title: app.map { String(localized: "\($0) call detected") } ?? String(localized: "A call detected"),
+                       message: String(localized: "Record this call and create a meeting brief."))
     }
 
     static func ended(app: String?) -> CallPromptText {
-        CallPromptText(title: "\(app ?? "Call") ended",
-                       message: "Stop recording and create the meeting brief?")
+        CallPromptText(title: app.map { String(localized: "\($0) ended") } ?? String(localized: "Call ended"),
+                       message: String(localized: "Stop recording and create the meeting brief?"))
     }
 
-    var announcement: String { "\(title). \(message)" }
+    var announcement: String { String(localized: "\(title). \(message)") }
 
     /// The card's fixed width; its height follows the text.
     static let cardWidth: CGFloat = 360

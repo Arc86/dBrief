@@ -49,9 +49,9 @@ struct ModelDownloadButton: View {
         // A download takes minutes; its outcome is spoken when it lands.
         .onChange(of: phaseKey) { old, new in
             if new == "failed", case .failed(let message) = phase {
-                AccessibilityAnnouncer.shared.announce("Download failed. \(message)", priority: .high)
+                AccessibilityAnnouncer.shared.announce(String(localized: "Download failed. \(message)"), priority: .high)
             } else if old == "downloading", new == "idle" {
-                AccessibilityAnnouncer.shared.announce("Model downloaded")
+                AccessibilityAnnouncer.shared.announce(String(localized: "Model downloaded"))
             }
         }
     }

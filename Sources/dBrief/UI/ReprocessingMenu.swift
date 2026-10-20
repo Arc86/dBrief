@@ -134,7 +134,7 @@ struct ReprocessingMenu: View {
             defer { isRestoring = false }
             do {
                 try await manager.restoreReprocessingResults(for: recording)
-                AccessibilityAnnouncer.shared.announce("Previous results restored")
+                AccessibilityAnnouncer.shared.announce(String(localized: "Previous results restored"))
             } catch {
                 self.error = error.localizedDescription
                 AccessibilityAnnouncer.shared.announce(error.localizedDescription, priority: .high)

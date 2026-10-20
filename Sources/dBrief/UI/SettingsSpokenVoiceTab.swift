@@ -160,10 +160,10 @@ private extension VoicePreviewPlayer.State {
     var spokenStatus: String? {
         switch self {
         case .idle: nil
-        case .preparingVoice: "Preparing voice"
-        case .synthesizing: "Synthesizing sample"
-        case .playing: "Playing sample"
-        case .failed(let message): "Voice preview failed. \(message)"
+        case .preparingVoice: String(localized: "Preparing voice")
+        case .synthesizing: String(localized: "Synthesizing sample")
+        case .playing: String(localized: "Playing sample")
+        case .failed(let message): String(localized: "Voice preview failed. \(message)")
         }
     }
 }

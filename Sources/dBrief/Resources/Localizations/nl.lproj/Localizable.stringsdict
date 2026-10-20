@@ -2,6 +2,38 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>%@ kept unnamed. Now %@, ^[%lld voice](inflect: true) left.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ naamloos gelaten. Nu %2$@, nog %3$#@n@.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%3$lld stem</string>
+			<key>other</key>
+			<string>%3$lld stemmen</string>
+		</dict>
+	</dict>
+	<key>%@ named %@. Now %@, ^[%lld voice](inflect: true) left.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ heet nu %2$@. Nu %3$@, nog %4$#@n@.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%4$lld stem</string>
+			<key>other</key>
+			<string>%4$lld stemmen</string>
+		</dict>
+	</dict>
 	<key>%@ profile · %lld tasks selected</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -210,6 +242,22 @@
 			<string>%lld toestemmingen vragen aandacht.</string>
 		</dict>
 	</dict>
+	<key>%lld recordings found</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld opname gevonden</string>
+			<key>other</key>
+			<string>%lld opnamen gevonden</string>
+		</dict>
+	</dict>
 	<key>%lld seconds</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -352,6 +400,38 @@
 			<string>Verbonden — de connector gaf antwoord voor het testvenster (%lld afspraak).</string>
 			<key>other</key>
 			<string>Verbonden — de connector gaf antwoord voor het testvenster (%lld afspraken).</string>
+		</dict>
+	</dict>
+	<key>Connected, %lld events</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Verbonden, %lld afspraak</string>
+			<key>other</key>
+			<string>Verbonden, %lld afspraken</string>
+		</dict>
+	</dict>
+	<key>Connected, %lld models found</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Verbonden, %lld model gevonden</string>
+			<key>other</key>
+			<string>Verbonden, %lld modellen gevonden</string>
 		</dict>
 	</dict>
 	<key>Deleted %lld files (%@).</key>

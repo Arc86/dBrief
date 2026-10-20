@@ -478,17 +478,17 @@ struct OnboardingView: View {
 enum OnboardingStep {
     static func title(_ step: Int) -> String {
         switch step {
-        case 0: "Welcome to dBrief"
-        case 1: "Permissions"
-        case 2: "Transcription & AI"
-        case 3: "Prepare your models"
-        default: "Before you record"
+        case 0: String(localized: "Welcome to dBrief")
+        case 1: String(localized: "Permissions")
+        case 2: String(localized: "Transcription & AI")
+        case 3: String(localized: "Prepare your models")
+        default: String(localized: "Before you record")
         }
     }
 
     /// "Step 2 of 4: Permissions".
     static func announcement(step: Int, visibleSteps: [Int]) -> String {
         let position = (visibleSteps.firstIndex(of: step) ?? 0) + 1
-        return "Step \(position) of \(visibleSteps.count): \(title(step))"
+        return String(localized: "Step \(position) of \(visibleSteps.count): \(title(step))")
     }
 }

@@ -25,7 +25,7 @@ struct ResultsView: View {
         guard let recording = appState.processingRecording else { return AnyView(EmptyView()) }
         return AnyView(content(recording: recording)
             .onChange(of: copied) { _, copied in
-                if copied { appState.announcer.announce("Notes copied") }
+                if copied { appState.announcer.announce(String(localized: "Notes copied")) }
             })
     }
 

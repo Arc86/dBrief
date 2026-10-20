@@ -471,17 +471,22 @@ struct TranscriptBrowserView: View {
     private var searchResultSummary: String? {
         guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty, !library.showsInitialLoading else { return nil }
         let count = filteredItems.count + library.workMatches.count
-        return count == 0 ? "No recordings found" : "\(count) \(count == 1 ? "recording" : "recordings") found"
+        return count == 0 ? String(localized: "No recordings found") : String(localized: "\(count) recordings found")
     }
 
     /// The selected row's title and date, for VoiceOver.
     private var selectedSidebarTitle: String? {
-        if let selectedWork { return "\(selectedWork.title), \(selectedWork.date.formatted(date: .abbreviated, time: .shortened))" }
+        if let selectedWork { return Self.spokenTitle(selectedWork.title, date: selectedWork.date) }
         guard let selection else { return nil }
-        if selection == liveRecording?.fileURL { return "Recording in progress" }
-        if selection == processingRecording?.fileURL { return "Recording being processed" }
+        if selection == liveRecording?.fileURL { return String(localized: "Recording in progress") }
+        if selection == processingRecording?.fileURL { return String(localized: "Recording being processed") }
         guard let item = items.first(where: { $0.url == selection }) else { return nil }
-        return "\(item.title), \(item.date.formatted(date: .abbreviated, time: .shortened))"
+        return Self.spokenTitle(item.title, date: item.date)
+    }
+
+    private static func spokenTitle(_ title: String, date: Date) -> String {
+        let when = date.formatted(date: .abbreviated, time: .shortened)
+        return String(localized: "\(title), \(when)", comment: "A recording's title and date, spoken by VoiceOver")
     }
 
     private func moveSelection(by offset: Int) {

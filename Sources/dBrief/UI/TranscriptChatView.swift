@@ -55,7 +55,7 @@ struct TranscriptChatView: View {
         // The question field keeps focus, so progress and answers are spoken.
         .onChange(of: chatService.isStreaming) { wasStreaming, streaming in
             if streaming {
-                AccessibilityAnnouncer.shared.announce("Thinking")
+                AccessibilityAnnouncer.shared.announce(String(localized: "Thinking"))
             } else if wasStreaming, let answer = chatService.messages.last, answer.role == .assistant {
                 let spoken = ChatAnnouncement.finished(answer.content)
                 AccessibilityAnnouncer.shared.announce(spoken.text, priority: spoken.priority)
@@ -727,7 +727,7 @@ private struct MessageActions: View {
                     Task {
                         if await chatService.copyAnswer(message) {
                             copyToken = UUID()
-                            AccessibilityAnnouncer.shared.announce("Answer copied")
+                            AccessibilityAnnouncer.shared.announce(String(localized: "Answer copied"))
                         }
                     }
                 }
@@ -781,7 +781,7 @@ private struct MessageActions: View {
                 speechProgress(String(localized: "Preparing audio…"))
             case .failed(let message):
                 Text("Could not read aloud: \(message)")
-                    .onAppear { AccessibilityAnnouncer.shared.announce("Could not read aloud: \(message)", priority: .high) }
+                    .onAppear { AccessibilityAnnouncer.shared.announce(String(localized: "Could not read aloud: \(message)"), priority: .high) }
                     .uiFont(.caption)
                     .foregroundStyle(palette.secondary.color)
                     .textSelection(.enabled)

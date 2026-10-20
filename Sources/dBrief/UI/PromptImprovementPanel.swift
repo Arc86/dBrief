@@ -53,7 +53,7 @@ struct PromptImprovementPanel: View {
                     palette.divider.color.frame(height: 1)
                     Text("Suggested prompt").uiFont(.headline)
                         .accessibilityAddTraits(.isHeader)
-                        .onAppear { AccessibilityAnnouncer.shared.announce("Suggestion ready") }
+                        .onAppear { AccessibilityAnnouncer.shared.announce(String(localized: "Suggestion ready")) }
                     ForEach(Array(suggestion.response.changes.enumerated()), id: \.offset) { _, change in
                         Text("• \(change)").uiFont(.callout).foregroundStyle(palette.secondary.color)
                     }
