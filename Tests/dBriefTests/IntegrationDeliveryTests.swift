@@ -291,6 +291,7 @@ struct IntegrationDeliveryTests {
     func acceptingChangedSettingsStartsTheDeliveryOver() async throws {
         var delivery = IntegrationDeliveryBatch.Delivery(id: UUID(), destination: .notion, configurationDigest: "old")
         delivery.status = .uncertain
+        delivery.attempts = 2
         delivery.createdItems = [0: "page", 1: "100"]
         let original = IntegrationDeliveryBatch(id: UUID(), recordingID: UUID(), createdAt: Date(),
             bundle: .init(title: "Meeting", createdAt: Date(), durationSeconds: 60,
@@ -302,6 +303,9 @@ struct IntegrationDeliveryTests {
             id: original.id, configurationDigests: [.notion: "new"], allowUncertainRetry: true,
             acceptConfigurationChange: true) { _, entry in
             #expect(entry.createdItems == nil)
+            // A first attempt for the new settings, so Notion doesn't adopt the old
+            // layout's page by its (unchanged) reference.
+            #expect(entry.attempts == 1)
             return .init(destination: .notion, status: .success, message: "Sent", remoteID: "p2", createdItems: [0: "p2", 1: "3"])
         }
         #expect(result.deliveries[0].createdItems == [0: "p2", 1: "3"])
