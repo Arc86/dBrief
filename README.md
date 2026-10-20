@@ -10,23 +10,28 @@ dBrief is a Mac menu bar app for the part of a meeting that comes after the meet
 
 [Download dBrief](https://github.com/Arc86/dBrief/releases) · [Read the docs](https://get.dbrief.nl/docs.html) · [Report a bug](https://github.com/Arc86/dBrief/issues/new)
 
+**New in 2.0:** a redesigned app built around your notes, dBrief in Dutch, VoiceOver and keyboard support, and Todoist, Notion and TickTick. [See what's new](https://github.com/Arc86/dBrief/releases/tag/v2.0.0).
+
 </div>
 
 ## How it works
 
 1. Start recording from the menu bar or press **⌃ ⌥ ⌘ R**. dBrief captures your microphone and, with Screen Recording permission, the other side of the call.
 2. Stop when the meeting ends. dBrief saves the audio and makes a transcript. If you enable AI analysis, it also writes a summary and pulls out action items.
-3. Review the result in dBrief. Correct a speaker's name, replay a moment, or send the notes where you work.
+3. Read the notes in dBrief: the summary comes first, with the transcript and Ask dBrief AI beside it. Correct a speaker's name, replay a moment, or send the notes where you work.
 
 ## Top features
 
 - **Capture both sides of a call** from your Mac, without inviting a meeting bot.
 - **Search and replay the transcript** with speaker labels and audio linked to what was said.
 - **Get a short brief** with a summary and action items when you turn on AI analysis.
+- **Ask about the meeting** in a side panel next to your notes. Answers cite timestamps you can click.
 - **Keep meetings organized** with calendar matching, call detection, and profiles for different kinds of calls.
-- **Send the result onward** to Obsidian, Apple Notes, Apple Reminders, or a webhook.
+- **Send the result onward**: notes to Obsidian, Apple Notes, Notion, or a webhook, and action items to Apple Reminders, Todoist, or TickTick.
 
-You can correct speaker names, ask follow-up questions about a transcript, or listen to a spoken summary. An optional speaker library can recognize familiar voices across recordings. You can also start the next recording while the previous one is still processing.
+You can correct speaker names, edit the summary in place, read your notes full screen in the Focus Reader, or listen to a spoken summary. An optional speaker library can recognize familiar voices across recordings. You can also start the next recording while the previous one is still processing.
+
+dBrief is available in English and Dutch, and works with VoiceOver and the keyboard.
 
 You can use dBrief just for recording and transcription. AI analysis, speaker recognition, and exports are choices you make in settings.
 
