@@ -62,8 +62,9 @@ struct TranscriptDetailView: View, Equatable {
     @State private var didApplyInitialMode = false
     /// Tabs opened at least once for this recording; they stay mounted.
     @State private var visitedModes: Set<ViewerDocumentMode> = []
-    @State private var analysisEditorPresented = false
-    @State private var analysisEditorBaseline: RecordingInsights?
+    /// The Actions / Meeting Insights editor, presented from its own baseline so the
+    /// sheet can never open before its content (an empty sheet on the first Edit).
+    @State private var analysisEditor: AnalysisEditorRequest?
     @State private var analysisSaveError: String?
     /// Inline summary edit in progress (Summary tab); persisted per recording in
     /// `SummaryDraftCache` so switching recordings never loses a dirty draft.
@@ -390,14 +391,12 @@ struct TranscriptDetailView: View, Equatable {
                 }
             }
         }
-        .sheet(isPresented: $analysisEditorPresented) {
-            if let baseline = analysisEditorBaseline {
-                RecordingAnalysisEditor(baseline: baseline, isReadOnly: isReprocessing, saveError: analysisSaveError,
-                    onSave: { edited in
-                        if await saveInsights(edited, basedOn: baseline) { analysisEditorPresented = false }
-                    },
-                    onCancel: { analysisEditorPresented = false })
-            }
+        .sheet(item: $analysisEditor) { request in
+            RecordingAnalysisEditor(baseline: request.baseline, isReadOnly: isReprocessing, saveError: analysisSaveError,
+                onSave: { edited in
+                    if await saveInsights(edited, basedOn: request.baseline) { analysisEditor = nil }
+                },
+                onCancel: { analysisEditor = nil })
         }
         .sheet(isPresented: $showPrivacyReceipt) {
             PrivacyReceiptView(recording: recording)
@@ -609,9 +608,8 @@ struct TranscriptDetailView: View, Equatable {
                 analysisSaveError = nil
                 if mode == .summary {
                     if summaryEdit == nil, let insights { summaryEdit = SummaryEditState(insights: insights) }
-                } else {
-                    analysisEditorBaseline = insights
-                    analysisEditorPresented = true
+                } else if let insights {
+                    analysisEditor = AnalysisEditorRequest(baseline: insights)
                 }
             } label: { Label("Edit", systemImage: "pencil") }
                 .disabled(insights == nil || (mode == .summary && summaryEdit != nil))
@@ -2102,4 +2100,10 @@ struct ViewerMountedTab: ViewModifier {
             .accessibilityHidden(!isCurrent)
             .zIndex(isCurrent ? 1 : 0)
     }
+}
+
+/// One opening of the analysis editor, with the insights it starts from.
+private struct AnalysisEditorRequest: Identifiable {
+    let id = UUID()
+    let baseline: RecordingInsights
 }
