@@ -178,9 +178,9 @@ final class StatusItemDropView: NSView {
 private final class ActionMenuItem: NSMenuItem {
     private let handler: () -> Void
 
-    init(_ title: String, key: String = "", enabled: Bool = true, handler: @escaping () -> Void) {
+    init(_ title: LocalizedStringResource, key: String = "", enabled: Bool = true, handler: @escaping () -> Void) {
         self.handler = handler
-        super.init(title: title, action: #selector(run), keyEquivalent: key)
+        super.init(title: String(localized: title), action: #selector(run), keyEquivalent: key)
         target = self
         isEnabled = enabled
     }

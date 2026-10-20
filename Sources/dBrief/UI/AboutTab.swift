@@ -10,6 +10,7 @@ struct AboutTab: View {
     @Environment(\.viewerPalette) private var palette
     @Environment(\.menuPanelPalette) private var status
     @State private var diagnosticsStatus: String?
+    @State private var diagnosticsFailed = false
 
     // MARK: Version / system facts
 
@@ -34,11 +35,11 @@ struct AboutTab: View {
         [
             LinkRow(label: "GitHub", meta: "github.com/Arc86/dBrief",
                     icon: "chevron.left.forwardslash.chevron.right", url: "https://github.com/Arc86/dBrief"),
-            LinkRow(label: "Website", meta: "get.dbrief.nl", icon: "globe", url: "https://get.dbrief.nl"),
-            LinkRow(label: "Documentation", meta: "get.dbrief.nl/docs", icon: "book", url: "https://get.dbrief.nl/docs.html"),
-            LinkRow(label: "Release notes", meta: "What's new in v\(shortVersion)", icon: "doc.text",
+            LinkRow(label: String(localized: "Website"), meta: "get.dbrief.nl", icon: "globe", url: "https://get.dbrief.nl"),
+            LinkRow(label: String(localized: "Documentation"), meta: "get.dbrief.nl/docs", icon: "book", url: "https://get.dbrief.nl/docs.html"),
+            LinkRow(label: String(localized: "Release notes"), meta: String(localized: "What's new in v\(shortVersion)"), icon: "doc.text",
                     url: "https://github.com/Arc86/dBrief/releases"),
-            LinkRow(label: "Report an issue", meta: "Open a GitHub issue", icon: "ladybug",
+            LinkRow(label: String(localized: "Report an issue"), meta: String(localized: "Open a GitHub issue"), icon: "ladybug",
                     url: "https://github.com/Arc86/dBrief/issues"),
         ]
     }
@@ -52,12 +53,12 @@ struct AboutTab: View {
             }
 
             SettingsCard("This Mac") {
-                infoRow("Version", shortVersion)
-                infoRow(isBeta ? "Beta build" : "Build", buildNumber)
-                infoRow("Channel", isBeta ? "Beta" : "Stable")
+                infoRow(String(localized: "Version"), shortVersion)
+                infoRow(isBeta ? String(localized: "Beta build") : String(localized: "Build"), buildNumber)
+                infoRow(String(localized: "Channel"), isBeta ? String(localized: "Beta") : String(localized: "Stable"))
                 infoRow("macOS", osDescription)
-                infoRow("Transcription", appSettings.effectiveTranscriptionEngine.displayName)
-                infoRow("Analysis", appSettings.effectiveAIEngine.displayName)
+                infoRow(String(localized: "Transcription"), appSettings.effectiveTranscriptionEngine.displayName)
+                infoRow(String(localized: "Analysis"), appSettings.effectiveAIEngine.displayName)
             }
 
             SettingsCard("Diagnostics") {
@@ -75,7 +76,7 @@ struct AboutTab: View {
                     SettingsStackedRow {
                         Text(diagnosticsStatus)
                             .uiFont(.system(size: 11.5))
-                            .foregroundStyle(diagnosticsStatus.hasPrefix("Couldn’t") ? status.danger.color : palette.secondary.color)
+                            .foregroundStyle(diagnosticsFailed ? status.danger.color : palette.secondary.color)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -118,7 +119,7 @@ struct AboutTab: View {
             Text("dBrief")
                 .uiFont(.system(size: 20, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
-            Text("Version \(shortVersion) (\(buildNumber)) · \(isBeta ? "Beta" : "Stable")")
+            Text(isBeta ? "Version \(shortVersion) (\(buildNumber)) · Beta" : "Version \(shortVersion) (\(buildNumber)) · Stable")
                 .uiFont(.system(size: 11.5).monospacedDigit())
                 .foregroundStyle(palette.secondary.color)
             Button("Check for updates") { updaterController.checkForUpdates() }
@@ -144,7 +145,7 @@ struct AboutTab: View {
     @MainActor
     private func exportDiagnostics() {
         let panel = NSSavePanel()
-        panel.title = "Export dBrief Diagnostics"
+        panel.title = String(localized: "Export dBrief Diagnostics")
         panel.nameFieldStringValue = "dBrief-Diagnostics-\(Self.diagnosticsTimestamp()).json"
         panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -154,9 +155,11 @@ struct AboutTab: View {
                 recordingFolderURL: appSettings.effectiveRecordingFolderURL
             )
             try DBriefDiagnosticsExporter.writeReport(report, to: url)
-            diagnosticsStatus = "Diagnostics exported. Review the report before sharing it with support."
+            diagnosticsFailed = false
+            diagnosticsStatus = String(localized: "Diagnostics exported. Review the report before sharing it with support.")
         } catch {
-            diagnosticsStatus = "Couldn’t export diagnostics. \(error.localizedDescription)"
+            diagnosticsFailed = true
+            diagnosticsStatus = String(localized: "Couldn’t export diagnostics. \(error.localizedDescription)")
         }
     }
 

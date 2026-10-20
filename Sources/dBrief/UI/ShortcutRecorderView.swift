@@ -16,7 +16,7 @@ struct ShortcutRecorderView: View {
             Button {
                 if isRecording { stop() } else { start() }
             } label: {
-                Text(isRecording ? "Press shortcut…" : hotkey.displayString)
+                Text(isRecording ? String(localized: "Press shortcut…") : hotkey.displayString)
                     .uiFont(.system(.body, design: .rounded).weight(.medium))
                     .monospaced()
                     .frame(minWidth: 110)
@@ -26,7 +26,7 @@ struct ShortcutRecorderView: View {
             .tint(isRecording ? .accentColor : nil)
 
             if isRecording {
-                Text(hint ?? "esc to cancel")
+                Text(hint ?? String(localized: "esc to cancel"))
                     .uiFont(.caption)
                     .foregroundStyle(.secondary)
             } else if hotkey != .default {
@@ -51,7 +51,7 @@ struct ShortcutRecorderView: View {
                 hotkey = captured
                 stop()
             } else {
-                hint = "needs ⌃, ⌥, or ⌘"
+                hint = String(localized: "needs ⌃, ⌥, or ⌘")
             }
             return nil // consume the event so it doesn't reach the app
         }

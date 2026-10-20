@@ -67,6 +67,14 @@ struct ChatAnswerHarvestTests {
         #expect(MarkdownInsightsUpdater.upsertAskDBrief(markdown: "# T\n", body: "x") == "# T\n\n## ✨ Ask dBrief\n\nx\n")
     }
 
+    @Test("An answer with a divider or H2 doesn't leave stale text behind on the next save")
+    func noteSectionWithDivider() {
+        let note = "# Title\n\n## 💬 Transcript\n\nHello"
+        let first = MarkdownInsightsUpdater.upsertAskDBrief(markdown: note, body: "### Q\n\nA\n\n---\n\n## Steps\n\nB")
+        let second = MarkdownInsightsUpdater.upsertAskDBrief(markdown: first, body: "### Q2\n\nC")
+        #expect(second == "# Title\n\n## ✨ Ask dBrief\n\n### Q2\n\nC\n\n## 💬 Transcript\n\nHello")
+    }
+
     @Test("Follow-ups put saved prompts first, then one person, then built-ins")
     func followUpOrder() {
         let saved = [SavedChatPrompt(title: "Risks", prompt: "What are the risks?")]

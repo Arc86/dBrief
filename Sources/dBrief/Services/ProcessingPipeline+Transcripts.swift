@@ -12,8 +12,8 @@ extension ProcessingPipeline {
         case missingPath, verificationFailed
         var errorDescription: String? {
             switch self {
-            case .missingPath: "Cannot determine the transcript checkpoint path."
-            case .verificationFailed: "Transcript checkpoint verification failed."
+            case .missingPath: String(localized: "Cannot determine the transcript checkpoint path.")
+            case .verificationFailed: String(localized: "Transcript checkpoint verification failed.")
             }
         }
     }

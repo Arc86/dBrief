@@ -24,30 +24,30 @@ struct CalendarLinkMeetingList: Sendable {
 
     var emptyMessage: String? {
         guard events.isEmpty else { return nil }
-        if cliDays.isEmpty { return "No meetings were found for this date." }
-        if cliDays.allSatisfy(\.hasCompleteSnapshot) { return "No meetings found for this date." }
+        if cliDays.isEmpty { return String(localized: "No meetings were found for this date.") }
+        if cliDays.allSatisfy(\.hasCompleteSnapshot) { return String(localized: "No meetings found for this date.") }
         return nil
     }
 
     var statusMessage: String? {
         guard !cliDays.isEmpty else { return nil }
         if cliDays.contains(where: { $0.persistence == .failed }) {
-            return "Loaded, but could not save the cache."
+            return String(localized: "Loaded, but could not save the cache.")
         }
         if cliDays.contains(where: { $0.outcome == .blocked }) {
-            return "Calendar access is blocked. Check connector approval, then refresh this date."
+            return String(localized: "Calendar access is blocked. Check connector approval, then refresh this date.")
         }
         if cliDays.contains(where: { $0.outcome == .failed }) {
-            return "Calendar refresh failed. Saved meetings remain available."
+            return String(localized: "Calendar refresh failed. Saved meetings remain available.")
         }
         if cliDays.contains(where: { $0.outcome == .partial }) {
-            return "Calendar refresh was incomplete. Saved meetings remain available."
+            return String(localized: "Calendar refresh was incomplete. Saved meetings remain available.")
         }
         if cliDays.contains(where: { $0.outcome == .manualOnly }) {
-            return "Automatic loading is off. Press Refresh this date."
+            return String(localized: "Automatic loading is off. Press Refresh this date.")
         }
         if let last = cliDays.compactMap(\.lastSuccessfulRefresh).max() {
-            return "Cached · refreshed \(last.formatted(date: .abbreviated, time: .shortened))"
+            return String(localized: "Cached · refreshed \(last.formatted(date: .abbreviated, time: .shortened))")
         }
         return nil
     }

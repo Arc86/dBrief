@@ -23,14 +23,10 @@ final class FloatingMiniPlayerController {
     func show() {
         guard window == nil, let appState, let recordingManager else { return }
 
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: 0),
-            // Borderless: a titled panel reserves an invisible title bar and macOS
-            // keeps titled windows below the menu bar, so it couldn't reach the top.
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        // Borderless: a titled panel reserves an invisible title bar and macOS
+        // keeps titled windows below the menu bar, so it couldn't reach the top.
+        // Keyable, so VoiceOver and keyboard users can operate its buttons.
+        let panel = KeyablePanel(size: NSSize(width: Self.panelWidth, height: 0), title: String(localized: "Recording controls"))
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -133,6 +129,7 @@ private struct MiniPlayerView: View {
                                 Label("Pause", systemImage: "pause")
                             }
                             .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
+                            .keyboardShortcut(CaptureShortcut.pauseResume)
                         } else if appState.isPaused {
                             Button {
                                 recordingManager.requestResume()
@@ -140,6 +137,7 @@ private struct MiniPlayerView: View {
                                 Label("Resume", systemImage: "play")
                             }
                             .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
+                            .keyboardShortcut(CaptureShortcut.pauseResume)
                         }
 
                         Button {
@@ -148,6 +146,7 @@ private struct MiniPlayerView: View {
                             Label("Stop", systemImage: "stop")
                         }
                         .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 30))
+                        .keyboardShortcut(CaptureShortcut.stop)
                     }
                 }
                 .padding(14)

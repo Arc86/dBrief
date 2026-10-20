@@ -33,15 +33,15 @@ extension DownloadStage {
     var downloadLabel: String {
         switch self {
         case .whisperModel, .llmModel, .parakeetModel, .ttsModel, .kokoroTTSModel:
-            return "Downloading…"
+            return String(localized: "Downloading…")
         case .llmModelPreparing:
-            return "Preparing…"
+            return String(localized: "Preparing…")
         case .llmModelLoading, .whisperModelLoading, .parakeetModelLoading, .ttsModelLoading, .kokoroTTSModelLoading:
-            return "Loading…"
+            return String(localized: "Loading…")
         case .speakerKitModel:
-            return "Downloading speakers…"
+            return String(localized: "Downloading speakers…")
         case .embeddingModel:
-            return "Downloading search model…"
+            return String(localized: "Downloading search model…")
         }
     }
 }

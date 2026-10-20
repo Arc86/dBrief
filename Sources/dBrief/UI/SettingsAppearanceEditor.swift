@@ -154,9 +154,9 @@ struct SettingsAppearanceEditor: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(mode.displayName), \(mode.isDark ? "dark" : "light") mode theme")
+        .accessibilityLabel(mode.isDark ? "\(mode.displayName), dark mode theme" : "\(mode.displayName), light mode theme")
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .help("Use \(mode.displayName) when \(mode.isDark ? "dark" : "light") mode is active")
+        .help(mode.isDark ? "Use \(mode.displayName) when dark mode is active" : "Use \(mode.displayName) when light mode is active")
     }
 
     private var accentPresets: some View {
@@ -246,9 +246,9 @@ private struct AppearanceAccentPreset: Identifiable {
     let hex: String
     var id: String { hex }
     static let all = [
-        Self(name: "Blue", hex: "#1268F5"), Self(name: "Violet", hex: "#7054D9"),
-        Self(name: "Green", hex: "#19745B"), Self(name: "Orange", hex: "#FF962C"),
-        Self(name: "Black", hex: "#000000"), Self(name: "White", hex: "#FFFFFF")
+        Self(name: String(localized: "Blue"), hex: "#1268F5"), Self(name: String(localized: "Violet"), hex: "#7054D9"),
+        Self(name: String(localized: "Green"), hex: "#19745B"), Self(name: String(localized: "Orange"), hex: "#FF962C"),
+        Self(name: String(localized: "Black"), hex: "#000000"), Self(name: String(localized: "White"), hex: "#FFFFFF")
     ]
 }
 

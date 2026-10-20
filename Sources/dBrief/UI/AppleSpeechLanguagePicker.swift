@@ -2,7 +2,7 @@ import SwiftUI
 
 struct AppleSpeechLanguagePicker: View {
     @Binding var selection: String
-    var title = "Audio language"
+    var title = String(localized: "Audio language")
 
     private var selectedID: String {
         selection.isEmpty ? "" : AppleSpeechLanguages.explicitIdentifier(selection) ?? selection

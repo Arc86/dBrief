@@ -7,9 +7,9 @@ enum ReprocessingOperation: String, Codable, Sendable, CaseIterable {
 
     var title: String {
         switch self {
-        case .transcribe: "Retranscribe"
-        case .analysis: "Re-run AI Analysis"
-        case .speakers: "Detect Speakers Again"
+        case .transcribe: String(localized: "Retranscribe")
+        case .analysis: String(localized: "Re-run AI Analysis")
+        case .speakers: String(localized: "Detect Speakers Again")
         }
     }
     var displayName: String { title }
@@ -110,9 +110,9 @@ struct ReprocessingOptions: Codable, Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .endpointMissing(let purpose): "The saved \(purpose) endpoint is unavailable. Restore its configuration to resume, or start a new attempt."
-            case .endpointChanged(let name): "The endpoint ‘\(name)’ has changed since this attempt was saved. Restore its configuration to resume, or start a new attempt."
-            case .cliChanged: "The Local CLI command or timeout has changed. Restore the saved configuration to resume, or start a new attempt."
+            case .endpointMissing(let purpose): String(localized: "The saved \(purpose) endpoint is unavailable. Restore its configuration to resume, or start a new attempt.", comment: "The placeholder is what the endpoint is used for, e.g. transcription or AI analysis.")
+            case .endpointChanged(let name): String(localized: "The endpoint ‘\(name)’ has changed since this attempt was saved. Restore its configuration to resume, or start a new attempt.")
+            case .cliChanged: String(localized: "The Local CLI command or timeout has changed. Restore the saved configuration to resume, or start a new attempt.")
             case .unsupportedModel(let reason), .unsupportedLanguage(let reason): reason
             }
         }
@@ -124,23 +124,23 @@ struct ReprocessingOptions: Codable, Sendable {
         guard requiresTranscription else { return }
         if !spokenLanguage.isEmpty,
            spokenLanguage.range(of: "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$", options: .regularExpression) == nil {
-            throw ConfigurationError.unsupportedLanguage("Choose a spoken language code, or automatic detection.")
+            throw ConfigurationError.unsupportedLanguage(String(localized: "Choose a spoken language code, or automatic detection."))
         }
         let isEnglish = spokenLanguage.isEmpty || spokenLanguage.lowercased().split(separator: "-").first == "en"
         switch engine {
         case .localWhisper:
             guard !whisperModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw ConfigurationError.unsupportedModel("Choose a Whisper model before retranscribing.")
+                throw ConfigurationError.unsupportedModel(String(localized: "Choose a Whisper model before retranscribing."))
             }
             if WhisperModelInfo.parse(whisperModelName).isEnglishOnly && !isEnglish {
-                throw ConfigurationError.unsupportedLanguage("This Whisper model supports English only. Choose a multilingual model for this language.")
+                throw ConfigurationError.unsupportedLanguage(String(localized: "This Whisper model supports English only. Choose a multilingual model for this language."))
             }
         case .parakeetLocal:
             guard ParakeetModelInfo.available.contains(where: { $0.id == parakeetModelVariant }) else {
-                throw ConfigurationError.unsupportedModel("The saved Parakeet model is unavailable. Choose another Parakeet model.")
+                throw ConfigurationError.unsupportedModel(String(localized: "The saved Parakeet model is unavailable. Choose another Parakeet model."))
             }
             if ParakeetModelInfo.find(parakeetModelVariant).isEnglishOnly && !isEnglish {
-                throw ConfigurationError.unsupportedLanguage("Parakeet v2 supports English only. Choose v3 for multilingual speech.")
+                throw ConfigurationError.unsupportedLanguage(String(localized: "Parakeet v2 supports English only. Choose v3 for multilingual speech."))
             }
         case .appleSpeech: _ = try AppleSpeechLanguages.requireLocale(for: spokenLanguage)
         case .remoteEndpoint: break
@@ -150,9 +150,9 @@ struct ReprocessingOptions: Codable, Sendable {
     @MainActor func transcriptionSettings(settings: AppSettings) throws -> ProcessingPipeline.TranscriptionSettings {
         try validate()
         let endpoint = engine == .remoteEndpoint
-            ? try Self.resolve(transcriptionEndpoint, in: settings.transcriptionEndpoints, purpose: "transcription") : nil
+            ? try Self.resolve(transcriptionEndpoint, in: settings.transcriptionEndpoints, purpose: String(localized: "transcription")) : nil
         let spellingEndpoint = !vocabulary.isEmpty && spellingEngine == .remoteEndpoint
-            ? try Self.resolve(aiEndpoint, in: settings.aiEndpoints, purpose: "vocabulary correction") : nil
+            ? try Self.resolve(aiEndpoint, in: settings.aiEndpoints, purpose: String(localized: "vocabulary correction")) : nil
         let language = spokenLanguage.isEmpty ? nil : spokenLanguage
         return .init(engine: engine, language: spokenLanguage,
             whisper: .init(modelName: whisperModelName, language: language,
@@ -176,7 +176,7 @@ struct ReprocessingOptions: Codable, Sendable {
 
     @MainActor func analysisConfiguration(settings: AppSettings) throws -> AnalysisConfiguration {
         let endpoint = aiEngine == .remoteEndpoint
-            ? try Self.resolve(aiEndpoint, in: settings.aiEndpoints, purpose: "AI analysis") : nil
+            ? try Self.resolve(aiEndpoint, in: settings.aiEndpoints, purpose: String(localized: "AI analysis")) : nil
         var cli = LocalCLIConfig.default
         if aiEngine == .localCLI {
             guard Self.digest(settings.effectiveLocalCLIConfig) == localCLIConfigurationDigest else {

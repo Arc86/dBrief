@@ -3,11 +3,12 @@ import SwiftUI
 struct PromptImprovementPanel: View {
     @Bindable var session: PromptEditorSession
     @State private var showRequest = true
+    @FocusState private var requestFocused: Bool
     @Environment(\.viewerPalette) private var palette
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PromptInspectorHeading(title: "A better prompt", subtitle: "Describe what you’d like to change.", symbol: "sparkles")
+                PromptInspectorHeading(title: String(localized: "A better prompt"), subtitle: String(localized: "Describe what you’d like to change."), symbol: "sparkles")
                 if let config = session.configuration {
                     VStack(alignment: .leading, spacing: 4) {
                         PromptEngineLabel(name: config.displayName, destination: config.destinationDescription)
@@ -24,8 +25,10 @@ struct PromptImprovementPanel: View {
                             .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .strokeBorder(palette.divider.color, lineWidth: 1)
+                                    .strokeBorder(requestFocused ? palette.accentText.color : palette.divider.color,
+                                                  lineWidth: requestFocused ? 2 : 1)
                             }
+                            .focused($requestFocused)
                             .accessibilityLabel("What would you like to improve?")
                         ViewerWrapLayout(spacing: 6, lineSpacing: 6) { shortcuts }.buttonStyle(.settingsSecondary)
                         Text("Uses this prompt and your request. No recording is sent.")
@@ -35,17 +38,22 @@ struct PromptImprovementPanel: View {
                 HStack {
                     if session.isImproving {
                         PromptGenerationStatus(progress: session.improvementProgress ?? .generating,
-                            generationTitle: "Generating…", cancel: session.cancelImprovement)
+                            generationTitle: String(localized: "Generating…"), cancel: session.cancelImprovement)
                     } else {
                         Button { Task { await session.improve() } } label: { Label("Suggest improvements", systemImage: "sparkles") }
                             .modifier(PromptPrimaryAction())
                             .disabled(session.configuration == nil || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                if let error = session.improvementError { Text(error).foregroundStyle(palette.secondary.color).textSelection(.enabled) }
+                if let error = session.improvementError {
+                    Text(error).foregroundStyle(palette.secondary.color).textSelection(.enabled)
+                        .onAppear { AccessibilityAnnouncer.shared.announce(error, priority: .high) }
+                }
                 if let suggestion = session.suggestion {
                     palette.divider.color.frame(height: 1)
                     Text("Suggested prompt").uiFont(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                        .onAppear { AccessibilityAnnouncer.shared.announce(String(localized: "Suggestion ready")) }
                     ForEach(Array(suggestion.response.changes.enumerated()), id: \.offset) { _, change in
                         Text("• \(change)").uiFont(.callout).foregroundStyle(palette.secondary.color)
                     }

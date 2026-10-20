@@ -21,7 +21,7 @@ struct ProcessingQueueView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // The summary repeats what the expanded list shows, so it only rides along when collapsed.
-            RecordingListSectionHeader(title: "Queue & Recovery", subtitle: expanded ? nil : RecordingListPresentation.queueSummary(
+            RecordingListSectionHeader(title: String(localized: "Queue & Recovery"), subtitle: expanded ? nil : RecordingListPresentation.queueSummary(
                 pending: manager.pendingQueueItems.count + visibleReprocessing.filter { $0.status == .queued }.count, recovery: manager.recoveryQueueEntries.count + visibleReprocessing.filter { $0.status != .queued }.count,
                 paused: manager.queuePaused, processing: appState.processingJob != nil,
                 hasError: manager.queueLoadError != nil), expanded: $expanded) {
@@ -29,7 +29,7 @@ struct ProcessingQueueView: View {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(status.warning.color).accessibilityLabel("Queue needs attention")
                 }
-                RecordingListIconButton(title: "Refresh queue and recovery", systemImage: "arrow.clockwise") {
+                RecordingListIconButton(title: String(localized: "Refresh queue and recovery"), systemImage: "arrow.clockwise") {
                     Task { await manager.refreshWorkQueue() }
                 }
                 .disabled(editing)
@@ -46,7 +46,7 @@ struct ProcessingQueueView: View {
                                 .uiFont(.system(size: 12, weight: .medium))
                                 .foregroundStyle(palette.heading.color)
                                 .lineLimit(1)
-                            RecordingListStatus(title: "Processing", systemImage: "arrow.triangle.2.circlepath",
+                            RecordingListStatus(title: String(localized: "Processing"), systemImage: "arrow.triangle.2.circlepath",
                                                 tint: palette.primary.color)
                         }
                         Spacer(minLength: 0)
@@ -61,7 +61,7 @@ struct ProcessingQueueView: View {
                 }
 
                 if !hasPendingWork && appState.processingJob == nil && manager.queueLoadError == nil {
-                    RecordingListEmptyState(title: "No pending work", message: "Queue a recording for later to add it here.", systemImage: "tray")
+                    RecordingListEmptyState(title: String(localized: "No pending work"), message: String(localized: "Queue a recording for later to add it here."), systemImage: "tray")
                 } else if hasPendingWork {
                     if visibleWorkRowCount <= 3 && expandedItem == nil {
                         VStack(alignment: .leading, spacing: 4) {
@@ -159,7 +159,7 @@ struct ProcessingQueueView: View {
             expanded: expandedItem == key, toggle: { expandedItem = expandedItem == key ? nil : key }) {
                 Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(palette.secondary.color)
             } metadata: {
-                Text("\(request?.options.operation.title ?? "Reprocessing") · \(attempt.status == .queued ? "Queued" : "Needs attention")")
+                Text("\(request?.options.operation.title ?? String(localized: "Reprocessing")) · \(attempt.status == .queued ? String(localized: "Queued") : String(localized: "Needs attention"))")
             } actions: {
                 VStack(alignment: .leading, spacing: 6) {
                     if let message = attempt.message {
@@ -167,10 +167,10 @@ struct ProcessingQueueView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     HStack(spacing: 6) {
-                        RecordingListAction(title: "Resume", systemImage: "play") {
+                        RecordingListAction(title: String(localized: "Resume"), systemImage: "play") {
                             Task { await manager.resumeReprocessing(attempt.id) }
                         }.disabled(appState.processingJob != nil || editing)
-                        RecordingListAction(title: "Discard Attempt", systemImage: "minus.circle") {
+                        RecordingListAction(title: String(localized: "Discard Attempt"), systemImage: "minus.circle") {
                             guard DestructiveConfirmation.confirm("Discard this reprocess?",
                                 message: "The recording's current results stay. The unfinished reprocess can't be resumed afterwards.",
                                 button: "Discard") else { return }
@@ -191,30 +191,30 @@ struct ProcessingQueueView: View {
                 .accessibilityLabel("Queue position \(index + 1)")
         } metadata: {
             HStack(spacing: 6) {
-                RecordingListStatus(title: available ? "Queued" : "Audio unavailable",
+                RecordingListStatus(title: available ? String(localized: "Queued") : String(localized: "Audio unavailable"),
                     systemImage: available ? "clock" : "exclamationmark.triangle", tint: status.warning.color)
                 if available { Text(item.autoQueued ? "· Automatic" : "· Deferred") }
             }
         } actions: {
             FlowLayout(spacing: 6) {
-                RecordingListAction(title: "Process Now", systemImage: "play") {
+                RecordingListAction(title: String(localized: "Process Now"), systemImage: "play") {
                     Task { await manager.drainQueueIfNeeded(preferredAudioURL: audioURL, expectedID: item.id) }
                 }
                 .disabled(!available || appState.processingJob != nil || manager.queueLoadError != nil)
                 .help("Process this recording now, even if the queue is paused")
-                RecordingListAction(title: "Move to first", systemImage: "arrow.up.to.line") {
+                RecordingListAction(title: String(localized: "Move to first"), systemImage: "arrow.up.to.line") {
                     Task { await manager.moveQueuedItem(audioURL, by: -index) }
                 }
                 .disabled(index == 0)
-                RecordingListAction(title: "Move up", systemImage: "arrow.up") {
+                RecordingListAction(title: String(localized: "Move up"), systemImage: "arrow.up") {
                     Task { await manager.moveQueuedItem(audioURL, by: -1) }
                 }
                 .disabled(index == 0)
-                RecordingListAction(title: "Move down", systemImage: "arrow.down") {
+                RecordingListAction(title: String(localized: "Move down"), systemImage: "arrow.down") {
                     Task { await manager.moveQueuedItem(audioURL, by: 1) }
                 }
                 .disabled(index == manager.pendingQueueItems.count - 1)
-                RecordingListAction(title: "Remove", systemImage: "minus.circle") {
+                RecordingListAction(title: String(localized: "Remove"), systemImage: "minus.circle") {
                     Task { await manager.removeQueuedItem(audioURL) }
                 }
                 .help("Remove from the queue without deleting the recording")
@@ -231,14 +231,14 @@ struct ProcessingQueueView: View {
             Image(systemName: entry.isDelivery ? "paperplane" : "exclamationmark.triangle")
                 .foregroundStyle(status.warning.color)
         } metadata: {
-            Text(entry.status).lineLimit(1)
+            Text(LibraryWorkItem.localizedStoredText(entry.status)).lineLimit(1)
         } actions: {
             VStack(alignment: .leading, spacing: 6) {
-                Text(entry.status + " · " + entry.date.formatted(date: .abbreviated, time: .shortened))
+                Text(LibraryWorkItem.localizedStoredText(entry.status) + " · " + entry.date.formatted(date: .abbreviated, time: .shortened))
                     .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
                     .fixedSize(horizontal: false, vertical: true)
                 FlowLayout(spacing: 6) {
-                    RecordingListAction(title: entry.isDelivery ? "Integrations…" : "Resume",
+                    RecordingListAction(title: entry.isDelivery ? String(localized: "Integrations…") : String(localized: "Resume"),
                         systemImage: entry.isDelivery ? "paperplane" : "play") {
                         Task {
                             if entry.isDelivery, let url = entry.audioURL {
@@ -247,7 +247,7 @@ struct ProcessingQueueView: View {
                             await manager.refreshWorkQueue()
                         }
                     }
-                    RecordingListAction(title: "Remove from List", systemImage: "minus.circle") {
+                    RecordingListAction(title: String(localized: "Remove from List"), systemImage: "minus.circle") {
                         Task { await manager.dismissRecoveryItem(entry.id) }
                     }
                     .help("Hides this run. The recording and its current results stay; the unfinished run can't be resumed afterwards.")

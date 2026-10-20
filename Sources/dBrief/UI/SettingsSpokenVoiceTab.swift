@@ -14,7 +14,7 @@ struct SettingsSpokenVoiceTab: View {
         @Bindable var settings = appSettings
         SettingsPageScaffold(page: .spokenVoice) {
             SettingsCard("Voice", section: .spokenVoice) {
-                SettingsRow(verbatim: "Voice engine", caption: settings.ttsEngine.shortDescription) {
+                SettingsRow(verbatim: String(localized: "Voice engine"), caption: settings.ttsEngine.shortDescription) {
                     Picker("Voice engine", selection: $settings.ttsEngine) {
                         ForEach(TTSEngine.allCases, id: \.self) { engine in
                             Text(engine.displayName).tag(engine)
@@ -22,7 +22,7 @@ struct SettingsSpokenVoiceTab: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                SettingsRow(verbatim: "Language", caption: languageCaption) {
+                SettingsRow(verbatim: String(localized: "Language"), caption: languageCaption) {
                     Picker("Language", selection: languageBinding) {
                         ForEach(settings.ttsEngine.supportedLanguages, id: \.self) { language in
                             Text(language.displayName).tag(language)
@@ -40,7 +40,7 @@ struct SettingsSpokenVoiceTab: View {
                         }
                         .pickerStyle(.menu)
                     }
-                    SettingsRow(verbatim: "Voice", caption: settings.ttsVoice.detail) {
+                    SettingsRow(verbatim: String(localized: "Voice"), caption: settings.ttsVoice.detail) {
                         Picker("Voice", selection: $settings.ttsVoice) {
                             ForEach(TTSVoice.allCases, id: \.self) { voice in
                                 Text(voice.displayName).tag(voice)
@@ -49,7 +49,7 @@ struct SettingsSpokenVoiceTab: View {
                         .pickerStyle(.menu)
                     }
                 case .kokoro:
-                    SettingsRow(verbatim: "Voice", caption: kokoroDownloadNote) {
+                    SettingsRow(verbatim: String(localized: "Voice"), caption: kokoroDownloadNote) {
                         Picker("Voice", selection: kokoroVoiceBinding) {
                             ForEach(KokoroVoice.voices(for: settings.spokenSummaryLanguage), id: \.self) { voice in
                                 Text("\(voice.displayName) · \(voice.detail)").tag(voice)
@@ -59,8 +59,9 @@ struct SettingsSpokenVoiceTab: View {
                     }
                 }
                 SettingsRow("Preview") { voicePreviewControl }
+                    .announcing(voicePreview.state.spokenStatus)
                 if case let .failed(message) = voicePreview.state {
-                    SettingsStackedRow { SettingsErrorDetails(summary: "Voice preview failed", error: message) }
+                    SettingsStackedRow { SettingsErrorDetails(summary: String(localized: "Voice preview failed"), error: message) }
                 }
             }
 
@@ -95,16 +96,16 @@ struct SettingsSpokenVoiceTab: View {
     private var languageCaption: String {
         let chosen = appSettings.ttsLanguage
         if chosen != appSettings.spokenSummaryLanguage {
-            return "\(chosen.displayName) isn't available with \(appSettings.ttsEngine.displayName), so English is used."
+            return String(localized: "\(chosen.displayName) isn't available with \(appSettings.ttsEngine.displayName), so English is used.")
         }
-        return "The summary is written and spoken in this language."
+        return String(localized: "The summary is written and spoken in this language.")
     }
 
     private var kokoroDownloadNote: String {
         switch appSettings.spokenSummaryLanguage {
-        case .japanese: "Japanese uses its own voice model (about 217 MB), downloaded on first use, then works offline."
-        case .english: "English voices download on first use (about 510 KB each), then work offline. British voices currently use US pronunciation rules."
-        default: "Voices download on first use, then work offline."
+        case .japanese: String(localized: "Japanese uses its own voice model (about 217 MB), downloaded on first use, then works offline.")
+        case .english: String(localized: "English voices download on first use (about 510 KB each), then work offline. British voices currently use US pronunciation rules.")
+        default: String(localized: "Voices download on first use, then work offline.")
         }
     }
 
@@ -150,6 +151,19 @@ struct SettingsSpokenVoiceTab: View {
                 ProgressView().controlSize(.small)
                 Text("Synthesizing…").uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)
             }
+        }
+    }
+}
+
+private extension VoicePreviewPlayer.State {
+    /// One spoken line per step of the sample; download progress isn't read out.
+    var spokenStatus: String? {
+        switch self {
+        case .idle: nil
+        case .preparingVoice: String(localized: "Preparing voice")
+        case .synthesizing: String(localized: "Synthesizing sample")
+        case .playing: String(localized: "Playing sample")
+        case .failed(let message): String(localized: "Voice preview failed. \(message)")
         }
     }
 }

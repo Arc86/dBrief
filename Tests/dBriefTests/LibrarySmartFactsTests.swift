@@ -248,7 +248,7 @@ struct LibrarySmartFactsTests {
         #expect(try db.rows("PRAGMA user_version") == [["99"]])
         _ = try await index.refresh(in: folder)
         #expect(try db.rows("SELECT failed FROM work") == [["1"]])
-        #expect(try db.rows("PRAGMA user_version") == [["3"]])
+        #expect(try db.rows("PRAGMA user_version") == [["4"]])
     }
 
     @Test func remembersQueuedWorkInAnotherProfileFolderAndKeepsItWhenOffline() async throws {

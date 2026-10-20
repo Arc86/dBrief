@@ -112,6 +112,7 @@ struct SettingsVocabularyTab: View {
             addError = nil
         case .failure(let error):
             addError = error.message
+            AccessibilityAnnouncer.shared.announce(error.message, priority: .high)
         }
     }
 }

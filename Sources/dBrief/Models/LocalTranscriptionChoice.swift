@@ -116,10 +116,10 @@ struct LocalModelProfile: Equatable {
 
     var languageLabel: String {
         switch languages {
-        case .all: "99 languages"
-        case .codes(let codes): "\(codes.count) European languages"
-        case .englishOnly: "English only"
-        case .system: "System-supported languages"
+        case .all: String(localized: "99 languages")
+        case .codes(let codes): String(localized: "\(codes.count) European languages")
+        case .englishOnly: String(localized: "English only")
+        case .system: String(localized: "System-supported languages")
         }
     }
 }

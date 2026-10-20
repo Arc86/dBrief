@@ -121,7 +121,7 @@ struct SettingsCalendarCLISection: View {
                 SettingsRow("Reasoning effort",
                             caption: config.modelID == nil || (config.modelID != "sonnet" && config.modelID != "opus")
                                 ? "Support depends on your Claude model." : nil) {
-                    CLIReasoningEffortPicker(title: "Reasoning effort", selection: Binding(
+                    CLIReasoningEffortPicker(title: String(localized: "Reasoning effort"), selection: Binding(
                         get: { settings.calendarCLIConfig.effort },
                         set: { effort in
                             settings.calendarCLIConfig = settings.calendarCLIConfig.updating(effort: effort)
@@ -270,6 +270,20 @@ struct SettingsCalendarCLISection: View {
         customFreshnessMinutes = appSettings.calendarCLIConfig.listFreshnessSeconds / 60
     }
 
+    /// The outcome of a test or refresh, spoken: the status line appears out of focus.
+    private static func spoken(_ state: ConnectionTestState, refresh: Bool) -> String? {
+        switch state {
+        case .idle, .running: nil
+        case .reachable(let events, let partial):
+            partial ? (refresh ? String(localized: "Refresh incomplete") : String(localized: "Connected, partial data"))
+                : refresh ? String(localized: "Calendar refreshed")
+                : events > 0 ? String(localized: "Connected, \(events) events") : String(localized: "Connected")
+        case .blocked: refresh ? String(localized: "Refresh blocked") : String(localized: "Access blocked")
+        case .unconfigured: String(localized: "Set your mailbox first")
+        case .failed: refresh ? String(localized: "Refresh failed") : String(localized: "Calendar test failed")
+        }
+    }
+
     private func runConnectionTest() {
         testState = .running
         Task { @MainActor in
@@ -280,6 +294,7 @@ struct SettingsCalendarCLISection: View {
             case .blocked: testState = .blocked
             case .failed: testState = .failed
             }
+            if let text = Self.spoken(testState, refresh: false) { AccessibilityAnnouncer.shared.announce(text) }
             refreshStatus()
         }
     }
@@ -294,6 +309,7 @@ struct SettingsCalendarCLISection: View {
             case .blocked: refreshState = .blocked
             case .failed: refreshState = .failed
             }
+            if let text = Self.spoken(refreshState, refresh: true) { AccessibilityAnnouncer.shared.announce(text) }
             refreshStatus()
         }
     }
@@ -328,7 +344,9 @@ struct SettingsCalendarCLISection: View {
                 Label {
                     Text(partial
                         ? "Connected — partial data returned for the test window."
-                        : "Connected — the connector answered the test window\(events > 0 ? " (\(events) events)" : "").")
+                        : events > 0
+                            ? "Connected — the connector answered the test window (\(events) events)."
+                            : "Connected — the connector answered the test window.")
                 } icon: {
                     Image(systemName: partial ? "exclamationmark.triangle" : "checkmark.circle")
                 }

@@ -104,11 +104,11 @@ enum AudioCaptureError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noDisplayFound: "No display found for audio capture."
-        case .noMicrophoneAccess: "Microphone access was denied."
-        case .noScreenCaptureAccess: "Screen recording permission is required for system audio capture."
-        case .engineStartFailed(let error): "Audio engine failed to start: \(error.localizedDescription)"
-        case .fileWriterFailed(let error): "Audio file writer failed: \(error.localizedDescription)"
+        case .noDisplayFound: String(localized: "No display found for audio capture.")
+        case .noMicrophoneAccess: String(localized: "Microphone access was denied.")
+        case .noScreenCaptureAccess: String(localized: "Screen recording permission is required for system audio capture.")
+        case .engineStartFailed(let error): String(localized: "Audio engine failed to start: \(error.localizedDescription)")
+        case .fileWriterFailed(let error): String(localized: "Audio file writer failed: \(error.localizedDescription)")
         }
     }
 }

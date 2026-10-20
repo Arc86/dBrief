@@ -5,16 +5,18 @@ struct CallDetectedPopup: View {
     @Environment(RecordingManager.self) private var recordingManager
 
     var body: some View {
+        let text = CallPromptText.detected(app: appState.detectedCallApp)
         CallAlertCard(
-            title: "\(appState.detectedCallApp.map { "\($0) call" } ?? "A call") detected",
-            message: "Record this call and create a meeting brief.",
-            dismissLabel: "Dismiss",
+            title: text.title,
+            message: text.message,
+            dismissLabel: String(localized: "Dismiss"),
             onDismiss: { appState.showCallDetectedPopup = false }
         ) {
             Button("Not now") {
                 appState.showCallDetectedPopup = false
             }
             .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fillsWidth: false))
+            .keyboardShortcut(.cancelAction)
 
             Button {
                 appState.showCallDetectedPopup = false
@@ -25,12 +27,35 @@ struct CallDetectedPopup: View {
                     )
                 }
             } label: {
-                Label("Record call", systemImage: "mic")
+                Label("Record call", systemImage: "mic.fill")
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .accentOutline, height: 30, fillsWidth: false))
+            // The panel's Record button style: the one filled, accent-coloured action.
+            .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 13, fillsWidth: false))
             .keyboardShortcut(.defaultAction)
         }
     }
+}
+
+/// Title and message of a call prompt. The card shows them; the panel also uses them
+/// as its window title and VoiceOver announcement.
+struct CallPromptText: Equatable {
+    let title: String
+    let message: String
+
+    static func detected(app: String?) -> CallPromptText {
+        CallPromptText(title: app.map { String(localized: "\($0) call detected") } ?? String(localized: "A call detected"),
+                       message: String(localized: "Record this call and create a meeting brief."))
+    }
+
+    static func ended(app: String?) -> CallPromptText {
+        CallPromptText(title: app.map { String(localized: "\($0) ended") } ?? String(localized: "Call ended"),
+                       message: String(localized: "Stop recording and create the meeting brief?"))
+    }
+
+    var announcement: String { String(localized: "\(title). \(message)") }
+
+    /// The card's fixed width; its height follows the text.
+    static let cardWidth: CGFloat = 360
 }
 
 /// The floating call prompt card: brand-gradient hairline border (flat accent with
@@ -53,12 +78,12 @@ struct CallAlertCard<Actions: View>: View {
                     Text(title)
                         .uiFont(.system(size: 14, weight: .semibold))
                         .foregroundStyle(palette.heading.color)
-                        .lineLimit(1)
+                        .accessibilityAddTraits(.isHeader)
                     Text(message)
                         .uiFont(.system(size: 11))
                         .foregroundStyle(palette.secondary.color)
-                        .lineLimit(2)
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
@@ -77,7 +102,9 @@ struct CallAlertCard<Actions: View>: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .frame(width: 360, height: 116)
+        // The height follows the text, so larger text sizes don't clip the buttons.
+        .frame(width: CallPromptText.cardWidth)
+        .fixedSize(horizontal: false, vertical: true)
         .background(palette.surface.color, in: shape)
         .overlay {
             shape.strokeBorder(

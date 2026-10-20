@@ -5,12 +5,12 @@ enum LibrarySmartView: String, Codable, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .all: "All Recordings"
-        case .unfinishedActions: "Unfinished Actions"
-        case .failedJobs: "Needs Attention"
-        case .queuedInterrupted: "Queued / Interrupted"
-        case .recentlyProcessed: "Recently Processed"
-        case .peopleThisMonth: "People I Met This Month"
+        case .all: String(localized: "All Recordings")
+        case .unfinishedActions: String(localized: "Unfinished Actions")
+        case .failedJobs: String(localized: "Needs Attention")
+        case .queuedInterrupted: String(localized: "Queued / Interrupted")
+        case .recentlyProcessed: String(localized: "Recently Processed")
+        case .peopleThisMonth: String(localized: "People I Met This Month")
         }
     }
 

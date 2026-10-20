@@ -275,8 +275,9 @@ struct PostRecordingSheet: View {
                     Text("Meeting details")
                         .uiFont(.system(size: 12, weight: .medium))
                         .foregroundStyle(palette.heading.color)
-                    Text([appState.currentRecording?.calendarEvent?.title ?? "No meeting linked",
-                          participantNames.isEmpty ? "no participants" : "\(participantNames.count) participant\(participantNames.count == 1 ? "" : "s")"]
+                    Text([appState.currentRecording?.calendarEvent?.title ?? String(localized: "No meeting linked"),
+                          participantNames.isEmpty ? String(localized: "no participants")
+                              : String(localized: "\(participantNames.count) participants")]
                         .joined(separator: " · "))
                         .uiFont(.system(size: 11))
                         .foregroundStyle(palette.secondary.color)
@@ -331,13 +332,13 @@ struct PostRecordingSheet: View {
                     }
                 }
             } label: {
-                MenuPanelSelectorLabel(text: recording.calendarEvent.map(pickerLabel) ?? "No meeting linked", height: 36)
+                MenuPanelSelectorLabel(text: recording.calendarEvent.map(pickerLabel) ?? String(localized: "No meeting linked"), height: 36)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .accessibilityLabel("Meeting")
-            .accessibilityValue(recording.calendarEvent.map(pickerLabel) ?? "None")
+            .accessibilityValue(recording.calendarEvent.map(pickerLabel) ?? String(localized: "None"))
 
             if appSettings.effectiveCalendarSource == .claudeCLI {
                 calendarPickerStatus
@@ -370,7 +371,7 @@ struct PostRecordingSheet: View {
                         Text("Processing settings")
                             .uiFont(.system(size: 12, weight: .medium))
                             .foregroundStyle(palette.heading.color)
-                        Text("\(reviewProfile.name) profile · \(selectedTaskCount) task\(selectedTaskCount == 1 ? "" : "s") selected")
+                        Text("\(reviewProfile.name) profile · \(selectedTaskCount) tasks selected")
                             .uiFont(.system(size: 11))
                             .foregroundStyle(palette.secondary.color)
                     }
@@ -404,11 +405,11 @@ struct PostRecordingSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                BrandCheckRow(title: "Transcribe audio", isOn: $transcribe)
+                BrandCheckRow(title: String(localized: "Transcribe audio"), isOn: $transcribe)
                 if reviewAIEnabled {
-                    BrandCheckRow(title: "Generate summary", isOn: $summary, enabled: transcribe)
-                    BrandCheckRow(title: "Extract action items", isOn: $actionItems, enabled: transcribe)
-                    BrandCheckRow(title: "Analyze tags & sentiment", isOn: $tags, enabled: transcribe)
+                    BrandCheckRow(title: String(localized: "Generate summary"), isOn: $summary, enabled: transcribe)
+                    BrandCheckRow(title: String(localized: "Extract action items"), isOn: $actionItems, enabled: transcribe)
+                    BrandCheckRow(title: String(localized: "Analyze tags & sentiment"), isOn: $tags, enabled: transcribe)
                 }
             }
 
@@ -426,7 +427,7 @@ struct PostRecordingSheet: View {
 
             if appSettings.obsidianEnabled, let recording = appState.currentRecording {
                 ObsidianFolderPicker(
-                    title: "Obsidian output folder",
+                    title: String(localized: "Obsidian output folder"),
                     currentRelativePath: currentObsidianFolder(for: recording)
                 ) { relativePath in
                     // This recording only; the default lives in Settings → Integrations.
@@ -506,6 +507,8 @@ struct PostRecordingSheet: View {
             }
             .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 36, fontSize: 14))
             .disabled(processDisabled)
+            // Return processes, except while it adds or renames a participant.
+            .keyboardShortcut(returnAddsParticipant ? nil : .defaultAction)
             .help(appState.processingJob == nil ? "Process this recording now"
                   : "Processes this recording as soon as the current one finishes")
 
@@ -648,6 +651,11 @@ struct PostRecordingSheet: View {
         .help(appState.processingJob == nil ? "Choose a profile for this recording" : "Profile changes wait for the current job to finish")
     }
 
+    private var returnAddsParticipant: Bool {
+        editingParticipant != nil
+            || (participantFieldFocused && !participantInput.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
     private var processDisabled: Bool {
         recordingManager.postRecordingAction.isBusy || sanitizedMeetingTitle.isEmpty
             || (transcribe && reviewNeedsTranscriptionEndpoint)
@@ -744,7 +752,7 @@ struct PostRecordingSheet: View {
 
     private var webhookFieldsDescription: String {
         let labels = appSettings.integrations.webhook.fields.map(\.displayName)
-        return labels.isEmpty ? "None selected" : labels.joined(separator: ", ")
+        return labels.isEmpty ? String(localized: "None selected") : labels.joined(separator: ", ")
     }
 
     private var sanitizedMeetingTitle: String {
@@ -876,7 +884,7 @@ struct PostRecordingSheet: View {
                 .foregroundStyle(palette.heading.color)
                 .padding(.top, 6)
             HStack(spacing: 8) {
-                BrandCheckRow(title: "Load during processing", isOn: $loadCalendarParticipants, enabled: allowed)
+                BrandCheckRow(title: String(localized: "Load during processing"), isOn: $loadCalendarParticipants, enabled: allowed)
                 Button {
                     loadAttendees(for: recording)
                 } label: {
@@ -924,10 +932,10 @@ struct PostRecordingSheet: View {
             let outcome = await recordingManager.loadCalendarCLIAttendees(for: recording)
             switch outcome {
             case .loaded(let count):
-                attendeeLoadState = .done("\(count) attendee\(count == 1 ? "" : "s") loaded")
+                attendeeLoadState = .done(String(localized: "\(count) attendees loaded"))
                 applyLoadedRoster(to: recording)
             case .noInvitees:
-                attendeeLoadState = .done("No invitees")
+                attendeeLoadState = .done(String(localized: "No invitees"))
                 applyLoadedRoster(to: recording)
             case .omittedLargeMeeting(let count):
                 attendeeLoadState = .omittedLarge(count)
@@ -984,9 +992,9 @@ struct PostRecordingSheet: View {
 
     private func pickerLabel(_ event: CalendarEvent) -> String {
         let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "(untitled)" : event.title
+            ? String(localized: "(untitled)") : event.title
         if event.isAllDay {
-            return "\(title)  All day"
+            return String(localized: "\(title)  All day")
         }
         let start = event.startDate.formatted(date: .omitted, time: .shortened)
         let end = event.endDate.formatted(date: .omitted, time: .shortened)

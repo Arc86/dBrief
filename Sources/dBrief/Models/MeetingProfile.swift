@@ -274,11 +274,11 @@ enum ProfileImportError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidVersion(let version):
-            "Unsupported profile import version: \(version)."
+            String(localized: "Unsupported profile import version: \(version).")
         case .emptyImport:
-            "No profiles found in the import file."
+            String(localized: "No profiles found in the import file.")
         case .invalidFormat:
-            "Invalid profiles JSON format."
+            String(localized: "Invalid profiles JSON format.")
         }
     }
 }

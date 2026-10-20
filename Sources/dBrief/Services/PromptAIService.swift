@@ -12,21 +12,21 @@ enum PromptAIError: Error, LocalizedError {
     case providerFailure(Int), unavailable(String)
     var errorDescription: String? {
         switch self {
-        case .missingEndpoint: "Configure an AI endpoint in Settings → AI analysis before trying again."
-        case .invalidEndpoint: "Choose an OpenAI-compatible or Anthropic endpoint with a valid URL and model in Settings → AI analysis."
-        case .emptyCommand: "Configure a Local CLI command in Settings → AI analysis before trying again."
-        case .profileMissing: "This profile was deleted. Copy your draft before closing the editor."
-        case .unsupportedScope: "This prompt only supports app defaults."
-        case .appleUnavailable: "Apple Intelligence is unavailable. Check macOS support and enable Apple Intelligence in System Settings."
-        case .localUnavailable: "The local AI helper is unavailable. Install or enable the local AI component in Settings → AI analysis."
-        case .emptyOutput: "The AI returned no text. Try again or check the configured model."
-        case .incompleteOutput: "The AI response was incomplete, too long, or repetitive. Ask for a shorter response and try again."
-        case .contextLimit: "The request exceeds the model’s context size. Shorten the prompt or sample and try again."
+        case .missingEndpoint: String(localized: "Configure an AI endpoint in Settings → AI analysis before trying again.")
+        case .invalidEndpoint: String(localized: "Choose an OpenAI-compatible or Anthropic endpoint with a valid URL and model in Settings → AI analysis.")
+        case .emptyCommand: String(localized: "Configure a Local CLI command in Settings → AI analysis before trying again.")
+        case .profileMissing: String(localized: "This profile was deleted. Copy your draft before closing the editor.")
+        case .unsupportedScope: String(localized: "This prompt only supports app defaults.")
+        case .appleUnavailable: String(localized: "Apple Intelligence is unavailable. Check macOS support and enable Apple Intelligence in System Settings.")
+        case .localUnavailable: String(localized: "The local AI helper is unavailable. Install or enable the local AI component in Settings → AI analysis.")
+        case .emptyOutput: String(localized: "The AI returned no text. Try again or check the configured model.")
+        case .incompleteOutput: String(localized: "The AI response was incomplete, too long, or repetitive. Ask for a shorter response and try again.")
+        case .contextLimit: String(localized: "The request exceeds the model’s context size. Shorten the prompt or sample and try again.")
         case .providerFailure(let status):
             switch status {
-            case 401, 403: "The provider rejected access. Check the API key and account permissions in Settings → AI analysis."
-            case 429: "The provider limited this request. Wait and try again, or check your account quota."
-            default: "The provider returned HTTP \(status). Check its configuration and service status, then try again."
+            case 401, 403: String(localized: "The provider rejected access. Check the API key and account permissions in Settings → AI analysis.")
+            case 429: String(localized: "The provider limited this request. Wait and try again, or check your account quota.")
+            default: String(localized: "The provider returned HTTP \(status). Check its configuration and service status, then try again.")
             }
         case .unavailable(let message): message
         }
@@ -101,19 +101,19 @@ actor PromptAIService: PromptTextCompleting {
                 case .contextWindowExceeded: throw PromptAIError.contextLimit
                 case .truncatedResponse: throw PromptAIError.incompleteOutput
                 case .serverError(let code, _): throw PromptAIError.providerFailure(code)
-                default: throw PromptAIError.unavailable("The AI returned an invalid response. Check the endpoint and model, then try again.")
+                default: throw PromptAIError.unavailable(String(localized: "The AI returned an invalid response. Check the endpoint and model, then try again."))
                 }
             }
             #if canImport(FoundationModels)
             if let local = error as? LocalAIError {
                 let knownMessages: Set<String> = [
-                    "Apple Intelligence is not supported on this Mac.",
-                    "Apple Intelligence is turned off. Enable it in System Settings → Apple Intelligence & Siri, then try again.",
-                    "The Apple Intelligence model is still downloading or not ready yet. Try again shortly.",
-                    "Apple Intelligence is currently unavailable.",
-                    "Apple Intelligence could not process this request because of its safety guardrails.",
-                    "Apple Intelligence does not support this language. Choose a different engine.",
-                    "Apple Intelligence could not complete the request. Try again or choose a different engine."
+                    String(localized: "Apple Intelligence is not supported on this Mac."),
+                    String(localized: "Apple Intelligence is turned off. Enable it in System Settings → Apple Intelligence & Siri, then try again."),
+                    String(localized: "The Apple Intelligence model is still downloading or not ready yet. Try again shortly."),
+                    String(localized: "Apple Intelligence is currently unavailable."),
+                    String(localized: "Apple Intelligence could not process this request because of its safety guardrails."),
+                    String(localized: "Apple Intelligence does not support this language. Choose a different engine."),
+                    String(localized: "Apple Intelligence could not complete the request. Try again or choose a different engine.")
                 ]
                 if knownMessages.contains(local.localizedDescription) { throw PromptAIError.unavailable(local.localizedDescription) }
                 throw PromptAIError.appleUnavailable
@@ -124,15 +124,15 @@ actor PromptAIService: PromptTextCompleting {
                 case .emptyCommand: throw PromptAIError.emptyCommand
                 case .emptyOutput: throw PromptAIError.emptyOutput
                 case .outputTooLong: throw PromptAIError.incompleteOutput
-                case .unsupportedEffort: throw PromptAIError.unavailable("This CLI does not support the selected effort. Update Claude CLI or choose CLI default in Settings → AI analysis.")
-                case .timeout(let seconds): throw PromptAIError.unavailable("The Local CLI command timed out after \(seconds) seconds. Allow more time or try a shorter request.")
+                case .unsupportedEffort: throw PromptAIError.unavailable(String(localized: "This CLI does not support the selected effort. Update Claude CLI or choose CLI default in Settings → AI analysis."))
+                case .timeout(let seconds): throw PromptAIError.unavailable(String(localized: "The Local CLI command timed out after \(seconds) seconds. Allow more time or try a shorter request."))
                 case .nonZeroExit(let code, _): throw PromptAIError.unavailable("The Local CLI command exited with code \(code). Check its command and authentication in Settings → AI analysis.")
-                case .launchFailed: throw PromptAIError.unavailable("The Local CLI command could not be launched. Check its executable path and permissions in Settings → AI analysis.")
-                case .invalidJSON: throw PromptAIError.unavailable("The Local CLI command returned an invalid response. Check that it supports the requested output format.")
+                case .launchFailed: throw PromptAIError.unavailable(String(localized: "The Local CLI command could not be launched. Check its executable path and permissions in Settings → AI analysis."))
+                case .invalidJSON: throw PromptAIError.unavailable(String(localized: "The Local CLI command returned an invalid response. Check that it supports the requested output format."))
                 }
             }
             if let network = error as? URLError, network.code == .cancelled { throw CancellationError() }
-            throw PromptAIError.unavailable("The configured AI could not complete the request. Check the connection or local model, then try again.")
+            throw PromptAIError.unavailable(String(localized: "The configured AI could not complete the request. Check the connection or local model, then try again."))
         }
     }
 }

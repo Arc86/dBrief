@@ -15,7 +15,7 @@ enum MarkdownInsightsUpdater {
     /// (or at the end when the note has no transcript).
     static func upsertAskDBrief(markdown: String, body: String) -> String {
         var lines = markdown.components(separatedBy: "\n")
-        let bodyLines = body.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        let bodyLines = sectionBody(body.trimmingCharacters(in: .whitespacesAndNewlines)).components(separatedBy: "\n")
         if lines.contains(askDBriefHeader) {
             replaceSection(in: &lines, header: askDBriefHeader, body: bodyLines, keepsBlankLines: true)
             return lines.joined(separator: "\n")
@@ -35,7 +35,7 @@ enum MarkdownInsightsUpdater {
 
         // Body sections (only replaced if the header exists).
         replaceSection(in: &lines, header: summaryHeader,
-                       body: [insights.summary.trimmingCharacters(in: .whitespacesAndNewlines)])
+                       body: [sectionBody(insights.summary.trimmingCharacters(in: .whitespacesAndNewlines))])
         replaceSection(in: &lines, header: actionItemsHeader,
                        body: insights.actionItems.map { "- [ ] \($0)" })
         replaceSection(in: &lines, header: tagsHeader, body: [bodyTagsLine(insights.tags)])
@@ -44,6 +44,21 @@ enum MarkdownInsightsUpdater {
         updateFrontmatterTags(in: &lines, tags: insights.tags)
 
         return lines.joined(separator: "\n")
+    }
+
+    /// `body` made safe to sit inside one of the note's `## ` sections: an H2 line is
+    /// written one level down and a `---` line as `***` (the same thematic break), so
+    /// neither ends the section early and the next save replaces the whole body.
+    /// Fenced code blocks are left as written.
+    static func sectionBody(_ body: String) -> String {
+        var inFence = false
+        return body.components(separatedBy: "\n").map { line in
+            if line.hasPrefix("```") || line.hasPrefix("~~~") { inFence.toggle(); return line }
+            guard !inFence else { return line }
+            if line.hasPrefix("## ") { return "#" + line }
+            if line == "---" { return "***" }
+            return line
+        }.joined(separator: "\n")
     }
 
     /// Replaces the content lines between `header` and the next section boundary

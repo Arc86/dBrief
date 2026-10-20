@@ -12,6 +12,13 @@
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.dbrief.app</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>nl</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>dBrief</string>
 	<key>CFBundlePackageType</key>
@@ -33,6 +40,8 @@
 	<string>1.4.7</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>dBrief controls Notes to save your meeting notes when the Apple Notes integration is on.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>dBrief accesses your calendar to pre-fill meeting title, participants, and agenda context at recording time.</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -77,6 +77,6 @@ enum SpokenSummaryScript {
 enum SpokenSummaryPrompt {
     static func systemPrompt(base: String, language: TTSLanguage) -> String {
         base.trimmingCharacters(in: .whitespacesAndNewlines)
-            + "\n\nWrite the spoken briefing in \(language.displayName), regardless of the language of the input."
+            + "\n\nWrite the spoken briefing in \(language.englishName), regardless of the language of the input."
     }
 }

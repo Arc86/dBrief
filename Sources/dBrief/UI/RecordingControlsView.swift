@@ -45,17 +45,23 @@ struct RecordingControlsView: View {
                             Label("Pause", systemImage: "pause")
                         }
                         .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
+                        .keyboardShortcut(CaptureShortcut.pauseResume)
+                        .help("Pause recording (⌥⌘P)")
                     } else {
                         Button { recordingManager.requestResume() } label: {
                             Label("Resume", systemImage: "play")
                         }
                         .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
+                        .keyboardShortcut(CaptureShortcut.pauseResume)
+                        .help("Resume recording (⌥⌘P)")
                     }
 
                     Button { Task { await recordingManager.stopRecording() } } label: {
                         Label("Stop", systemImage: "stop")
                     }
                     .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 32))
+                    .keyboardShortcut(CaptureShortcut.stop)
+                    .help("Stop recording (⌥⌘.)")
                 }
                 .environment(\.controlActiveState, .active)
 
@@ -77,7 +83,7 @@ struct RecordingControlsView: View {
                let recording = appState.currentRecording {
                 MenuPanelHairline()
                 ObsidianFolderPicker(
-                    title: "Obsidian output folder",
+                    title: String(localized: "Obsidian output folder"),
                     currentRelativePath: recording.obsidianFolderRelativePath ?? appSettings.effectiveObsidianDefaultFolderRelativePath
                 ) { relativePath in
                     // This recording only; the default lives in Settings → Integrations.
@@ -96,6 +102,11 @@ struct RecordingControlsView: View {
             Task { await recordingManager.requestRecording() }
         } label: {
             Label("Record meeting", systemImage: "mic.fill")
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                // Room for the shortcut on both sides keeps the label centred and clear of it,
+                // however long the translation.
+                .padding(.horizontal, 46)
                 .frame(maxWidth: .infinity)
                 // The shortcut rides inside the button it triggers, quiet and right-aligned.
                 .overlay(alignment: .trailing) {

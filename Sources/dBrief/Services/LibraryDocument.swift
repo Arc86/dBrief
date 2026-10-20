@@ -6,11 +6,11 @@ enum LibraryRecordingStatus: String, Codable, CaseIterable, Sendable {
     /// Shared with the menu panel's `RecordingStatus` labels.
     var title: String {
         switch self {
-        case .queued: "Queued"
-        case .failed: "Needs attention"
-        case .incomplete: "Incomplete"
-        case .unprocessed: "Not processed"
-        case .done: "Done"
+        case .queued: String(localized: "Queued")
+        case .failed: String(localized: "Needs attention")
+        case .incomplete: String(localized: "Incomplete")
+        case .unprocessed: String(localized: "Not processed")
+        case .done: String(localized: "Done")
         }
     }
 
@@ -96,9 +96,7 @@ struct LibraryDocument {
         let tags = insights["tags"] as? [String] ?? []
         let actions = insights["actionItems"] as? [String] ?? []
         let completed = Set(insights["completedActionItems"] as? [String] ?? [])
-        unfinishedActions = actions.filter {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !completed.contains($0)
-        }.count
+        unfinishedActions = actions.filter { ActionItemText.cleaned($0) != nil && !completed.contains($0) }.count
         let provenance = try object("reprocessing.json")
         if let stamp = provenance?["completion"] ?? metadata["lastProcessingCompletion"],
            let bytes = try? JSONSerialization.data(withJSONObject: stamp),

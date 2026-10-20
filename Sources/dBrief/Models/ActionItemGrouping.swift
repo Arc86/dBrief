@@ -21,7 +21,7 @@ struct ParsedActionItem: Identifiable, Hashable, Sendable {
 /// Action items for one person or shared set of owners, in first-appearance order.
 struct ActionItemGroup: Identifiable {
     /// `nil` owner is surfaced under this label.
-    static let unassignedLabel = "Unassigned"
+    static let unassignedLabel = String(localized: "Unassigned", comment: "Action items without an owner")
 
     let owners: [String]
     let items: [ParsedActionItem]

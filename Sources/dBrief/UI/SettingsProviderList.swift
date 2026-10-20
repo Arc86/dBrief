@@ -19,11 +19,10 @@ enum SettingsProviderKind {
     }
 
     var showsOutputTokenLimit: Bool { self == .ai }
-    var namePlaceholder: String { self == .ai ? "My LLM server" : "My Whisper server" }
+    var namePlaceholder: String { self == .ai ? String(localized: "My LLM server") : String(localized: "My Whisper server") }
     var urlPlaceholder: String { self == .ai ? "http://localhost:11434" : "http://localhost:8080" }
     var modelPlaceholder: String { self == .ai ? "llama3" : "whisper-1" }
-    var noun: String { self == .ai ? "AI provider" : "transcription service" }
-    var addLabel: String { self == .ai ? "Add an AI provider" : "Add a transcription service" }
+    var addLabel: String { self == .ai ? String(localized: "Add an AI provider") : String(localized: "Add a transcription service") }
 }
 
 /// Pure list rules shared by both endpoint lists.
@@ -73,7 +72,7 @@ struct SettingsProviderList: View {
             editor(draftBinding(fallback: current))
         } else {
             if endpoints.isEmpty {
-                SettingsRow("No \(kind.noun)s yet", caption: "Add one from a preset or enter your own server.")
+                SettingsRow(kind == .ai ? "No AI providers yet" : "No transcription services yet", caption: "Add one from a preset or enter your own server.")
             }
             ForEach(endpoints) { endpoint in
                 SettingsRow(verbatim: endpoint.name, caption: SettingsProviderListLogic.subtitle(for: endpoint),
@@ -150,7 +149,8 @@ struct SettingsProviderList: View {
     private func editor(_ draft: Binding<Endpoint>) -> some View {
         SettingsStackedRow {
             VStack(alignment: .leading, spacing: 4) {
-                Text(isNew ? "Add \(kind.noun)" : "Edit \(kind.noun)")
+                Text(kind == .ai ? (isNew ? "Add AI provider" : "Edit AI provider")
+                     : (isNew ? "Add transcription service" : "Edit transcription service"))
                     .uiFont(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                 if let note = providerNote(for: draft.wrappedValue) {
@@ -163,19 +163,19 @@ struct SettingsProviderList: View {
         }
         SettingsRow("Name") {
             NativeTextField(placeholder: kind.namePlaceholder, text: draft.name,
-                            accessibilityName: "\(kind.noun) name")
+                            accessibilityName: kind == .ai ? String(localized: "AI provider name") : String(localized: "Transcription service name"))
                 .frame(width: 260, height: 22)
         }
         SettingsRow("Base URL") {
             NativeTextField(placeholder: kind.urlPlaceholder, text: draft.baseURL,
-                            accessibilityName: "\(kind.noun) base URL")
+                            accessibilityName: kind == .ai ? String(localized: "AI provider base URL") : String(localized: "Transcription service base URL"))
                 .frame(width: 260, height: 22)
         }
         SettingsRow("Model", caption: availableModels.isEmpty ? nil
-                    : "Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from the server.") {
+                    : "Loaded \(availableModels.count) models from the server.") {
             if availableModels.isEmpty {
                 NativeTextField(placeholder: kind.modelPlaceholder, text: draft.modelName,
-                                accessibilityName: "\(kind.noun) model")
+                                accessibilityName: kind == .ai ? String(localized: "AI provider model") : String(localized: "Transcription service model"))
                     .frame(width: 260, height: 22)
             } else {
                 Picker("Model", selection: draft.modelName) {
@@ -186,7 +186,7 @@ struct SettingsProviderList: View {
         }
         SettingsRow("API key", caption: "Optional for local servers.") {
             NativeTextField(placeholder: "", text: draft.apiKey, isSecure: true,
-                            accessibilityName: "\(kind.noun) API key (optional)")
+                            accessibilityName: kind == .ai ? String(localized: "AI provider API key (optional)") : String(localized: "Transcription service API key (optional)"))
                 .frame(width: 260, height: 22)
         }
         if kind.showsOutputTokenLimit {
@@ -194,8 +194,8 @@ struct SettingsProviderList: View {
                         caption: isOutputTokenLimitValid
                             ? "Blank is automatic (\(draft.wrappedValue.recommendedMaxOutputTokens.formatted()) tokens). Covers analysis and chat, including reasoning."
                             : "Enter a positive whole number, or leave blank for automatic.") {
-                NativeTextField(placeholder: "Automatic", text: $outputTokenLimitText,
-                                accessibilityName: "\(kind.noun) output token limit")
+                NativeTextField(placeholder: String(localized: "Automatic"), text: $outputTokenLimitText,
+                                accessibilityName: kind == .ai ? String(localized: "AI provider output token limit") : String(localized: "Transcription service output token limit"))
                     .frame(width: 120, height: 22)
             }
         }
@@ -208,7 +208,7 @@ struct SettingsProviderList: View {
                 case .success:
                     SettingsStatusPill("Connection successful", kind: .success)
                 case .failure(let error):
-                    SettingsErrorDetails(summary: "Connection failed", error: error)
+                    SettingsErrorDetails(summary: String(localized: "Connection failed"), error: error)
                 }
             }
         }
@@ -232,9 +232,9 @@ struct SettingsProviderList: View {
 
     private func providerNote(for draft: Endpoint) -> String? {
         switch draft.provider {
-        case .anthropic: "Anthropic Messages API (native). Enter your model name and API key."
-        case .deepgram: "Deepgram native API. Long files and speaker identification are handled server-side."
-        case .elevenLabs: "ElevenLabs native API. Long files are handled server-side."
+        case .anthropic: String(localized: "Anthropic Messages API (native). Enter your model name and API key.")
+        case .deepgram: String(localized: "Deepgram native API. Long files and speaker identification are handled server-side.")
+        case .elevenLabs: String(localized: "ElevenLabs native API. Long files are handled server-side.")
         case .openAICompatible: nil
         }
     }
@@ -267,9 +267,11 @@ struct SettingsProviderList: View {
                     editing?.modelName = first
                 }
                 testResult = .success
+                AccessibilityAnnouncer.shared.announce(models.isEmpty ? String(localized: "Connected") : String(localized: "Connected, \(models.count) models found"))
             } catch {
                 availableModels = []
                 testResult = .failure(error.localizedDescription)
+                AccessibilityAnnouncer.shared.announce(String(localized: "Connection failed. \(error.localizedDescription)"), priority: .high)
             }
             isLoadingModels = false
         }

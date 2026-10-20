@@ -156,6 +156,42 @@ enum MarkdownEditorScript {
     }
 }
 
+/// The editor's own text (placeholder, `/` menu, toolbar, VoiceOver labels) in the
+/// app's language. Injected as `window.dbriefStrings` before the bundle runs;
+/// `web/markdown-editor/src/strings.ts` falls back to English for missing keys.
+struct MarkdownEditorStrings: Encodable, Equatable, Sendable {
+    var placeholder = String(localized: "Write the summary, or type / for blocks")
+    var editorLabel = String(localized: "Summary")
+    var blocksLabel = String(localized: "Blocks", comment: "Summary editor: VoiceOver name of the / menu")
+    var blockMovedUp = String(localized: "Block moved up")
+    var blockMovedDown = String(localized: "Block moved down")
+    var textGroup = String(localized: "Text", comment: "Summary editor: / menu group and plain text block")
+    var text = String(localized: "Text", comment: "Summary editor: / menu group and plain text block")
+    var heading1 = String(localized: "Heading 1")
+    var heading2 = String(localized: "Heading 2")
+    var heading3 = String(localized: "Heading 3")
+    var quote = String(localized: "Quote", comment: "Summary editor: quote block")
+    var divider = String(localized: "Divider", comment: "Summary editor: horizontal rule block")
+    var listGroup = String(localized: "List", comment: "Summary editor: / menu group")
+    var bulletList = String(localized: "Bullet List")
+    var orderedList = String(localized: "Ordered List")
+    var taskList = String(localized: "Task List")
+    var advancedGroup = String(localized: "Advanced", comment: "Summary editor: / menu group")
+    var table = String(localized: "Table", comment: "Summary editor: table block")
+    var bold = String(localized: "Bold", comment: "Summary editor: toolbar")
+    var italic = String(localized: "Italic", comment: "Summary editor: toolbar")
+    var strikethrough = String(localized: "Strikethrough", comment: "Summary editor: toolbar")
+    var inlineCode = String(localized: "Inline code", comment: "Summary editor: toolbar")
+    var link = String(localized: "Link", comment: "Summary editor: toolbar")
+    var linkPlaceholder = String(localized: "Paste link...", comment: "Summary editor: link field placeholder")
+
+    /// `window.dbriefStrings = {…};` with every value JSON-encoded.
+    var injectionScript: String {
+        let data = (try? JSONEncoder().encode(self)) ?? Data("{}".utf8)
+        return "window.dbriefStrings = \(String(decoding: data, as: UTF8.self));"
+    }
+}
+
 /// What the editor's web view may navigate to.
 enum MarkdownEditorNavigation {
     enum Decision: Equatable {

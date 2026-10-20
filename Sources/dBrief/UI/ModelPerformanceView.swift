@@ -47,8 +47,8 @@ struct ModelPerformanceView: View {
 
     private var header: some View {
         SettingsCard(section: .benchmark) {
-            SettingsRow(verbatim: "\(Self.formatTotalDuration(appSettings.lifetimeTranscribedSeconds)) transcribed by dBrief",
-                        caption: "Timings are recorded every time a recording is transcribed or analysed.") {
+            SettingsRow(verbatim: String(localized: "\(Self.formatTotalDuration(appSettings.lifetimeTranscribedSeconds)) transcribed by dBrief"),
+                        caption: String(localized: "Timings are recorded every time a recording is transcribed or analysed.")) {
                 HStack(spacing: 8) {
                     Picker("Range", selection: $range) {
                         ForEach(PerformanceRange.allCases) { r in
@@ -129,7 +129,7 @@ struct ModelPerformanceView: View {
     // MARK: - Hero (fastest model)
 
     private func heroCard(_ stat: TranscriptionStat) -> some View {
-        SettingsCard("Fastest model", description: "\(stat.sessions) \(stat.sessions == 1 ? "session" : "sessions")") {
+        SettingsCard("Fastest model", description: "\(stat.sessions) sessions") {
             SettingsStackedRow {
             VStack(alignment: .leading, spacing: 14) {
                 Text(stat.model)
@@ -183,9 +183,9 @@ struct ModelPerformanceView: View {
         return SettingsCard("Transcription models") {
             leaderboard {
                 GridRow {
-                    sortHeader("Model", KeyPathComparator(\TranscriptionStat.model), sort: $txSort)
-                    sortHeader("Relative speed", KeyPathComparator(\TranscriptionStat.headlineSpeed, order: .reverse), sort: $txSort)
-                    sortHeader("Sessions", KeyPathComparator(\TranscriptionStat.sessions, order: .reverse),
+                    sortHeader(String(localized: "Model"), KeyPathComparator(\TranscriptionStat.model), sort: $txSort)
+                    sortHeader(String(localized: "Relative speed"), KeyPathComparator(\TranscriptionStat.headlineSpeed, order: .reverse), sort: $txSort)
+                    sortHeader(String(localized: "Sessions"), KeyPathComparator(\TranscriptionStat.sessions, order: .reverse),
                                sort: $txSort, width: Self.sessionsWidth)
                 }
                 ForEach(stats) { stat in
@@ -194,7 +194,7 @@ struct ModelPerformanceView: View {
                         HStack(spacing: 6) {
                             Text(stat.model).lineLimit(2)
                             if showBadges && stat.model == fastestModel {
-                                badge("Fastest", accent: true)
+                                badge(String(localized: "Fastest"), accent: true)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -223,9 +223,9 @@ struct ModelPerformanceView: View {
         SettingsCard("AI analysis models") {
             leaderboard {
                 GridRow {
-                    sortHeader("Model", KeyPathComparator(\AIStat.model), sort: $aiSort)
-                    sortHeader("Avg. analysis", KeyPathComparator(\AIStat.avgTime), sort: $aiSort)
-                    sortHeader("Sessions", KeyPathComparator(\AIStat.sessions, order: .reverse),
+                    sortHeader(String(localized: "Model"), KeyPathComparator(\AIStat.model), sort: $aiSort)
+                    sortHeader(String(localized: "Avg. analysis"), KeyPathComparator(\AIStat.avgTime), sort: $aiSort)
+                    sortHeader(String(localized: "Sessions"), KeyPathComparator(\AIStat.sessions, order: .reverse),
                                sort: $aiSort, width: Self.sessionsWidth)
                 }
                 ForEach(stats) { stat in
@@ -322,9 +322,9 @@ struct ModelPerformanceView: View {
     static func formatTotalDuration(_ s: TimeInterval) -> String {
         let totalMinutes = Int(s / 60)
         if totalMinutes >= 60 {
-            return "\(totalMinutes / 60)h \(totalMinutes % 60)m"
+            return String(localized: "\(totalMinutes / 60)h \(totalMinutes % 60)m")
         }
-        return "\(totalMinutes)m"
+        return String(localized: "\(totalMinutes)m")
     }
 
     /// "31s", "3.10s", or "2:29 mins" depending on magnitude.
@@ -332,11 +332,12 @@ struct ModelPerformanceView: View {
         if s >= 60 {
             let m = Int(s) / 60
             let sec = Int(s.rounded()) % 60
-            return String(format: "%d:%02d mins", m, sec)
+            let clock = String(format: "%d:%02d", m, sec)
+            return String(localized: "\(clock) mins")
         } else if s >= 10 {
-            return String(format: "%.0fs", s)
+            return String(localized: "\(s.formatted(.number.precision(.fractionLength(0))))s")
         } else {
-            return String(format: "%.2fs", s)
+            return String(localized: "\(s.formatted(.number.precision(.fractionLength(2))))s")
         }
     }
 }
@@ -413,7 +414,7 @@ private struct RecentRecordingRow: View {
     private var headerContext: String {
         let date = Self.dateFormatter.string(from: row.date)
         if let audio = row.audioDuration, audio > 0 {
-            return "\(date) · \(Self.audioLength(audio)) audio"
+            return String(localized: "\(date) · \(Self.audioLength(audio)) audio")
         }
         return date
     }
@@ -422,7 +423,7 @@ private struct RecentRecordingRow: View {
     private var modelSubtitle: String {
         var parts: [String] = []
         if let model = row.transcriptionModel { parts.append(model) }
-        if let audio = row.audioDuration, audio > 0 { parts.append("\(Self.audioLength(audio)) audio") }
+        if let audio = row.audioDuration, audio > 0 { parts.append(String(localized: "\(Self.audioLength(audio)) audio")) }
         return parts.joined(separator: " · ")
     }
 
@@ -511,7 +512,7 @@ struct TranscriptionStat: Identifiable {
     /// Pure aggregation over already-filtered records, grouped by model.
     static func aggregate(_ records: [ModelPerformanceRecord]) -> [TranscriptionStat] {
         let grouped = Dictionary(grouping: records.filter { $0.hasTranscription }) {
-            $0.transcriptionModel ?? "Unknown"
+            $0.transcriptionModel ?? String(localized: "Unknown")
         }
         return grouped.map { model, recs -> TranscriptionStat in
             let audios = recs.compactMap { $0.audioDuration }
@@ -555,7 +556,7 @@ struct AIStat: Identifiable {
 
     static func aggregate(_ records: [ModelPerformanceRecord]) -> [AIStat] {
         let grouped = Dictionary(grouping: records.filter { $0.hasAI }) {
-            $0.aiModel ?? "Unknown"
+            $0.aiModel ?? String(localized: "Unknown")
         }
         return grouped.map { model, recs -> AIStat in
             let times = recs.compactMap { $0.aiTime }
@@ -578,10 +579,10 @@ enum PerformanceRange: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .last7Days: "Last 7 Days"
-        case .last30Days: "Last 30 Days"
-        case .lastYear: "Last Year"
-        case .allTime: "All Time"
+        case .last7Days: String(localized: "Last 7 Days")
+        case .last30Days: String(localized: "Last 30 Days")
+        case .lastYear: String(localized: "Last Year")
+        case .allTime: String(localized: "All Time")
         }
     }
 

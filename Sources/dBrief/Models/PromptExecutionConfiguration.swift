@@ -12,14 +12,14 @@ enum PromptExecutionConfiguration: Equatable, Sendable, CustomStringConvertible,
         case .appleIntelligence: "Apple Intelligence"
         case .localModel: "Gemma 4 E4B Local"
         case .remote(let endpoint): "\(endpoint.name) · \(endpoint.modelName)"
-        case .localCLI: "Local CLI"
+        case .localCLI: String(localized: "Local CLI")
         }
     }
     var destinationDescription: String {
         switch self {
-        case .appleIntelligence, .localModel: "On this Mac"
-        case .remote(let endpoint): URLComponents(string: endpoint.baseURL)?.host ?? "Configured remote endpoint"
-        case .localCLI: "Externally managed by your configured command"
+        case .appleIntelligence, .localModel: String(localized: "On this Mac")
+        case .remote(let endpoint): URLComponents(string: endpoint.baseURL)?.host ?? String(localized: "Configured remote endpoint")
+        case .localCLI: String(localized: "Externally managed by your configured command")
         }
     }
     var description: String {
@@ -72,13 +72,13 @@ enum PromptConfigurationResolver {
             if settings.aiEndpoints.contains(where: { $0.id == id }) { return nil }
             if let defaultID = settings.defaultAIEndpointId,
                !settings.aiEndpoints.contains(where: { $0.id == defaultID }) {
-                return "The profile and default endpoints are unavailable. Using the first configured endpoint."
+                return String(localized: "The profile and default endpoints are unavailable. Using the first configured endpoint.")
             }
-            return "This profile’s endpoint is unavailable. Using the app’s default endpoint."
+            return String(localized: "This profile’s endpoint is unavailable. Using the app’s default endpoint.")
         }
         if let id = settings.defaultAIEndpointId,
            !settings.aiEndpoints.contains(where: { $0.id == id }) {
-            return "The saved default endpoint is unavailable. Using the first configured endpoint."
+            return String(localized: "The saved default endpoint is unavailable. Using the first configured endpoint.")
         }
         return nil
     }

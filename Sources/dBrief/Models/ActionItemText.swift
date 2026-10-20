@@ -12,7 +12,8 @@ enum ActionItemText {
 
     static func cleaned(_ item: String) -> String? {
         var text = item.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let marker = text.prefixMatch(of: /(?:[-*+•]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/) {
+        // Repeated markers ("- - item") come from a marker added to an already listed item.
+        while let marker = text.prefixMatch(of: /(?:[-*+•]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/) {
             text = String(text[marker.range.upperBound...]).trimmingCharacters(in: .whitespaces)
         }
         guard !text.isEmpty, !["-", "*", "•"].contains(text), !isPlaceholder(text) else { return nil }

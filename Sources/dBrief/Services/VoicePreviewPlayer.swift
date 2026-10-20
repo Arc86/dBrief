@@ -50,7 +50,7 @@ final class VoicePreviewPlayer {
     ) {
         stop()
         guard let plugin else {
-            state = .failed(message: "Local AI plugin not available.")
+            state = .failed(message: String(localized: "Local AI plugin not available."))
             return
         }
         start { outURL in

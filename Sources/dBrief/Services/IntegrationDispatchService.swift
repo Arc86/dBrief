@@ -56,7 +56,7 @@ actor IntegrationDispatchService {
         }
         try Task.checkCancellation()
         if requireTranscript, !digests.isEmpty, recordingSnapshot.transcript == nil {
-            throw IntegrationError.missingConfiguration("The saved transcript is unavailable. Restore it before sending integrations.")
+            throw IntegrationError.missingConfiguration(String(localized: "The saved transcript is unavailable. Restore it before sending integrations."))
         }
         let bundle = try buildBundle(recording: recordingSnapshot, markdownURL: generatedMarkdownURL)
         try Task.checkCancellation()
@@ -106,13 +106,13 @@ actor IntegrationDispatchService {
             return await sendToNotion(batch: batch, delivery: delivery, config: config)
         }
         if delivery.destination == .appleReminders, ActionItemText.deliverable(bundle.actionItems).isEmpty {
-            return .init(destination: .appleReminders, status: .skipped, message: "No action items", remoteID: nil)
+            return .init(destination: .appleReminders, status: .skipped, message: String(localized: "No action items"), remoteID: nil)
         }
         return await perform(delivery.destination) {
             try Task.checkCancellation()
             guard try IntegrationDeliveryBatch.configurationDigests(config, available: self.available)[delivery.destination]
                     == delivery.configurationDigest else {
-                throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
+                throw IntegrationError.executionFailed(String(localized: "Integration settings changed. Restore the original destination before retrying."))
             }
             switch delivery.destination {
             case .appleNotes:
@@ -123,14 +123,14 @@ actor IntegrationDispatchService {
                 return try await self.sendToWebhook(recordingID: batch.recordingID, bundle: bundle,
                                                     config: config.webhook, deliveryID: delivery.id)
             default:
-                throw IntegrationError.unsupported("This integration is not available")
+                throw IntegrationError.unsupported(String(localized: "This integration is not available"))
             }
         }
     }
 
     func testConnection(destination: IntegrationDestination, settings: AppSettings) async throws {
         guard available.contains(destination) else {
-            throw IntegrationError.unsupported("\(destination.displayName) is not available")
+            throw IntegrationError.unsupported(String(localized: "\(destination.displayName) is not available"))
         }
         let snapshot = await MainActor.run { IntegrationSettingsSnapshot(settings: settings) }
 
@@ -187,7 +187,7 @@ actor IntegrationDispatchService {
     }
 
     private func buildBundle(recording: RecordingSnapshot, markdownURL: URL?) throws -> IntegrationContentBundle {
-        let title = recording.generatedTitle?.isEmpty == false ? recording.generatedTitle! : recording.fileName
+        let title = recording.displayTitle
         let markdown: String?
         if let markdownURL {
             markdown = try String(contentsOf: markdownURL, encoding: .utf8)
@@ -211,8 +211,10 @@ actor IntegrationDispatchService {
     }
 
     private func sendToAppleNotes(bundle: IntegrationContentBundle, config: AppleNotesConfig) async throws -> String? {
-        let content = renderPlainContent(bundle: bundle, fields: config.fields)
-        let escapedTitle = escapeAppleScript(bundle.title)
+        // Notes names the note after the body's first line (the title heading), so
+        // `name` isn't set: setting it too would repeat the title as plain text.
+        let content = AppleNotesHTML.body(for: bundle, fields: config.fields,
+                                          meetingInfo: bundle.calendarEvent.map(Self.meetingInfoLines) ?? [])
         let escapedBody = escapeAppleScript(content)
 
         let script: String
@@ -222,7 +224,7 @@ actor IntegrationDispatchService {
             script = """
             tell application "Notes"
                 tell folder "\(folder)" of account "\(account)"
-                    set createdNote to make new note with properties {name:"\(escapedTitle)", body:"\(escapedBody)"}
+                    set createdNote to make new note with properties {body:"\(escapedBody)"}
                     return id of createdNote
                 end tell
             end tell
@@ -230,7 +232,7 @@ actor IntegrationDispatchService {
         } else {
             script = """
             tell application "Notes"
-                set createdNote to make new note with properties {name:"\(escapedTitle)", body:"\(escapedBody)"}
+                set createdNote to make new note with properties {body:"\(escapedBody)"}
                 return id of createdNote
             end tell
             """
@@ -261,7 +263,7 @@ actor IntegrationDispatchService {
             } else if let fallback = reminderStore.defaultCalendarForNewReminders() {
                 targetCalendar = fallback
             } else {
-                throw IntegrationError.executionFailed("No reminders list available")
+                throw IntegrationError.executionFailed(String(localized: "No reminders list available"))
             }
 
             var created: [EKReminder] = []
@@ -279,7 +281,7 @@ actor IntegrationDispatchService {
 
     private func sendToEvernote(bundle: IntegrationContentBundle, config: EvernoteConfig, token: String) async throws -> String? {
         guard !token.isEmpty else {
-            throw IntegrationError.missingConfiguration("Evernote token is required")
+            throw IntegrationError.missingConfiguration(String(localized: "Evernote token is required"))
         }
 
         let base = config.apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -314,7 +316,7 @@ actor IntegrationDispatchService {
 
     private func sendToGoogleKeep(bundle: IntegrationContentBundle, config: GoogleKeepConfig, token: String) async throws -> String? {
         guard !token.isEmpty else {
-            throw IntegrationError.missingConfiguration("Google Keep token is required")
+            throw IntegrationError.missingConfiguration(String(localized: "Google Keep token is required"))
         }
 
         let base = config.apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -348,7 +350,7 @@ actor IntegrationDispatchService {
 
     private func sendToOneNote(bundle: IntegrationContentBundle, config: OneNoteConfig, token: String) async throws -> String? {
         guard !token.isEmpty else {
-            throw IntegrationError.missingConfiguration("OneNote token is required")
+            throw IntegrationError.missingConfiguration(String(localized: "OneNote token is required"))
         }
 
         let base = config.graphBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -369,7 +371,7 @@ actor IntegrationDispatchService {
 
         let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw IntegrationError.executionFailed("OneNote returned invalid response")
+            throw IntegrationError.executionFailed(String(localized: "OneNote returned invalid response"))
         }
         guard (200...299).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "Unknown error"
@@ -425,7 +427,7 @@ actor IntegrationDispatchService {
                                                                operation: operation, session: session)
         }
         guard let http = response as? HTTPURLResponse else {
-            throw IntegrationError.executionFailed("Webhook returned invalid response")
+            throw IntegrationError.executionFailed(String(localized: "Webhook returned invalid response"))
         }
         guard (200...299).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "Unknown error"
@@ -464,7 +466,7 @@ actor IntegrationDispatchService {
 
         let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw IntegrationError.executionFailed("Request returned invalid response")
+            throw IntegrationError.executionFailed(String(localized: "Request returned invalid response"))
         }
         guard (200...299).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "Unknown error"
@@ -479,7 +481,7 @@ actor IntegrationDispatchService {
         extraHeaders: [String: String]
     ) async throws {
         guard !token.isEmpty else {
-            throw IntegrationError.missingConfiguration("Token is required")
+            throw IntegrationError.missingConfiguration(String(localized: "Token is required"))
         }
         guard let url = URL(string: urlString) else {
             throw IntegrationError.invalidURL(urlString)
@@ -493,7 +495,7 @@ actor IntegrationDispatchService {
 
         let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw IntegrationError.executionFailed("Connection test returned invalid response")
+            throw IntegrationError.executionFailed(String(localized: "Connection test returned invalid response"))
         }
         guard (200...299).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "Unknown error"
@@ -513,7 +515,7 @@ actor IntegrationDispatchService {
         }
 
         guard granted else {
-            throw IntegrationError.permissionDenied("Reminders permission denied")
+            throw IntegrationError.permissionDenied(String(localized: "Reminders permission denied"))
         }
     }
 
@@ -576,6 +578,13 @@ actor IntegrationDispatchService {
     /// Renders calendar-derived meeting context (organizer, attendees + emails, modality,
     /// location, agenda) as a plain-text block. Returns nil when there's nothing to show.
     private static func renderMeetingInfo(_ event: CalendarEvent) -> String? {
+        let lines = meetingInfoLines(event)
+        guard !lines.isEmpty else { return nil }
+        return "Meeting Info\n\(lines.joined(separator: "\n"))"
+    }
+
+    /// Organizer, attendees + emails, modality, location and agenda, one item per line.
+    static func meetingInfoLines(_ event: CalendarEvent) -> [String] {
         var lines: [String] = []
         if let organizer = event.organizer {
             let email = organizer.email.map { " <\($0)>" } ?? ""
@@ -598,8 +607,7 @@ actor IntegrationDispatchService {
         if !agenda.isEmpty {
             lines.append("Agenda:\n\(agenda)")
         }
-        guard !lines.isEmpty else { return nil }
-        return "Meeting Info\n\(lines.joined(separator: "\n"))"
+        return lines
     }
 
     private func renderHTMLContent(bundle: IntegrationContentBundle, fields: [DeliveryField]) -> String {
@@ -672,7 +680,18 @@ struct RecordingSnapshot: Sendable {
     let tags: [String]
     let sentiment: String?
     let fileName: String
+    let meetingTitle: String
     let calendarEvent: CalendarEvent?
+
+    /// The AI title, else the title the meeting was recorded under, else the
+    /// readable part of the file name; the bare file name only as a last resort.
+    var displayTitle: String {
+        for candidate in [generatedTitle, meetingTitle] {
+            if let title = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty,
+               title.lowercased() != "meeting" { return title }
+        }
+        return RecordingBrowserItem.displayTitle(forAudioName: fileName)
+    }
 
     @MainActor
     init(recording: Recording) {
@@ -689,6 +708,7 @@ struct RecordingSnapshot: Sendable {
         self.tags = recording.tags ?? []
         self.sentiment = recording.sentiment
         self.fileName = recording.fileName
+        self.meetingTitle = RecordingFinalizer.readableMeetingTitle(recording.meetingTitleDraft)
         self.calendarEvent = recording.calendarEvent
     }
 }

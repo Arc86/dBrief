@@ -17,7 +17,7 @@ struct PromptEditorView: View {
                     VStack(spacing: 0) {
                         Picker("Editor section", selection: $narrowSection) {
                             Text("Editor").tag(PromptEditorSession.Panel.none)
-                            Text(session.panel.rawValue).tag(session.panel)
+                            Text(session.panel.title).tag(session.panel)
                         }.pickerStyle(.segmented).padding(12)
                         if narrowSection == .none { editor } else { sidePanel }
                     }

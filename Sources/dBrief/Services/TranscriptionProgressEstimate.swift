@@ -102,12 +102,12 @@ enum TranscriptionProgressEstimate {
     /// Format a remaining-seconds estimate as a short, non-jittery label.
     static func formatRemaining(_ seconds: TimeInterval) -> String {
         let clamped = max(0, seconds)
-        if clamped < 5 { return "almost done" }
+        if clamped < 5 { return String(localized: "almost done") }
         if clamped < 60 {
             let s = Int(clamped.rounded())
-            return "about \(s)s left"
+            return String(localized: "about \(s)s left")
         }
         let minutes = Int((clamped / 60).rounded())
-        return minutes <= 1 ? "about 1 min left" : "about \(minutes) min left"
+        return minutes <= 1 ? String(localized: "about 1 min left") : String(localized: "about \(minutes) min left")
     }
 }

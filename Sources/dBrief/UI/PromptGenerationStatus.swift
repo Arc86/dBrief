@@ -8,17 +8,17 @@ struct PromptGenerationStatus: View {
 
     private var title: String {
         switch progress {
-        case .preparingModel: return "Preparing Gemma…"
-        case .downloadingModel: return "Downloading Gemma…"
-        case .loadingModel: return "Loading Gemma…"
+        case .preparingModel: return String(localized: "Preparing Gemma…")
+        case .downloadingModel: return String(localized: "Downloading Gemma…")
+        case .loadingModel: return String(localized: "Loading Gemma…")
         case .generating: return generationTitle
         }
     }
     private var detail: String? {
         switch progress {
-        case .preparingModel: return "Getting the local model ready. First use may require a download."
-        case .downloadingModel: return "The model needs to download to this Mac before it can run. Generation starts automatically."
-        case .loadingModel: return "Loading the model into memory on this Mac."
+        case .preparingModel: return String(localized: "Getting the local model ready. First use may require a download.")
+        case .downloadingModel: return String(localized: "The model needs to download to this Mac before it can run. Generation starts automatically.")
+        case .loadingModel: return String(localized: "Loading the model into memory on this Mac.")
         case .generating: return nil
         }
     }

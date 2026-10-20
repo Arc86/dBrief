@@ -13,8 +13,8 @@ enum RetentionCategory: Sendable, Hashable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .recordings: "recordings"
-        case .transcripts: "transcripts"
+        case .recordings: String(localized: "recordings")
+        case .transcripts: String(localized: "transcripts")
         }
     }
 }
@@ -28,12 +28,34 @@ struct RetentionCleanupResult: Sendable {
     /// One-line, user-facing summary for the Settings UI.
     var summary: String {
         if privacyCleanupFailures > 0 {
-            return "Deleted \(filesDeleted) files. Some privacy evidence could not be removed; retry cleanup when storage is available."
+            return String(localized: "Deleted \(filesDeleted) files. Some privacy evidence could not be removed; retry cleanup when storage is available.")
         }
-        guard filesDeleted > 0 else { return "Nothing to delete." }
+        guard filesDeleted > 0 else { return String(localized: "Nothing to delete.") }
         let size = ByteCountFormatter.string(fromByteCount: bytesFreed, countStyle: .file)
-        let noun = filesDeleted == 1 ? "file" : "files"
-        return "Deleted \(filesDeleted) \(noun) (\(size))."
+        return String(localized: "Deleted \(filesDeleted) files (\(size)).")
+    }
+}
+
+/// "Last clean-up" is saved as a small code, not a sentence, so it reads in the
+/// language the app shows now rather than the one it had when the sweep ran.
+/// Older saved sentences are shown as they are.
+enum RetentionCleanupSummary {
+    static let deferred = "deferred"
+
+    static func stored(_ result: RetentionCleanupResult) -> String {
+        "result:\(result.filesDeleted):\(result.bytesFreed):\(result.privacyCleanupFailures)"
+    }
+
+    static func display(_ stored: String) -> String {
+        if stored == deferred {
+            return String(localized: "Cleanup deferred: recovery data could not be safely cleaned, or recording/processing is active.")
+        }
+        let parts = stored.split(separator: ":", omittingEmptySubsequences: false)
+        if parts.count == 4, parts[0] == "result", let files = Int(parts[1]), let bytes = Int64(parts[2]),
+           let failures = Int(parts[3]) {
+            return RetentionCleanupResult(filesDeleted: files, bytesFreed: bytes, privacyCleanupFailures: failures).summary
+        }
+        return stored
     }
 }
 

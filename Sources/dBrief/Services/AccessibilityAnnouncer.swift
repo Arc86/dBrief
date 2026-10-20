@@ -18,14 +18,15 @@ enum RecordingAnnouncement: Equatable, Sendable {
 
     var text: String {
         switch self {
-        case .started: "Recording started"
-        case .paused: "Recording paused"
-        case .resumed: "Recording resumed"
-        case .stopped: "Recording stopped"
-        case .failed: "Recording failed"
-        case .processingFinished(let failed) where failed == 0: "Processing complete"
-        case .processingFinished(let failed): "Processing finished, \(failed) \(failed == 1 ? "step" : "steps") failed"
-        case .error(let message): "Error: \(message)"
+        case .started: String(localized: "Recording started")
+        case .paused: String(localized: "Recording paused")
+        case .resumed: String(localized: "Recording resumed")
+        case .stopped: String(localized: "Recording stopped")
+        case .failed: String(localized: "Recording failed")
+        case .processingFinished(let failed) where failed == 0: String(localized: "Processing complete")
+        case .processingFinished(let failed):
+            String(AttributedString(localized: "Processing finished, ^[\(failed) step](inflect: true) failed").characters)
+        case .error(let message): String(localized: "Error: \(message)")
         }
     }
 

@@ -242,4 +242,16 @@ struct RetentionCleanupTests {
 
         #expect(result.filesDeleted == 2)
     }
+
+    @Test("Last clean-up is saved as counts and rebuilt as a sentence when shown")
+    func summaryRoundTrip() {
+        let result = RetentionCleanupResult(filesDeleted: 2, bytesFreed: 4096, privacyCleanupFailures: 0)
+        let stored = RetentionCleanupSummary.stored(result)
+        #expect(stored == "result:2:4096:0")
+        #expect(RetentionCleanupSummary.display(stored) == result.summary)
+        #expect(RetentionCleanupSummary.display(RetentionCleanupSummary.deferred).hasPrefix("Cleanup deferred"))
+        // Sentences saved by earlier versions are shown unchanged.
+        #expect(RetentionCleanupSummary.display("Deleted 2 files (4 KB).") == "Deleted 2 files (4 KB).")
+        #expect(RetentionCleanupSummary.display("result:x:1:0") == "result:x:1:0")
+    }
 }

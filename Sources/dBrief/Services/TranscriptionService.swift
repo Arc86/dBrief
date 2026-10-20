@@ -272,12 +272,12 @@ actor TranscriptionService {
         )
 
         guard !chunks.isEmpty else {
-            throw TranscriptionError.chunkingFailed("No chunks were produced from audio.")
+            throw TranscriptionError.chunkingFailed(String(localized: "No chunks were produced from audio."))
         }
 
         for chunk in chunks {
             guard try RemoteUploadPolicy.fileByteCount(chunk.url) <= Int64(maxUploadBytes) else {
-                throw TranscriptionError.chunkingFailed("An exported chunk exceeds the upload limit. The original audio has been kept.")
+                throw TranscriptionError.chunkingFailed(String(localized: "An exported chunk exceeds the upload limit. The original audio has been kept."))
             }
         }
 
@@ -488,7 +488,7 @@ actor TranscriptionService {
             switch outcome {
             case .failed(let chunk, let message):
                 warnings.append(
-                    "Chunk \(chunk.index + 1) (\(formatSeconds(chunk.startSeconds))-\(formatSeconds(chunk.endSeconds))) failed: \(message)"
+                    String(localized: "Chunk \(chunk.index + 1) (\(formatSeconds(chunk.startSeconds))-\(formatSeconds(chunk.endSeconds))) failed: \(message)")
                 )
             case .success(let chunk, let result):
                 successCount += 1
@@ -540,7 +540,7 @@ actor TranscriptionService {
         }
 
         guard successCount > 0 else {
-            throw TranscriptionError.chunkingFailed("All chunks failed during transcription.")
+            throw TranscriptionError.chunkingFailed(String(localized: "All chunks failed during transcription."))
         }
 
         return TranscriptionResult(
@@ -1059,10 +1059,11 @@ enum TranscriptionError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidEndpoint: "Invalid transcription endpoint URL."
-        case .invalidResponse: "Invalid response from transcription server."
-        case .noModelsFound: "Connected, but no models were returned by the provider."
-        case .chunkingFailed(let message): "Chunking failed: \(message)"
+        case .invalidEndpoint: String(localized: "Invalid transcription endpoint URL.")
+        case .invalidResponse: String(localized: "Invalid response from transcription server.")
+        case .noModelsFound: String(localized: "Connected, but no models were returned by the provider.")
+        case .chunkingFailed(let message): String(localized: "Chunking failed: \(message)")
+        // Not localized: UserFacingError finds "Server error (" to redact the provider body.
         case .serverError(let code, let body): "Server error (\(code)): \(body)"
         }
     }

@@ -35,7 +35,9 @@ struct SettingsAfterRecordingTab: View {
             SettingsCard("Active profile", description: "Profiles can override each task",
                          section: .afterRecordingAutomation) {
                 SettingsRow(verbatim: scope.profile.name,
-                            caption: "\(scope.profile.postRecordingPolicy.title) · \(scope.isAutomatic ? "chosen automatically" : "default profile")",
+                            caption: scope.isAutomatic
+                                ? String(localized: "\(scope.profile.postRecordingPolicy.title) · chosen automatically")
+                                : String(localized: "\(scope.profile.postRecordingPolicy.title) · default profile"),
                             systemImage: "person.3") {
                     Button("Edit in Profiles") { editProfile(scope.profile.id) }
                         .buttonStyle(.settingsSecondary)

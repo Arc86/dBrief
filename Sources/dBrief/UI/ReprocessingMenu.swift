@@ -55,7 +55,7 @@ struct ReprocessingMenu: View {
                 operations
             }
         } label: {
-            let title = label ?? (hasTranscript ? "Reprocess" : "Transcribe")
+            let title = label ?? (hasTranscript ? String(localized: "Reprocess") : String(localized: "Transcribe"))
             if stacksLabel {
                 RecordingListTileLabel(title: title, systemImage: "arrow.trianglehead.2.clockwise")
             } else {
@@ -63,7 +63,7 @@ struct ReprocessingMenu: View {
             }
         }
         .disabled(isRestoring || (block.map { $0.resolutions.isEmpty } ?? false))
-        .help(block?.message ?? "Reprocess this recording")
+        .help(block?.message ?? String(localized: "Reprocess this recording"))
         .task(id: AvailabilityKey(revision: manager.reprocessingResultsRevision, calendarRevision: manager.calendarContextRevision, locked: locked, recovered: manager.reprocessingRecoveryReady)) {
             guard manager.reprocessingRecoveryReady, !locked else { canRestore = false; return }
             let available = await manager.canRestoreReprocessingResults(for: recording)
@@ -132,8 +132,13 @@ struct ReprocessingMenu: View {
         isRestoring = true
         Task {
             defer { isRestoring = false }
-            do { try await manager.restoreReprocessingResults(for: recording) }
-            catch { self.error = error.localizedDescription }
+            do {
+                try await manager.restoreReprocessingResults(for: recording)
+                AccessibilityAnnouncer.shared.announce(String(localized: "Previous results restored"))
+            } catch {
+                self.error = error.localizedDescription
+                AccessibilityAnnouncer.shared.announce(error.localizedDescription, priority: .high)
+            }
         }
     }
 }
@@ -150,7 +155,7 @@ struct ReprocessingRecoveryView: View {
             } else {
                 Label("Recording recovery needs attention", systemImage: "exclamationmark.triangle")
                     .uiFont(.headline)
-                Text(manager.reprocessingRecoveryError ?? "Saved results are not ready to open.")
+                Text(manager.reprocessingRecoveryError ?? String(localized: "Saved results are not ready to open."))
                     .uiFont(.callout).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).textSelection(.enabled)
             }
@@ -165,5 +170,6 @@ struct ReprocessingRecoveryView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .announcing(manager.reprocessingRecoveryError, priority: .high)
     }
 }

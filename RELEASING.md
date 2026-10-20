@@ -32,7 +32,7 @@ A plain `make app` build is self-signed (fast, no notarization) — good enough 
 ```bash
 make app
 /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" dBrief.app/Contents/Info.plist   # expect the new version
-make run                                                                                          # launch and click through About / Settings → Updates
+make run                                                                                          # launch and click through About / Settings → General → Updates
 ```
 
 > **Don't ship this bundle.** A self-signed `dBrief.app` cannot be notarized — `codesign --verify` passes on it, but notarization returns *Invalid* ("not signed with a valid Developer ID certificate / no secure timestamp / hardened runtime not enabled"). Always produce the release bundle with `make notarize`, which builds → Developer-ID-signs → submits atomically. (If you must re-submit an existing bundle, re-sign it first with `make sign CODESIGN_IDENTITY="Developer ID Application: Jesper Mol (9WFDLY652Y)"` and confirm `codesign -dvvv dBrief.app/Contents/MacOS/dBrief` shows `flags=0x10000(runtime)`, the Developer ID `Authority`, and a `Timestamp=` line.)
@@ -99,7 +99,7 @@ gh release create v<version> dBrief-<version>.dmg /tmp/dbrief-appcast/appcast.xm
   --notes-file /tmp/dbrief-appcast/dBrief-<version>.md
 ```
 
-Upload **both** the DMG and the `appcast.xml`. Because `SUFeedURL` points at `releases/latest/download/appcast.xml`, the feed always resolves to the newest release. Add `--draft` if you want to review before it goes live. Once published, existing installs detect it on their next check (auto, every 12 hours) or via **Settings → General → Software update → Check Now**.
+Upload **both** the DMG and the `appcast.xml`. Because `SUFeedURL` points at `releases/latest/download/appcast.xml`, the feed always resolves to the newest release. Add `--draft` if you want to review before it goes live. Once published, existing installs detect it on their next check (auto, every 12 hours) or via **Settings → General → Updates → Check now**.
 
 ## 6. Update the Homebrew tap
 
@@ -201,7 +201,7 @@ The per-release appcast generation is [step 4](#4-generate-the-sparkle-appcast) 
 1. Build + notarize version N, install it to /Applications, and launch it.
 2. Build + notarize version N+1, generate its appcast, and publish it to a test
    release (or point `SUFeedURL` at a scratch feed).
-3. In the running N, **Settings → General → Software update → Check Now**.
+3. In the running N, **Settings → General → Updates → Check now**.
    Confirm Sparkle shows the update, downloads it, verifies the EdDSA signature,
    installs, and relaunches into N+1 with no Gatekeeper prompt.
 

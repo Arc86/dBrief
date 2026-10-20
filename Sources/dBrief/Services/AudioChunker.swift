@@ -23,7 +23,7 @@ actor AudioChunker {
         tempDirectory: URL
     ) async throws -> [AudioChunk] {
         try Task.checkCancellation()
-        guard maxUploadBytes > 0 else { throw AudioChunkerError.exportFailed("The upload byte budget must be positive.") }
+        guard maxUploadBytes > 0 else { throw AudioChunkerError.exportFailed(String(localized: "The upload byte budget must be positive.")) }
         let asset = AVURLAsset(url: fileURL)
         let duration = try await asset.load(.duration)
         let durationSeconds = CMTimeGetSeconds(duration)
@@ -78,7 +78,7 @@ actor AudioChunker {
                 }
                 try Task.checkCancellation()
                 let bytes = try RemoteUploadPolicy.fileByteCount(outputURL)
-                guard bytes > 0 else { throw AudioChunkerError.exportFailed("An exported audio chunk was empty.") }
+                guard bytes > 0 else { throw AudioChunkerError.exportFailed(String(localized: "An exported audio chunk was empty.")) }
                 if bytes <= Int64(maxUploadBytes) { break }
 
                 try FileManager.default.removeItem(at: outputURL)
@@ -162,7 +162,7 @@ actor AudioChunker {
         try? FileManager.default.removeItem(at: outputURL)
 
         guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
-            throw AudioChunkerError.exportFailed("Unable to create AVAssetExportSession.")
+            throw AudioChunkerError.exportFailed(String(localized: "Unable to create AVAssetExportSession."))
         }
         exporter.outputURL = outputURL
         exporter.outputFileType = .m4a
@@ -178,11 +178,11 @@ actor AudioChunker {
                 case .completed:
                     continuation.resume()
                 case .failed:
-                    continuation.resume(throwing: box.session.error ?? AudioChunkerError.exportFailed("Chunk export failed."))
+                    continuation.resume(throwing: box.session.error ?? AudioChunkerError.exportFailed(String(localized: "Chunk export failed.")))
                 case .cancelled:
-                    continuation.resume(throwing: AudioChunkerError.exportFailed("Chunk export was cancelled."))
+                    continuation.resume(throwing: AudioChunkerError.exportFailed(String(localized: "Chunk export was cancelled.")))
                 default:
-                    continuation.resume(throwing: AudioChunkerError.exportFailed("Chunk export ended in unexpected state."))
+                    continuation.resume(throwing: AudioChunkerError.exportFailed(String(localized: "Chunk export ended in unexpected state.")))
                 }
             }
         }
@@ -197,7 +197,7 @@ enum AudioChunkerError: Error, LocalizedError {
         switch self {
         case .exportFailed(let message): message
         case .sizeLimitUnreachable(let bytes):
-            "Could not fit an audio chunk within the \(bytes)-byte upload limit. Compress the recording or choose another endpoint. The original audio has been kept."
+            String(localized: "Could not fit an audio chunk within the \(bytes)-byte upload limit. Compress the recording or choose another endpoint. The original audio has been kept.")
         }
     }
 }

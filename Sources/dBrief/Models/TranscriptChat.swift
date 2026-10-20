@@ -56,19 +56,19 @@ struct ChatPromptTemplate: Identifiable, Sendable {
         self.prompt = prompt
     }
 
-    static let summarize = ChatPromptTemplate(title: "Summarize", systemIcon: "list.bullet",
+    static let summarize = ChatPromptTemplate(title: String(localized: "Summarize"), systemIcon: "list.bullet",
         prompt: "Summarize this recording as concise bullet points.")
-    static let actionItems = ChatPromptTemplate(title: "Action items", systemIcon: "checkmark.circle",
+    static let actionItems = ChatPromptTemplate(title: String(localized: "Action items"), systemIcon: "checkmark.circle",
         prompt: "Extract all action items and tasks mentioned in this transcript, with who owns each one.")
-    static let decisions = ChatPromptTemplate(title: "Decisions", systemIcon: "checkmark.seal",
+    static let decisions = ChatPromptTemplate(title: String(localized: "Decisions"), systemIcon: "checkmark.seal",
         prompt: "List the decisions that were made, and who made them.")
-    static let questions = ChatPromptTemplate(title: "Questions asked", systemIcon: "questionmark.circle",
+    static let questions = ChatPromptTemplate(title: String(localized: "Questions asked"), systemIcon: "questionmark.circle",
         prompt: "Extract all questions asked during this conversation, and whether each was answered.")
-    static let keyPoints = ChatPromptTemplate(title: "Key points", systemIcon: "star",
+    static let keyPoints = ChatPromptTemplate(title: String(localized: "Key points"), systemIcon: "star",
         prompt: "Identify and explain the most important points from this transcript.")
-    static let numbers = ChatPromptTemplate(title: "Numbers & dates", systemIcon: "number",
+    static let numbers = ChatPromptTemplate(title: String(localized: "Numbers & dates"), systemIcon: "number",
         prompt: "Extract all numbers, statistics, dates, and deadlines mentioned.")
-    static let openIssues = ChatPromptTemplate(title: "Open issues", systemIcon: "exclamationmark.bubble",
+    static let openIssues = ChatPromptTemplate(title: String(localized: "Open issues"), systemIcon: "exclamationmark.bubble",
         prompt: "What was left unresolved or needs a follow-up?")
 
     /// Shown in an empty chat.
@@ -81,7 +81,7 @@ struct ChatPromptTemplate: Identifiable, Sendable {
     static func people(_ names: [String], limit: Int = 3) -> [ChatPromptTemplate] {
         names.prefix(limit).map { name in
             let first = name.split(separator: " ").first.map(String.init) ?? name
-            return ChatPromptTemplate(title: "What did \(first) commit to?", systemIcon: "person",
+            return ChatPromptTemplate(title: String(localized: "What did \(first) commit to?"), systemIcon: "person",
                                       prompt: "What did \(name) commit to or agree to do?")
         }
     }

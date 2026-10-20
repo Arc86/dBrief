@@ -15,9 +15,9 @@ actor LibraryIndex {
         case unavailableFolder, sourceChanged, invalidWork
         var errorDescription: String? {
             switch self {
-            case .unavailableFolder: "The recordings folder could not be fully read. The previous search results have been kept."
-            case .sourceChanged: "A recording changed during indexing. Refresh to load the latest version."
-            case .invalidWork: "Saved recovery work could not be fully read. The previous search results have been kept."
+            case .unavailableFolder: String(localized: "The recordings folder could not be fully read. The previous search results have been kept.")
+            case .sourceChanged: String(localized: "A recording changed during indexing. Refresh to load the latest version.")
+            case .invalidWork: String(localized: "Saved recovery work could not be fully read. The previous search results have been kept.")
             }
         }
     }

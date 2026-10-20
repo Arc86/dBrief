@@ -46,6 +46,14 @@ struct ModelDownloadButton: View {
         .task(id: "\(phaseKey):\(modelIdentity)") {
             cached = await recordingManager.isModelCached(kind)
         }
+        // A download takes minutes; its outcome is spoken when it lands.
+        .onChange(of: phaseKey) { old, new in
+            if new == "failed", case .failed(let message) = phase {
+                AccessibilityAnnouncer.shared.announce(String(localized: "Download failed. \(message)"), priority: .high)
+            } else if old == "downloading", new == "idle" {
+                AccessibilityAnnouncer.shared.announce(String(localized: "Model downloaded"))
+            }
+        }
     }
 
     @ViewBuilder

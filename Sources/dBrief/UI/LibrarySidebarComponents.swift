@@ -11,10 +11,10 @@ enum LibraryRowFormat {
     ) -> String {
         var style = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
         let time = date.formatted(style.hour().minute())
-        if calendar.isDate(date, inSameDayAs: now) { return "Today \(time)" }
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "Today \(time)") }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(date, inSameDayAs: yesterday) {
-            return "Yesterday \(time)"
+            return String(localized: "Yesterday \(time)")
         }
         if date <= now, calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
             return date.formatted(style.weekday(.abbreviated).hour().minute())
@@ -260,7 +260,7 @@ struct LiveSidebarRow: View {
     @State private var pulse = false
 
     private var title: String { recording.generatedTitle ?? recording.meetingTitleDraft }
-    private var statusText: String { isProcessing ? "Processing…" : "Recording…" }
+    private var statusText: String { isProcessing ? String(localized: "Processing…") : String(localized: "Recording…") }
     private var dotColor: Color { isProcessing ? .orange : .red }
 
     var body: some View {
@@ -303,7 +303,7 @@ struct LibraryWorkRow: View {
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
+                Text(item.displayTitle)
                     .uiFont(.system(size: 12, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                     .lineLimit(2)
@@ -314,7 +314,7 @@ struct LibraryWorkRow: View {
                             .foregroundStyle(.red)
                             .accessibilityHidden(true)
                     }
-                    Text("\(item.status) · \(LibraryRowFormat.date(item.date))")
+                    Text("\(item.displayStatus) · \(LibraryRowFormat.date(item.date))")
                 }
                 .lineLimit(1)
                 .uiFont(.system(size: 11).monospacedDigit())
@@ -332,9 +332,9 @@ struct LibraryWorkRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(LibrarySidebarRowStyle(isSelected: isSelected))
-        .help(item.audioURL?.path ?? item.title)
-        .accessibilityLabel(item.title)
-        .accessibilityValue("\(item.status), \(item.date.formatted(date: .abbreviated, time: .shortened))")
+        .help(item.audioURL?.path ?? item.displayTitle)
+        .accessibilityLabel(item.displayTitle)
+        .accessibilityValue("\(item.displayStatus), \(item.date.formatted(date: .abbreviated, time: .shortened))")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

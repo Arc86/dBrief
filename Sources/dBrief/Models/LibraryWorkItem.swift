@@ -3,6 +3,35 @@ import Foundation
 /// Work has its own identity and navigation target. A missing/future master
 /// recording is never represented as a playable RecordingBrowserItem.
 struct LibraryWorkItem: Codable, Identifiable, Sendable {
+    /// Title and status (including `RecoveryQueueEntry` statuses) are stored in the
+    /// library database in English; these show them in the user's language. Other values (an attempt's own message) pass through.
+    var displayTitle: String { Self.localizedStoredText(title) }
+    var displayStatus: String { Self.localizedStoredText(status) }
+
+    static func localizedStoredText(_ value: String) -> String {
+        switch value {
+        case "Interrupted recording": String(localized: "Interrupted recording")
+        case "Interrupted capture": String(localized: "Interrupted capture")
+        case "Recording unavailable": String(localized: "Recording unavailable")
+        case "Queued": String(localized: "Queued")
+        case "Queued recording unavailable": String(localized: "Queued recording unavailable")
+        case "Reprocess queued": String(localized: "Reprocess queued")
+        case "Reprocess needs attention": String(localized: "Reprocess needs attention")
+        case "Couldn't save progress": String(localized: "Couldn't save progress")
+        case "Audio finalization failed": String(localized: "Audio finalization failed")
+        case "Transcription failed": String(localized: "Transcription failed")
+        case "Speaker detection failed": String(localized: "Speaker detection failed")
+        case "Speaker review needs attention": String(localized: "Speaker review needs attention")
+        case "Analysis failed": String(localized: "Analysis failed")
+        case "Markdown export failed": String(localized: "Markdown export failed")
+        case "Integration review needed": String(localized: "Integration review needed")
+        case "Processing failed": String(localized: "Processing failed")
+        case "Stopped": String(localized: "Stopped")
+        case "Speaker review needed": String(localized: "Speaker review needed")
+        default: value
+        }
+    }
+
     enum Target: String, Codable, Sendable { case recovery, delivery, queue, capture, reprocess }
     let id: String
     let recoveryID: UUID

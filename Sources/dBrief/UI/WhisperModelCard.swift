@@ -13,24 +13,24 @@ struct TranscriptionCardPresentation {
 extension TranscriptionCardPresentation {
     static func local(_ id: String, modernApple: Bool = false) -> Self? {
         if id == LocalTranscriptionChoice.apple {
-            return .init(title: "Apple Speech", language: "System-supported languages",
-                         footprint: "Managed by macOS",
+            return .init(title: "Apple Speech", language: String(localized: "System-supported languages"),
+                         footprint: String(localized: "Managed by macOS"),
                          summary: modernApple
-                            ? "Apple SpeechAnalyzer · provisional research-based ratings."
-                            : "Apple Speech · older or unsupported-locale fallback is not rated.",
+                            ? String(localized: "Apple SpeechAnalyzer · provisional research-based ratings.")
+                            : String(localized: "Apple Speech · older or unsupported-locale fallback is not rated."),
                          accuracy: LocalTranscriptionChoice.profile(id, modernApple: modernApple)?.accuracy,
                          speed: LocalTranscriptionChoice.profile(id, modernApple: modernApple)?.speed)
         }
         guard let variant = LocalTranscriptionChoice.parakeetVariant(id) else { return nil }
         let model = ParakeetModelInfo.find(variant)
         let summary = switch model.id {
-        case "ultra": "Parakeet Ultra / FluidAudio · v3 retrained for accuracy; fewest errors in FluidAudio's FLEURS and LibriSpeech results."
-        case "redux": "Parakeet Redux / FluidAudio · ~220 MB download; first use compiles for several minutes."
-        case "phonon2": "Parakeet Phonon-2 / FluidAudio · ~360 MB download; fastest English model, slightly less accurate than Ultra."
-        default: "Parakeet / FluidAudio · fast transcription; ratings are family estimates."
+        case "ultra": String(localized: "Parakeet Ultra / FluidAudio · v3 retrained for accuracy; fewest errors in FluidAudio's FLEURS and LibriSpeech results.")
+        case "redux": String(localized: "Parakeet Redux / FluidAudio · ~220 MB download; first use compiles for several minutes.")
+        case "phonon2": String(localized: "Parakeet Phonon-2 / FluidAudio · ~360 MB download; fastest English model, slightly less accurate than Ultra.")
+        default: String(localized: "Parakeet / FluidAudio · fast transcription; ratings are family estimates.")
         }
-        return .init(title: model.displayName, language: model.isEnglishOnly ? "English only" : "25 European languages",
-                     footprint: String(format: "~%.1f GiB RAM", Double(model.estimatedMemoryMB) / 1024),
+        return .init(title: model.displayName, language: model.isEnglishOnly ? String(localized: "English only") : String(localized: "25 European languages"),
+                     footprint: String(localized: "~\((Double(model.estimatedMemoryMB) / 1024).formatted(.number.precision(.fractionLength(1)))) GiB RAM"),
                      summary: summary,
                      accuracy: LocalTranscriptionChoice.profile(LocalTranscriptionChoice.parakeet(model.id))?.accuracy,
                      speed: LocalTranscriptionChoice.profile(LocalTranscriptionChoice.parakeet(model.id))?.speed)
@@ -54,27 +54,27 @@ struct TranscriptionModelCard<Actions: View>: View {
         if let presentation { return presentation.title }
         var text = model.displayName.replacingOccurrences(of: "Whisper ", with: "")
         if let size = model.quantizedSizeMB {
-            text = text.replacingOccurrences(of: " (\(size) MB)", with: " (Quantized)")
+            text = text.replacingOccurrences(of: " (\(size) MB)", with: " (\(String(localized: "Quantized")))")
         }
         return text
     }
     private var summary: String {
         if let presentation { return presentation.summary }
-        guard entry != nil else { return "Guidance unavailable for this model." }
+        guard entry != nil else { return String(localized: "Guidance unavailable for this model.") }
         if model.quantizedSizeMB != nil {
-            return "Compressed model for a smaller footprint; ratings are family estimates."
+            return String(localized: "Compressed model for a smaller footprint; ratings are family estimates.")
         }
         if model.family == "large-v3-v20240930" {
-            return "Faster large-v3 transcription with a small accuracy tradeoff."
+            return String(localized: "Faster large-v3 transcription with a small accuracy tradeoff.")
         }
         if model.family == "distil-large-v3" {
-            return "Fast English transcription, distilled from large v3."
+            return String(localized: "Fast English transcription, distilled from large v3.")
         }
         switch model.family {
-        case "tiny", "base": return "Lightweight transcription for quick, everyday recordings."
-        case "small": return "A balance of accuracy, speed and memory use."
-        case "medium": return "Higher accuracy with more memory and processing time."
-        default: return "Accuracy-first transcription with greater processing demand."
+        case "tiny", "base": return String(localized: "Lightweight transcription for quick, everyday recordings.")
+        case "small": return String(localized: "A balance of accuracy, speed and memory use.")
+        case "medium": return String(localized: "Higher accuracy with more memory and processing time.")
+        default: return String(localized: "Accuracy-first transcription with greater processing demand.")
         }
     }
 
@@ -132,13 +132,14 @@ struct TranscriptionModelCard<Actions: View>: View {
             Label(presentation.language, systemImage: "globe").fixedSize()
             Label(presentation.footprint, systemImage: "memorychip").fixedSize()
         } else {
-        Label(entry.map { $0.englishOnly ? "English only" : "Multilingual" } ?? "Unknown language",
+        Label(entry.map { $0.englishOnly ? String(localized: "English only") : String(localized: "Multilingual") }
+              ?? String(localized: "Unknown language"),
               systemImage: "globe").fixedSize()
         if let size = model.quantizedSizeMB {
             Label("\(size) MB", systemImage: "internaldrive").fixedSize()
                 .help("Model variant size label; not runtime RAM")
         } else if let entry {
-            Label(String(format: "~%.1f GiB RAM", entry.runtimeGiB), systemImage: "memorychip")
+            Label("~\(entry.runtimeGiB, specifier: "%.1f") GiB RAM", systemImage: "memorychip")
                 .fixedSize()
         }
         }
@@ -146,8 +147,8 @@ struct TranscriptionModelCard<Actions: View>: View {
 
     private var ratings: some View {
         HStack(spacing: 16) {
-            dots("Speed", value: presentation?.speed ?? entry?.speed)
-            dots("Accuracy", value: presentation?.accuracy ?? entry?.accuracy)
+            dots(String(localized: "Speed"), value: presentation?.speed ?? entry?.speed)
+            dots(String(localized: "Accuracy"), value: presentation?.accuracy ?? entry?.accuracy)
         }.fixedSize()
     }
 
@@ -166,7 +167,7 @@ struct TranscriptionModelCard<Actions: View>: View {
             Text(value.map { "\($0)/5" } ?? "—").monospacedDigit()
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label), \(value.map { "\($0) out of 5, estimated" } ?? "unavailable")")
+        .accessibilityLabel(value.map { Text("\(label), \($0) out of 5, estimated") } ?? Text("\(label), unavailable"))
         .help("Estimated \(label.lowercased()); higher is better")
     }
 }

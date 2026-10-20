@@ -57,4 +57,36 @@ enum TranscriptSearch {
         }
         return Result(isValid: true, matches: matches)
     }
+
+    /// What VoiceOver says for a search: "No results", "Invalid search pattern" or
+    /// "Match 2 of 5: …the text around it…". `text` returns a turn's displayed text.
+    static func announcement(for result: Result, current: Int, text: (UUID) -> String?) -> String {
+        guard result.isValid else { return String(localized: "Invalid search pattern") }
+        guard !result.matches.isEmpty else { return String(localized: "No results") }
+        let index = min(max(current, 0), result.matches.count - 1)
+        let match = result.matches[index]
+        let position = index + 1, total = result.matches.count
+        guard let turnText = text(match.turnId) else { return String(localized: "Match \(position) of \(total)") }
+        let around = snippet(turnText, location: match.location, length: match.length)
+        return String(localized: "Match \(position) of \(total): \(around)")
+    }
+
+    /// The match with up to `context` characters either side, marked "…" where cut.
+    static func snippet(_ text: String, location: Int, length: Int, context: Int = 30) -> String {
+        let characters = Array(text)
+        let matchEnd = min(location + length, characters.count)
+        var start = max(0, min(location - context, characters.count))
+        var end = min(characters.count, max(location + length + context, start))
+        // Cut at word boundaries, never through the match.
+        if start > 0, !characters[start - 1].isWhitespace,
+           let space = characters[start..<max(start, location)].firstIndex(where: \.isWhitespace) {
+            start = space + 1
+        }
+        if end < characters.count, !characters[end].isWhitespace,
+           let space = characters[min(matchEnd, end)..<end].lastIndex(where: \.isWhitespace) {
+            end = space
+        }
+        let body = String(characters[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (start > 0 ? "…" : "") + body + (end < characters.count ? "…" : "")
+    }
 }

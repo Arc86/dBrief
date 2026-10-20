@@ -13,8 +13,9 @@ enum AppleChatAttempt: Equatable {
 
     /// `canScan`: the "Check the whole recording" button is offered (a finished recording).
     static func overflowMessage(canScan: Bool) -> String {
-        "This question needs more of the recording than Apple Intelligence can hold at once. "
-            + (canScan ? "Try a narrower question, or use “Check the whole recording”." : "Try a narrower question.")
+        canScan
+            ? String(localized: "This question needs more of the recording than Apple Intelligence can hold at once. Try a narrower question, or use “Check the whole recording”.")
+            : String(localized: "This question needs more of the recording than Apple Intelligence can hold at once. Try a narrower question.")
     }
 
     static func next(after error: Error, attempt: AppleChatAttempt, isOverflow: (Error) -> Bool) -> AppleChatAttempt? {
@@ -89,13 +90,13 @@ enum AppleChatBackend {
         case .overflow:
             return AppleChatAttempt.overflowMessage(canScan: canScan)
         case .refusal:
-            return "Apple Intelligence declined to answer this question. Try rephrasing it, or choose a different AI engine."
+            return String(localized: "Apple Intelligence declined to answer this question. Try rephrasing it, or choose a different AI engine.")
         case .guardrail:
-            return "Apple Intelligence blocked this question with its safety guardrails. Try rephrasing it."
+            return String(localized: "Apple Intelligence blocked this question with its safety guardrails. Try rephrasing it.")
         case .decoding, .unsupportedLanguage:
             return failure.message ?? error.localizedDescription
         case .other:
-            return "Apple Intelligence couldn't answer right now. Try again, or choose a different AI engine."
+            return String(localized: "Apple Intelligence couldn't answer right now. Try again, or choose a different AI engine.")
         }
     }
 }

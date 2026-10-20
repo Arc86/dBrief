@@ -31,6 +31,60 @@ struct MarkdownText: View {
         // every line when a streamed response becomes formatted after Stop.
         Text(readingFont != nil ? rendered : Self.appHeadingFonts(in: rendered, typography: typography))
             .frame(maxWidth: .infinity, alignment: .leading)
+            // VoiceOver gets one element per line with real headings (rotor, VO-⌘-H);
+            // the single text above keeps selection across the whole summary.
+            .accessibilityRepresentation {
+                VStack(alignment: .leading) {
+                    ForEach(Array(Self.accessibilityLines(rendered).enumerated()), id: \.offset) { _, line in
+                        if let level = line.headingLevel {
+                            Text(line.text)
+                                .accessibilityAddTraits(.isHeader)
+                                .accessibilityHeading(Self.accessibilityHeading(level))
+                        } else {
+                            Text(line.text)
+                        }
+                    }
+                }
+            }
+    }
+
+    struct AccessibilityLine {
+        let text: AttributedString
+        let headingLevel: Int?
+    }
+
+    /// The rendered text split into its non-empty lines, each marked with its heading level.
+    static func accessibilityLines(_ rendered: AttributedString) -> [AccessibilityLine] {
+        var lines: [AccessibilityLine] = []
+        var start = rendered.startIndex
+        func close(at end: AttributedString.Index) {
+            let line = AttributedString(rendered[start..<end])
+            if !String(line.characters).trimmingCharacters(in: .whitespaces).isEmpty {
+                lines.append(AccessibilityLine(text: line, headingLevel: line.runs.first?[MarkdownHeadingLevel.self]))
+            }
+        }
+        var index = rendered.startIndex
+        while index < rendered.endIndex {
+            let next = rendered.characters.index(after: index)
+            if rendered.characters[index] == "\n" {
+                close(at: index)
+                start = next
+            }
+            index = next
+        }
+        close(at: rendered.endIndex)
+        return lines
+    }
+
+    private static func accessibilityHeading(_ level: Int) -> AccessibilityHeadingLevel {
+        switch level {
+        case 1: .h1
+        case 2: .h2
+        case 3: .h3
+        case 4: .h4
+        case 5: .h5
+        default: .h6
+        }
     }
 
     static func render(_ text: String, readingFont: Font? = nil, linksTimestamps: Bool = false) -> AttributedString {

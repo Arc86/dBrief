@@ -22,7 +22,16 @@ final class PromptEditorSession {
     var engineSelection: PromptEngineSelection = .configured {
         didSet { if oldValue != engineSelection { configurationChanged() } }
     }
-    enum Panel: String, CaseIterable { case none = "Editor", improve = "Improve with AI", preview = "Try prompt" }
+    enum Panel: String, CaseIterable {
+        case none = "Editor", improve = "Improve with AI", preview = "Try prompt"
+        var title: String {
+            switch self {
+            case .none: String(localized: "Editor")
+            case .improve: String(localized: "Improve with AI")
+            case .preview: String(localized: "Try prompt")
+            }
+        }
+    }
     @ObservationIgnored var undoManager: UndoManager? = UndoManager()
     @ObservationIgnored private let improver: (any PromptImproving)?
     @ObservationIgnored private var improvementTask: Task<PromptSuggestion, Error>?

@@ -38,8 +38,8 @@ public enum TTSEngine: String, Codable, Sendable, Hashable, CaseIterable {
     /// One-line descriptor under the picker.
     public var shortDescription: String {
         switch self {
-        case .qwen3: "Multilingual · voice styles"
-        case .kokoro: "Fast · English, Spanish, French, Japanese"
+        case .qwen3: String(localized: "Multilingual · voice styles")
+        case .kokoro: String(localized: "Fast · English, Spanish, French, Japanese")
         }
     }
 
@@ -117,11 +117,13 @@ public enum KokoroVoice: String, Codable, Sendable, CaseIterable {
     }
 
     public var detail: String {
-        let gender = rawValue.dropFirst().hasPrefix("f") ? "Female" : "Male"
+        let female = rawValue.dropFirst().hasPrefix("f")
         switch rawValue.first {
-        case "a": return "American · \(gender)"
-        case "b": return "British · \(gender)"
-        default: return "\(language.displayName) · \(gender)"
+        case "a": return female ? String(localized: "American · Female") : String(localized: "American · Male")
+        case "b": return female ? String(localized: "British · Female") : String(localized: "British · Male")
+        default:
+            return female ? String(localized: "\(language.displayName) · Female")
+                : String(localized: "\(language.displayName) · Male")
         }
     }
 
@@ -159,8 +161,8 @@ public enum TTSModelSize: String, Codable, Sendable, CaseIterable {
     /// Human-readable label for settings UI.
     public var displayName: String {
         switch self {
-        case .small: "Qwen3 TTS 0.6B (lighter)"
-        case .large: "Qwen3 TTS 1.7B (most natural)"
+        case .small: String(localized: "Qwen3 TTS 0.6B (lighter)")
+        case .large: String(localized: "Qwen3 TTS 1.7B (most natural)")
         }
     }
 
@@ -196,15 +198,15 @@ public enum TTSVoice: String, Codable, Sendable, CaseIterable {
     /// Character of the voice plus its native (best-quality) language.
     public var detail: String {
         switch self {
-        case .ryan: "Dynamic male voice with strong rhythmic drive · English"
-        case .aiden: "Sunny American male voice with a clear midrange · English"
-        case .onoAnna: "Playful, light Japanese female voice · Japanese"
-        case .sohee: "Warm Korean female voice with rich emotion · Korean"
-        case .eric: "Lively, slightly husky male voice · Chinese (Sichuan)"
-        case .dylan: "Youthful, clear male voice · Chinese (Beijing)"
-        case .serena: "Warm, gentle young female voice · Chinese"
-        case .vivian: "Bright, slightly edgy young female voice · Chinese"
-        case .uncleFu: "Seasoned male voice with a low, mellow timbre · Chinese"
+        case .ryan: String(localized: "Dynamic male voice with strong rhythmic drive · English")
+        case .aiden: String(localized: "Sunny American male voice with a clear midrange · English")
+        case .onoAnna: String(localized: "Playful, light Japanese female voice · Japanese")
+        case .sohee: String(localized: "Warm Korean female voice with rich emotion · Korean")
+        case .eric: String(localized: "Lively, slightly husky male voice · Chinese (Sichuan)")
+        case .dylan: String(localized: "Youthful, clear male voice · Chinese (Beijing)")
+        case .serena: String(localized: "Warm, gentle young female voice · Chinese")
+        case .vivian: String(localized: "Bright, slightly edgy young female voice · Chinese")
+        case .uncleFu: String(localized: "Seasoned male voice with a low, mellow timbre · Chinese")
         }
     }
 }
@@ -215,8 +217,24 @@ public enum TTSVoice: String, Codable, Sendable, CaseIterable {
 public enum TTSLanguage: String, Codable, Sendable, CaseIterable {
     case english, chinese, japanese, korean, german, french, russian, portuguese, spanish, italian
 
-    /// Human-readable label for settings UI.
+    /// Localized label for settings UI. Never put this in a model prompt: use `englishName`.
     public var displayName: String {
+        switch self {
+        case .english: String(localized: "English")
+        case .chinese: String(localized: "Chinese")
+        case .japanese: String(localized: "Japanese")
+        case .korean: String(localized: "Korean")
+        case .german: String(localized: "German")
+        case .french: String(localized: "French")
+        case .russian: String(localized: "Russian")
+        case .portuguese: String(localized: "Portuguese")
+        case .spanish: String(localized: "Spanish")
+        case .italian: String(localized: "Italian")
+        }
+    }
+
+    /// Stable English name, for model prompts (never localized).
+    public var englishName: String {
         switch self {
         case .english: "English"
         case .chinese: "Chinese"

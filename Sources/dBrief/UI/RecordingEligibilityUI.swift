@@ -3,8 +3,8 @@ import SwiftUI
 extension View {
     /// Disables a recording action that `RecordingManager.eligibility` blocks, and says
     /// why in its help tag instead of failing after the click.
-    func recordingBlock(_ block: RecordingBlock?, help: String) -> some View {
-        disabled(block != nil).help(block?.message ?? help)
+    func recordingBlock(_ block: RecordingBlock?, help: LocalizedStringResource) -> some View {
+        disabled(block != nil).help(block?.message ?? String(localized: help))
     }
 }
 

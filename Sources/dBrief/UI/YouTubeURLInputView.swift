@@ -13,6 +13,7 @@ struct YouTubeURLInputView: View {
 
     // URL entry state
     @State private var urlText = ""
+    @FocusState private var urlFieldFocused: Bool
     @State private var isLoading = false
     @State private var loadError: String?
 
@@ -42,6 +43,7 @@ struct YouTubeURLInputView: View {
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 22))
+                .keyboardShortcut(.cancelAction)
                 .accessibilityLabel("Close URL input")
                 .disabled(isLoading || isDownloadingYtDlp)
             }
@@ -58,6 +60,7 @@ struct YouTubeURLInputView: View {
                     .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1))
                     .disabled(isLoading || isDownloadingYtDlp || !ytDlpAvailable)
+                    .focused($urlFieldFocused)
                     .onSubmit { submitURL() }
 
                 Button {
@@ -100,7 +103,10 @@ struct YouTubeURLInputView: View {
             ytDlpAvailable = YouTubeDownloadService.findYtDlp() != nil
         }
         .task(id: ytDlpAvailable) {
-            if ytDlpAvailable { await checkYtDlpUpdate() }
+            guard ytDlpAvailable else { return }
+            // Focus the link field as soon as it's usable, so typing or pasting works at once.
+            urlFieldFocused = true
+            await checkYtDlpUpdate()
         }
     }
 

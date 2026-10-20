@@ -18,6 +18,11 @@ struct ViewerLibrarySidebar<Results: View>: View {
     let onSettings: () -> Void
     /// The selected row, kept in view as the selection moves.
     let selectedRowID: AnyHashable?
+    /// The selected recording or work item. Unlike `selectedRowID` it doesn't change
+    /// when a pinned row becomes a library row, so only real selections move focus.
+    let selectionKey: AnyHashable?
+    /// Spoken as the list's value: which recording is open.
+    let selectedTitle: String?
     /// ↑/↓ while the list has focus: -1 or +1 rows.
     let onMove: (Int) -> Void
     private let results: (ViewerSidebarStatusFilterMenu) -> Results
@@ -41,6 +46,8 @@ struct ViewerLibrarySidebar<Results: View>: View {
         onRebuildSearchIndex: @escaping () -> Void,
         onSettings: @escaping () -> Void,
         selectedRowID: AnyHashable? = nil,
+        selectionKey: AnyHashable? = nil,
+        selectedTitle: String? = nil,
         onMove: @escaping (Int) -> Void = { _ in },
         @ViewBuilder results: @escaping (ViewerSidebarStatusFilterMenu) -> Results
     ) {
@@ -57,6 +64,8 @@ struct ViewerLibrarySidebar<Results: View>: View {
         self.onRebuildSearchIndex = onRebuildSearchIndex
         self.onSettings = onSettings
         self.selectedRowID = selectedRowID
+        self.selectionKey = selectionKey
+        self.selectedTitle = selectedTitle
         self.onMove = onMove
         self.results = results
     }
@@ -124,11 +133,14 @@ struct ViewerLibrarySidebar<Results: View>: View {
                 }
             }
             .accessibilityLabel("Recordings")
+            .accessibilityValue(selectedTitle ?? "")
             .onChange(of: selectedRowID) { _, id in
-                // A click or arrow selects a row: keep it visible and keep the keys here.
-                guard let id else { return }
-                proxy.scrollTo(id)
-                listFocused = true
+                if let id { proxy.scrollTo(id) }
+            }
+            .onChange(of: selectionKey) { _, key in
+                // A click or arrow selects a row: keep the keys here. A pinned row turning
+                // into a library row when processing ends isn't a selection.
+                if key != nil { listFocused = true }
             }
             }
 
@@ -320,14 +332,14 @@ struct ViewerLibrarySidebar<Results: View>: View {
 
     private var utilities: some View {
         HStack(spacing: 4) {
-            SidebarUtilityButton(symbol: "arrow.clockwise", label: "Refresh recordings",
+            SidebarUtilityButton(symbol: "arrow.clockwise", label: String(localized: "Refresh recordings"),
                                  isBusy: isRefreshing, action: onRefresh)
-            SidebarUtilityMenu(symbol: "ellipsis", label: "Library options") {
+            SidebarUtilityMenu(symbol: "ellipsis", label: String(localized: "Library options")) {
                 Button("Rebuild Search Index", systemImage: "arrow.clockwise", action: onRebuildSearchIndex)
                     .disabled(isRefreshing)
             }
             Spacer(minLength: 8)
-            SidebarUtilityButton(symbol: "gearshape", label: "Open Settings", action: onSettings)
+            SidebarUtilityButton(symbol: "gearshape", label: String(localized: "Open Settings"), action: onSettings)
         }
     }
 }
@@ -363,8 +375,8 @@ struct ViewerSidebarStatusFilterMenu: View {
         .buttonStyle(.typographyBorderless)
         .menuIndicator(.hidden)
         .accessibilityLabel("Filter by recording status")
-        .accessibilityValue(status?.title ?? "Any status")
-        .help("Status: \(status?.title ?? "Any status")")
+        .accessibilityValue(status?.title ?? String(localized: "Any status"))
+        .help("Status: \(status?.title ?? String(localized: "Any status"))")
     }
 }
 
@@ -393,7 +405,7 @@ private struct SidebarUtilityButton: View {
         .disabled(isBusy)
         .background(hovering && !isBusy ? palette.selected.color : .clear, in: RoundedRectangle(cornerRadius: 7))
         .onHover { hovering = $0 }
-        .help(isBusy ? "Refreshing…" : label)
+        .help(isBusy ? String(localized: "Refreshing…") : label)
         .accessibilityLabel(label)
         .accessibilityValue(isBusy ? "In progress" : "")
     }

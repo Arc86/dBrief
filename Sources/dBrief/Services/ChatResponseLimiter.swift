@@ -9,8 +9,8 @@ struct ChatResponseLimiter {
 
         var message: String {
             switch self {
-            case .repetition: "Stopped because the response was repeating itself."
-            case .length: "Stopped because the response reached the length limit."
+            case .repetition: String(localized: "Stopped because the response was repeating itself.")
+            case .length: String(localized: "Stopped because the response reached the length limit.")
             }
         }
     }

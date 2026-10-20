@@ -17,7 +17,7 @@ struct SettingsProfileScopeView: View {
         let scope = SettingsProfileScope(settings: settings, fields: fields)
         let overrides = Self.visibleOverrides(scope.summaries)
         if !overrides.isEmpty {
-            SettingsNotice(Text("**\(scope.profile.name)** overrides \(overrides.count) setting\(overrides.count == 1 ? "" : "s") on this page.")) {
+            SettingsNotice(Text("**\(scope.profile.name)** overrides \(overrides.count) settings on this page.")) {
                 Button("Show") { showOverrides.toggle() }
                     .buttonStyle(.settingsSecondary)
                     .popover(isPresented: $showOverrides, arrowEdge: .bottom) {

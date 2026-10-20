@@ -3,7 +3,8 @@ import SwiftUI
 
 /// Forces the enclosing `NSScrollView` to use thin, auto-hiding **overlay**
 /// scrollers — the "appear while scrolling, fade out when idle" style — even when
-/// the system "Show scroll bars" preference is set to "Always". SwiftUI's
+/// a connected mouse makes AppKit prefer legacy ones. "Always" is respected (see
+/// `OverlayScrollerPolicy`). SwiftUI's
 /// `.scrollIndicators(.automatic)` merely follows that system setting, so custom
 /// `ScrollView`s render permanent legacy scrollers when it's on "Always".
 ///
@@ -43,7 +44,7 @@ private struct OverlayScrollerStyler: NSViewRepresentable {
 
         /// Cheap when already styled: two property reads.
         func enforce() {
-            guard let scroll = scrollView else { return }
+            guard let scroll = scrollView, OverlayScrollerPolicy.forcesOverlay() else { return }
             if scroll.scrollerStyle != .overlay { scroll.scrollerStyle = .overlay }
             if !scroll.autohidesScrollers { scroll.autohidesScrollers = true }
         }
@@ -76,8 +77,22 @@ private struct OverlayScrollerStyler: NSViewRepresentable {
     }
 }
 
+/// "Show scroll bars: Always" is an accessibility choice (wide, permanent bars) and
+/// wins. Only "Automatically" and "When scrolling" get overlays forced, which keeps
+/// legacy bars from sticking when a mouse connects.
+enum OverlayScrollerPolicy {
+    static func forcesOverlay(showScrollBars: String?) -> Bool {
+        showScrollBars != "Always"
+    }
+
+    static func forcesOverlay() -> Bool {
+        forcesOverlay(showScrollBars: UserDefaults.standard.string(forKey: "AppleShowScrollBars"))
+    }
+}
+
 extension View {
-    /// Renders this scroll content's scrollers as thin, auto-hiding overlays.
+    /// Renders this scroll content's scrollers as thin, auto-hiding overlays, unless the
+    /// user chose "Show scroll bars: Always".
     func overlayScrollers() -> some View {
         background(OverlayScrollerStyler())
     }

@@ -27,6 +27,8 @@ final class MarkdownEditorController: NSObject {
         self.latestMarkdown = markdown
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: MarkdownEditorStrings().injectionScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView = MarkdownEditorWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.configuration.userContentController.add(WeakScriptMessageHandler(self), name: "dbrief")

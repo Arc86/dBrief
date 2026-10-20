@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>dBrief bestuurt Notities om je vergaderaantekeningen te bewaren wanneer de Apple Notes-integratie aan staat.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>dBrief gebruikt je agenda om de titel, deelnemers en agenda van een vergadering in te vullen wanneer je opneemt.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>dBrief heeft toegang tot je microfoon nodig om je stem op te nemen tijdens gesprekken en spraakopnamen.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>dBrief gebruikt volledige toegang tot Herinneringen om gevonden actiepunten te bewaren.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>dBrief gebruikt Herinneringen om gevonden actiepunten te bewaren.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>dBrief heeft toestemming voor schermopname nodig om tijdens gesprekken het systeemgeluid op te nemen.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>dBrief gebruikt spraakherkenning om je opnamen op deze Mac te transcriberen.</string>
+</dict>
+</plist>

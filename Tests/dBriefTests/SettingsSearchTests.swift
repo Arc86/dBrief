@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import dBrief
 
@@ -18,6 +19,13 @@ struct SettingsSearchTests {
         #expect(SettingsSearch.results(for: "non neon").first?.destination.section == .accentColor)
         #expect(SettingsSearch.results(for: "font size").first?.destination.section == .typography)
         #expect(SettingsSearch.results(for: "dock icon").first?.destination.section == .appBehavior)
+        #expect(SettingsSearch.results(for: "nederlands").first?.destination.section == .appLanguage)
+    }
+
+    @Test func appLanguageIsNamedInItsOwnLanguage() {
+        #expect(AppLanguage.displayName(for: "nl", in: Locale(identifier: "nl")) == "Nederlands")
+        #expect(AppLanguage.displayName(for: "en", in: Locale(identifier: "en")) == "English")
+        #expect(AppLanguage.settingsURL.absoluteString == "x-apple.systempreferences:com.apple.Localization-Settings.extension")
     }
 
     @Test func advancedEntriesLiveInAdvancedSections() {

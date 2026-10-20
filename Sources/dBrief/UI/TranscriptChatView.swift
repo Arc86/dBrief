@@ -52,6 +52,21 @@ struct TranscriptChatView: View {
             inputBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The question field keeps focus, so progress and answers are spoken.
+        .onChange(of: chatService.isStreaming) { wasStreaming, streaming in
+            if streaming {
+                AccessibilityAnnouncer.shared.announce(String(localized: "Thinking"))
+            } else if wasStreaming, let answer = chatService.messages.last, answer.role == .assistant {
+                let spoken = ChatAnnouncement.finished(answer.content)
+                AccessibilityAnnouncer.shared.announce(spoken.text, priority: spoken.priority)
+            }
+        }
+        .onChange(of: chatService.streamingNotice) { _, notice in
+            if let notice { AccessibilityAnnouncer.shared.announce(notice) }
+        }
+        .onChange(of: chatService.scanStatus ?? chatService.indexingStatus) { _, status in
+            if let status { AccessibilityAnnouncer.shared.announce(status) }
+        }
         .environment(\.chatAnswerDestinations, answerDestinations)
         .environment(\.openURL, OpenURLAction { url in
             guard let seconds = ChatTimestampLink.seconds(from: url) else { return .systemAction }
@@ -181,7 +196,7 @@ struct TranscriptChatView: View {
                         HStack(spacing: 6) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text(chatService.scanStatus ?? chatService.indexingStatus ?? "Thinking…")
+                            Text(chatService.scanStatus ?? chatService.indexingStatus ?? String(localized: "Thinking…"))
                                 .uiFont(.caption)
                                 .foregroundStyle(palette.secondary.color)
                         }
@@ -280,8 +295,8 @@ struct TranscriptChatView: View {
 
     private var coverageNote: String? {
         switch chatService.coverage {
-        case .relevantParts?: "Answered from the most relevant parts of this long recording."
-        case .recentPart?: "Answered from the most recent part of this live recording."
+        case .relevantParts?: String(localized: "Answered from the most relevant parts of this long recording.")
+        case .recentPart?: String(localized: "Answered from the most recent part of this live recording.")
         case .full?, nil: nil
         }
     }
@@ -674,7 +689,7 @@ private struct MessageActions: View {
         Task {
             defer { isAdding = false }
             let added = await destinations.addToSummary(message.displayParts.answer, question)
-            addStatus = added ? "Added to the summary." : nil
+            addStatus = added ? String(localized: "Added to the summary.") : nil
         }
     }
 
@@ -685,7 +700,7 @@ private struct MessageActions: View {
                                                   knownOwners: destinations.knownOwners)
             .filter { !existing.contains($0.lowercased()) }
         if items.isEmpty {
-            addStatus = "No new action items found in this answer."
+            addStatus = String(localized: "No new action items found in this answer.")
         } else {
             proposedActionItems = items
         }
@@ -698,7 +713,7 @@ private struct MessageActions: View {
         Task {
             defer { isAdding = false }
             let added = await destinations.addActionItems(items)
-            addStatus = added ? (items.count == 1 ? "Added 1 action item." : "Added \(items.count) action items.") : nil
+            addStatus = added ? String(localized: "Added \(items.count) action items.") : nil
         }
     }
 
@@ -706,23 +721,30 @@ private struct MessageActions: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 2) {
                 iconButton(copyToken == nil ? "doc.on.doc" : "checkmark",
-                           help: "Copy this answer", label: copyToken == nil ? "Copy answer" : "Answer copied",
+                           help: String(localized: "Copy this answer"),
+                           label: copyToken == nil ? String(localized: "Copy answer") : String(localized: "Answer copied"),
                            action: .copy) {
                     Task {
-                        if await chatService.copyAnswer(message) { copyToken = UUID() }
+                        if await chatService.copyAnswer(message) {
+                            copyToken = UUID()
+                            AccessibilityAnnouncer.shared.announce(String(localized: "Answer copied"))
+                        }
                     }
                 }
 
                 iconButton(isReading ? "stop.fill" : "speaker.wave.2",
-                           help: isReading ? "Stop reading (Esc)" : "Read using the voice selected in Settings → Spoken summary",
-                           label: isReading ? "Stop reading answer" : "Read answer aloud",
+                           help: isReading
+                               ? String(localized: "Stop reading (Esc)")
+                               : String(localized: "Read using the voice selected in Settings → Spoken summary"),
+                           label: isReading ? String(localized: "Stop reading answer") : String(localized: "Read answer aloud"),
                            action: .read) {
                     chatService.toggleReadAloud(message)
                 }
                 .disabled(message.speechText.isEmpty)
 
                 if isLatest {
-                    iconButton("arrow.clockwise", help: "Ask this question again", label: "Ask again",
+                    iconButton("arrow.clockwise", help: String(localized: "Ask this question again"),
+                               label: String(localized: "Ask again"),
                                action: .askAgain, perform: onAskAgain)
                         .disabled(chatService.questionToAskAgain == nil)
                 }
@@ -741,6 +763,7 @@ private struct MessageActions: View {
 
             if let addStatus {
                 Label(addStatus, systemImage: "checkmark")
+                    .onAppear { AccessibilityAnnouncer.shared.announce(addStatus) }
                     .uiFont(.caption)
                     .foregroundStyle(palette.secondary.color)
                     .padding(.leading, 6)
@@ -752,11 +775,13 @@ private struct MessageActions: View {
 
             switch speechState {
             case .preparingVoice(let progress):
-                speechProgress(progress.map { "Preparing voice… \(Int($0 * 100))%" } ?? "Preparing voice…")
+                speechProgress(progress.map { String(localized: "Preparing voice… \(Int($0 * 100))%") }
+                    ?? String(localized: "Preparing voice…"))
             case .synthesizing:
-                speechProgress("Preparing audio…")
+                speechProgress(String(localized: "Preparing audio…"))
             case .failed(let message):
                 Text("Could not read aloud: \(message)")
+                    .onAppear { AccessibilityAnnouncer.shared.announce(String(localized: "Could not read aloud: \(message)"), priority: .high) }
                     .uiFont(.caption)
                     .foregroundStyle(palette.secondary.color)
                     .textSelection(.enabled)
@@ -774,7 +799,7 @@ private struct MessageActions: View {
         ) {
             Button("OK", role: .cancel) { exportErrorMessage = nil }
         } message: {
-            Text(exportErrorMessage ?? "The answer is still available in this conversation.")
+            Text(exportErrorMessage ?? String(localized: "The answer is still available in this conversation."))
         }
         .task(id: copyToken) {
             guard copyToken != nil else { return }
@@ -883,14 +908,14 @@ private struct MessageActions: View {
 
         switch format {
         case .markdown:
-            panel.title = "Export Answer as Markdown"
+            panel.title = String(localized: "Export Answer as Markdown")
             panel.allowedContentTypes = [
                 UTType(filenameExtension: "md")
                     ?? UTType(importedAs: "net.daringfireball.markdown", conformingTo: .plainText)
             ]
             panel.nameFieldStringValue = "dBrief-answer.md"
         case .plainText:
-            panel.title = "Export Answer as Text"
+            panel.title = String(localized: "Export Answer as Text")
             panel.allowedContentTypes = [.plainText]
             panel.nameFieldStringValue = "dBrief-answer.txt"
         }
@@ -991,7 +1016,7 @@ private struct ActionItemPicker: View {
                 Button("Cancel", role: .cancel, action: onCancel)
                     .keyboardShortcut(.cancelAction)
                     .buttonStyle(.settingsSecondary)
-                Button(selected.count == 1 ? "Add 1 Item" : "Add \(selected.count) Items") {
+                Button("Add \(selected.count) Items") {
                     onAdd(items.filter(selected.contains))
                 }
                 .keyboardShortcut(.defaultAction)

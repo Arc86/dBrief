@@ -162,8 +162,8 @@ final class WatchedFolderService {
     private func notifyDetected(_ fileName: String) {
         guard Bundle.main.bundleIdentifier != nil else { return }
         let content = UNMutableNotificationContent()
-        content.title = "New audio detected"
-        content.body = "Transcribing \(fileName) from a watched folder…"
+        content.title = String(localized: "New audio detected")
+        content.body = String(localized: "Transcribing \(fileName) from a watched folder…")
         content.sound = .default
         let request = UNNotificationRequest(
             identifier: "watched-folder-\(UUID().uuidString)",

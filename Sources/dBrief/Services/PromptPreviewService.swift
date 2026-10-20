@@ -23,7 +23,7 @@ actor PromptPreviewService: PromptPreviewing {
                                                      configuration: request.configuration, stage: .spokenSummaryScript)
             try Task.checkCancellation()
             let script = SpokenSummaryScript.clean(text)
-            guard !script.isEmpty else { throw PromptPreviewError.failed("The AI returned an empty script.") }
+            guard !script.isEmpty else { throw PromptPreviewError.failed(String(localized: "The AI returned an empty script.")) }
             return .spokenScript(script)
         }
         guard request.identity.kind != .voiceStyle else { throw PromptPreviewError.unsupportedVoice }

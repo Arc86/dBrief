@@ -21,12 +21,12 @@ enum KeychainError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case let .unexpectedStatus(status):
-            let message = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown Keychain error"
-            return "Keychain operation failed (\(status)): \(message)"
+            let message = SecCopyErrorMessageString(status, nil) as String? ?? String(localized: "Unknown Keychain error")
+            return String(localized: "Keychain operation failed (\(status)): \(message)")
         case .invalidStoredValue:
-            return "The Keychain item could not be decoded as text."
+            return String(localized: "The Keychain item could not be decoded as text.")
         case .verificationFailed:
-            return "The Keychain write could not be verified."
+            return String(localized: "The Keychain write could not be verified.")
         }
     }
 }

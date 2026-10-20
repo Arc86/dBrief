@@ -4,8 +4,8 @@ import dBriefWire
 
 extension IntegrationDispatchService {
     /// One Notion page per meeting: a child page under the chosen page, or an
-    /// entry in the chosen database. The page is created with its first 100
-    /// blocks and the rest appended in batches. Progress lives in
+    /// entry in the chosen database. The page is created with its first batch
+    /// (up to 100 blocks, under Notion's request size) and the rest appended in batches. Progress lives in
     /// `createdItems` as `[0: page id, 1: blocks written]`, so a retry appends
     /// only what's missing. Notion has no idempotency key: when an earlier
     /// attempt may have created the page without us learning its id, a retry
@@ -18,7 +18,7 @@ extension IntegrationDispatchService {
             try Task.checkCancellation()
             guard try IntegrationDeliveryBatch.configurationDigests(config, available: available)[.notion]
                     == delivery.configurationDigest else {
-                throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
+                throw IntegrationError.executionFailed(String(localized: "Integration settings changed. Restore the original destination before retrying."))
             }
             let token = try notionToken().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else { throw NotionError.missingToken }
@@ -49,7 +49,7 @@ extension IntegrationDispatchService {
             if pageID == nil {
                 let schema = notion.parentType == .dataSource
                     ? try await notionClient.schema(dataSourceID: parentID, token: token) : nil
-                let first = Array(blocks.prefix(NotionAPI.maxBlocksPerRequest))
+                let first = Array(blocks[0..<NotionAPI.batchEnd(blocks, from: 0)])
                 pageID = try await notionClient.createPage(
                     parentType: notion.parentType, parentID: parentID,
                     properties: NotionAPI.properties(title: bundle.title, schema: schema,
@@ -62,7 +62,7 @@ extension IntegrationDispatchService {
             created[1] = String(written)
             while written < blocks.count {
                 try Task.checkCancellation()
-                let next = Array(blocks[written..<min(written + NotionAPI.maxBlocksPerRequest, blocks.count)])
+                let next = Array(blocks[written..<NotionAPI.batchEnd(blocks, from: written)])
                 try await notionClient.append(next, to: pageID, token: token)
                 written += next.count
                 created[1] = String(written)

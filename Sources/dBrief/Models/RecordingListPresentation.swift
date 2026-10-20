@@ -40,11 +40,11 @@ enum RecordingListPresentation {
 
     static func queueSummary(pending: Int, recovery: Int, paused: Bool, processing: Bool, hasError: Bool) -> String {
         var parts = [String]()
-        if paused { parts.append("Paused") }
-        if processing { parts.append("Processing") }
-        if pending > 0 { parts.append("\(pending) queued") }
-        if recovery > 0 { parts.append("\(recovery) need attention") }
-        if hasError { parts.append("Couldn’t refresh") }
-        return parts.isEmpty ? "No pending work" : parts.joined(separator: " · ")
+        if paused { parts.append(String(localized: "Paused")) }
+        if processing { parts.append(String(localized: "Processing")) }
+        if pending > 0 { parts.append(String(localized: "\(pending) queued")) }
+        if recovery > 0 { parts.append(String(localized: "\(recovery) need attention")) }
+        if hasError { parts.append(String(localized: "Couldn’t refresh")) }
+        return parts.isEmpty ? String(localized: "No pending work") : parts.joined(separator: " · ")
     }
 }

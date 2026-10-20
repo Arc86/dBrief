@@ -121,6 +121,8 @@ struct TranscriptBrowserView: View {
 
     private var selectionLifecycle: some View {
         navigationShell
+        .announcing(library.error, priority: .high)
+        .announcing(searchResultSummary)
         .onAppear {
             library.updateActiveWork(ids: activeWorkIDs, audioURLs: activeAudioURLs)
             reload()
@@ -244,7 +246,7 @@ struct TranscriptBrowserView: View {
         if let work = selectedWork {
             LibraryWorkDetailView(item: work,
                 disabledReason: recordingManager.libraryWorkBlockMessage(work.target)
-                    ?? (library.isQuerying || library.error != nil ? "The library is updating. Try again in a moment." : nil),
+                    ?? (library.isQuerying || library.error != nil ? String(localized: "The library is updating. Try again in a moment.") : nil),
                 remove: removeAction(for: work),
                 openRecording: work.audioURL.map { url in { appState.pendingTranscriptSelectionURL = url } }) {
                 try await recordingManager.performLibraryWork(work)
@@ -300,10 +302,12 @@ struct TranscriptBrowserView: View {
             onRebuildSearchIndex: { library.refresh(rebuild: true) },
             onSettings: { openWindow(id: "settings") },
             selectedRowID: selectedWork.map { AnyHashable($0.id) } ?? selection.map(rowID(for:)),
+            selectionKey: selectedWork.map { AnyHashable($0.id) } ?? selection.map { AnyHashable($0) },
+            selectedTitle: selectedSidebarTitle,
             onMove: moveSelection(by:)
         ) { statusMenu in
             if liveRecording != nil || processingRecording != nil {
-                LibrarySectionHeader(title: "In Progress")
+                LibrarySectionHeader(title: String(localized: "In Progress"))
                 // Pinned ids must differ from the library rows' (their URL): the lazy
                 // stack would otherwise keep showing this pinned row in the list
                 // row for the same recording once processing finishes.
@@ -326,18 +330,18 @@ struct TranscriptBrowserView: View {
 
     private var emptyDescription: String {
         if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "No matches for this search."
+            return String(localized: "No matches for this search.")
         }
         if let statusFilter {
-            return "No recordings with status \(statusFilter.title)."
+            return String(localized: "No recordings with status \(statusFilter.title).")
         }
         return switch library.selectedView {
-        case .all: "No recordings in this folder."
-        case .unfinishedActions: "No unfinished actions."
-        case .failedJobs: "No failed jobs."
-        case .queuedInterrupted: "No queued or interrupted work."
-        case .recentlyProcessed: "No recordings processed in the last seven days."
-        case .peopleThisMonth: "No named people in this month's recordings."
+        case .all: String(localized: "No recordings in this folder.")
+        case .unfinishedActions: String(localized: "No unfinished actions.")
+        case .failedJobs: String(localized: "No failed jobs.")
+        case .queuedInterrupted: String(localized: "No queued or interrupted work.")
+        case .recentlyProcessed: String(localized: "No recordings processed in the last seven days.")
+        case .peopleThisMonth: String(localized: "No named people in this month's recordings.")
         }
     }
 
@@ -356,14 +360,14 @@ struct TranscriptBrowserView: View {
             Group {
                 let thisWeek = thisWeekItems
                 let earlier = earlierItems
-                LibrarySectionHeader(title: "This week", count: thisWeek.isEmpty ? nil : thisWeek.count) { statusMenu }
+                LibrarySectionHeader(title: String(localized: "This week"), count: thisWeek.isEmpty ? nil : thisWeek.count) { statusMenu }
                 ForEach(thisWeek) { row(for: $0) }
                 if thisWeek.isEmpty, !earlier.isEmpty {
-                    LibrarySidebarNote(text: "Nothing recorded this week.")
+                    LibrarySidebarNote(text: String(localized: "Nothing recorded this week."))
                 }
 
                 if !earlier.isEmpty {
-                    LibraryCollapsibleSectionHeader(title: "Earlier", count: earlier.count, collapsed: $earlierCollapsed)
+                    LibraryCollapsibleSectionHeader(title: String(localized: "Earlier"), count: earlier.count, collapsed: $earlierCollapsed)
                         .padding(.top, 6)
 
                     if !earlierCollapsed {
@@ -373,12 +377,12 @@ struct TranscriptBrowserView: View {
             }
         case .unfinishedActions:
             Group {
-                LibrarySectionHeader(title: "Unfinished actions", count: filteredItems.count) { statusMenu }
+                LibrarySectionHeader(title: String(localized: "Unfinished actions"), count: filteredItems.count) { statusMenu }
                 ForEach(filteredItems) { row(for: $0) }
             }
         case .recentlyProcessed:
             Group {
-                LibrarySectionHeader(title: "Recently processed", count: filteredItems.count) { statusMenu }
+                LibrarySectionHeader(title: String(localized: "Recently processed"), count: filteredItems.count) { statusMenu }
                 // Preserve SQL processing-time ordering for Recently Processed.
                 ForEach(filteredItems) { row(for: $0) }
             }
@@ -398,7 +402,7 @@ struct TranscriptBrowserView: View {
             }
         case .peopleThisMonth:
             Group {
-                LibrarySectionHeader(title: "People this month", count: library.peopleGroups.count) { statusMenu }
+                LibrarySectionHeader(title: String(localized: "People this month"), count: library.peopleGroups.count) { statusMenu }
                 ForEach(library.peopleGroups) { group in
                     DisclosureGroup {
                         ForEach(group.recordings) { row(for: $0) }
@@ -463,7 +467,30 @@ struct TranscriptBrowserView: View {
         return urls
     }
 
+    /// "3 recordings found" while searching, for VoiceOver.
+    private var searchResultSummary: String? {
+        guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty, !library.showsInitialLoading else { return nil }
+        let count = filteredItems.count + library.workMatches.count
+        return count == 0 ? String(localized: "No recordings found") : String(localized: "\(count) recordings found")
+    }
+
+    /// The selected row's title and date, for VoiceOver.
+    private var selectedSidebarTitle: String? {
+        if let selectedWork { return Self.spokenTitle(selectedWork.title, date: selectedWork.date) }
+        guard let selection else { return nil }
+        if selection == liveRecording?.fileURL { return String(localized: "Recording in progress") }
+        if selection == processingRecording?.fileURL { return String(localized: "Recording being processed") }
+        guard let item = items.first(where: { $0.url == selection }) else { return nil }
+        return Self.spokenTitle(item.title, date: item.date)
+    }
+
+    private static func spokenTitle(_ title: String, date: Date) -> String {
+        let when = date.formatted(date: .abbreviated, time: .shortened)
+        return String(localized: "\(title), \(when)", comment: "A recording's title and date, spoken by VoiceOver")
+    }
+
     private func moveSelection(by offset: Int) {
+        defer { if let title = selectedSidebarTitle { appState.announcer.announce(title) } }
         switch library.selectedView {
         case .failedJobs, .queuedInterrupted:
             let ids = visibleWork.map(\.id)

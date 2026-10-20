@@ -14,6 +14,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  localization:
+    name: Localization
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Test the localization tooling
+        run: python3 scripts/test_strings_check.py
+
+      - name: Check strings are in sync
+        # Fails when a UI string isn't in the catalog, a translation breaks its
+        # placeholders, or the compiled translations weren't regenerated.
+        run: make strings-check
+
+      - name: Report translation coverage
+        if: always()
+        run: |
+          {
+            echo "### Translations"
+            make -s strings-report
+          } >> "$GITHUB_STEP_SUMMARY"
+
   test-and-package-beta:
     name: Test and package beta
     runs-on: macos-26
@@ -28,6 +53,15 @@ jobs:
           swift --version
           uname -a
           test "$(uname -m)" = "arm64"
+
+      - name: Check summary editor bundle
+        working-directory: web/markdown-editor
+        run: |
+          npm ci
+          npm test
+          npm run build
+          git diff --exit-code -- ../../Sources/dBrief/Resources/MarkdownEditor
+          test -z "$(git status --porcelain -- ../../Sources/dBrief/Resources/MarkdownEditor)"
 
       - name: Run test suite
         run: |

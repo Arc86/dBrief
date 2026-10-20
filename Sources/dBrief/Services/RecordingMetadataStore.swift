@@ -89,9 +89,9 @@ actor RecordingMetadataStore {
         case recordingUnavailable, invalidMetadata, verificationFailed
         var errorDescription: String? {
             switch self {
-            case .recordingUnavailable: "The recording is unavailable. Its processing completion date could not be saved."
-            case .invalidMetadata: "The recording metadata could not be read. Its recovery journal has been kept."
-            case .verificationFailed: "The recording metadata could not be verified."
+            case .recordingUnavailable: String(localized: "The recording is unavailable. Its processing completion date could not be saved.")
+            case .invalidMetadata: String(localized: "The recording metadata could not be read. Its recovery journal has been kept.")
+            case .verificationFailed: String(localized: "The recording metadata could not be verified.")
             }
         }
     }
