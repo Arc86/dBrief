@@ -389,6 +389,20 @@ struct ReprocessingManagerTests {
         #expect(FileManager.default.fileExists(atPath: fixture.audio.path))
     }
 
+    @Test func deleteRetiresTheRecordingsChatSoNoSidecarIsWrittenBack() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        try writeMetadata(fixture)
+        let store = TranscriptChatStore()
+        fixture.manager.transcriptChatStore = store
+        let chat = TranscriptChatService(transcriptText: "T", speakerLabels: [], appSettings: AppSettings(), localPlugin: nil)
+        store.set(chat, for: fixture.audio)
+        try await fixture.manager.deleteRecording(fixture.audio)
+        #expect(chat.isInvalidatedForReprocessing)
+        #expect(store.session(for: fixture.audio) == nil)
+        #expect(!FileManager.default.fileExists(atPath: fixture.audio.path))
+    }
+
     @Test func newCaptureQueuesTheReviewItDisplacesWithTheReviewsChoices() async throws {
         let fixture = try Fixture()
         defer { fixture.clean() }
