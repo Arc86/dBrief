@@ -6,10 +6,10 @@ enum ViewerDocumentMode: String, CaseIterable, Hashable, Sendable {
 
     var displayName: String {
         switch self {
-        case .summary: "Summary"
-        case .transcript: "Transcript"
-        case .actions: "Actions"
-        case .meetingInsights: "Meeting Insights"
+        case .summary: String(localized: "Summary")
+        case .transcript: String(localized: "Transcript")
+        case .actions: String(localized: "Actions")
+        case .meetingInsights: String(localized: "Meeting Insights")
         }
     }
 }

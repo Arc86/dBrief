@@ -75,7 +75,7 @@ extension ProcessingPipeline {
                     try await validateOwnership()
                     try Task.checkCancellation()
                 } catch {
-                    return .init(destination: entry.destination, status: .failed, message: "Delivery stopped before sending", remoteID: nil)
+                    return .init(destination: entry.destination, status: .failed, message: String(localized: "Delivery stopped before sending"), remoteID: nil)
                 }
                 let outcome = await send(saved, entry)
                 await onEvent(.finished(outcome))

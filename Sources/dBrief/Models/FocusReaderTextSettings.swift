@@ -57,10 +57,10 @@ enum FocusReaderWidth: String, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .narrow: "Narrow"
-        case .medium: "Medium"
-        case .wide: "Wide"
-        case .full: "Full width"
+        case .narrow: String(localized: "Narrow")
+        case .medium: String(localized: "Medium")
+        case .wide: String(localized: "Wide")
+        case .full: String(localized: "Full width")
         }
     }
 

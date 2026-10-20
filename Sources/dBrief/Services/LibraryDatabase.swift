@@ -7,7 +7,7 @@ final class LibraryDatabase {
     struct Failure: Error, LocalizedError {
         let code: Int32
         var isCorruption: Bool { code == SQLITE_CORRUPT || code == SQLITE_NOTADB }
-        var errorDescription: String? { "The search index could not be read or updated. Try rebuilding it. Your recordings are unchanged." }
+        var errorDescription: String? { String(localized: "The search index could not be read or updated. Try rebuilding it. Your recordings are unchanged.") }
     }
 
     private var handle: OpaquePointer?

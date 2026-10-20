@@ -88,7 +88,7 @@ extension LibraryIndex {
 
     private enum QueryFailure: Error, LocalizedError {
         case invalidCalendarRange
-        var errorDescription: String? { "The current calendar month could not be determined. Try refreshing the library." }
+        var errorDescription: String? { String(localized: "The current calendar month could not be determined. Try refreshing the library.") }
     }
 
     private nonisolated static func condition(_ clauses: [String]) -> String {

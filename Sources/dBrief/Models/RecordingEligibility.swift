@@ -56,21 +56,21 @@ enum RecordingBlock: Equatable, Sendable {
 
     var message: String {
         switch self {
-        case .startingUp: "dBrief is still checking saved work. Try again in a moment."
-        case .processingNow: "This recording is processing now. Wait for it to finish, or stop it."
-        case .underReview: "This recording is open in the review form. Process, queue or delete it there first."
-        case .speakerReview: "This recording is waiting for you to confirm its speakers."
-        case .queued: "This recording is waiting in the queue. Process it or remove it from Queue & Recovery first."
-        case .unfinishedRun: "This recording has an unfinished processing run in Queue & Recovery. Resume it, or discard it to start again."
-        case .pendingReprocess: "This recording has an unfinished reprocess in Queue & Recovery. Resume or discard it first."
-        case .otherJobRunning(let title): "Wait for “\(title)” to finish processing before deleting a recording."
-        case .recordingInProgress: "Finish the current recording and its review before deleting a recording."
-        case .unreadableRecords: "Some saved processing records can't be read. Move them aside in Queue & Recovery first."
-        case .busy(.saving): "dBrief is saving a recording. Try again in a moment."
-        case .busy(.cleanup): "Cleanup or recovery is running. Try again when it finishes."
-        case .busy(.stopping): "Processing is stopping. Try again in a moment."
-        case .busy(.integrations): "Finish reviewing integration deliveries first."
-        case .busy(.queueEdit): "The queue is updating. Try again in a moment."
+        case .startingUp: String(localized: "dBrief is still checking saved work. Try again in a moment.")
+        case .processingNow: String(localized: "This recording is processing now. Wait for it to finish, or stop it.")
+        case .underReview: String(localized: "This recording is open in the review form. Process, queue or delete it there first.")
+        case .speakerReview: String(localized: "This recording is waiting for you to confirm its speakers.")
+        case .queued: String(localized: "This recording is waiting in the queue. Process it or remove it from Queue & Recovery first.")
+        case .unfinishedRun: String(localized: "This recording has an unfinished processing run in Queue & Recovery. Resume it, or discard it to start again.")
+        case .pendingReprocess: String(localized: "This recording has an unfinished reprocess in Queue & Recovery. Resume or discard it first.")
+        case .otherJobRunning(let title): String(localized: "Wait for “\(title)” to finish processing before deleting a recording.")
+        case .recordingInProgress: String(localized: "Finish the current recording and its review before deleting a recording.")
+        case .unreadableRecords: String(localized: "Some saved processing records can't be read. Move them aside in Queue & Recovery first.")
+        case .busy(.saving): String(localized: "dBrief is saving a recording. Try again in a moment.")
+        case .busy(.cleanup): String(localized: "Cleanup or recovery is running. Try again when it finishes.")
+        case .busy(.stopping): String(localized: "Processing is stopping. Try again in a moment.")
+        case .busy(.integrations): String(localized: "Finish reviewing integration deliveries first.")
+        case .busy(.queueEdit): String(localized: "The queue is updating. Try again in a moment.")
         }
     }
 

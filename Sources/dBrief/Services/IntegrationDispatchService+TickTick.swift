@@ -25,14 +25,14 @@ extension IntegrationDispatchService {
                         config: IntegrationSettings) async -> IntegrationDispatchResult {
         let items = ActionItemText.deliverable(batch.bundle.actionItems)
         guard !items.isEmpty else {
-            return .init(destination: .tickTick, status: .skipped, message: "No action items", remoteID: nil)
+            return .init(destination: .tickTick, status: .skipped, message: String(localized: "No action items"), remoteID: nil)
         }
         var created = delivery.createdItems ?? [:]
         do {
             try Task.checkCancellation()
             guard try IntegrationDeliveryBatch.configurationDigests(config, available: available)[.tickTick]
                     == delivery.configurationDigest else {
-                throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
+                throw IntegrationError.executionFailed(String(localized: "Integration settings changed. Restore the original destination before retrying."))
             }
             let token = try tickTickToken()
             guard !token.isEmpty else { throw TickTickError.notSignedIn }

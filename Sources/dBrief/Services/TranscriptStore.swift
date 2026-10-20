@@ -93,13 +93,13 @@ enum TranscriptStoreError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noSidecarURL:
-            "Cannot determine the rich-transcript sidecar path."
+            String(localized: "Cannot determine the rich-transcript sidecar path.")
         case .unsupportedVersion(let version):
-            "Rich transcript version \(version) is not supported."
+            String(localized: "Rich transcript version \(version) is not supported.")
         case .verificationFailed:
-            "The rich transcript could not be verified after saving."
+            String(localized: "The rich transcript could not be verified after saving.")
         case .changedDuringReview:
-            "The transcript changed during speaker review. Reload it and review the speakers again."
+            String(localized: "The transcript changed during speaker review. Reload it and review the speakers again.")
         }
     }
 }

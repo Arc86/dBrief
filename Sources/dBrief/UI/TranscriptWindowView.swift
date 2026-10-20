@@ -261,7 +261,7 @@ struct TranscriptDetailView: View, Equatable {
                 ViewerDocumentLayout {
                     viewerHeader(tabs: [], showsAssistantToggle: false, assistantOpen: false,
                                  onToggleAssistant: {}) {
-                        ReprocessingMenu(recording: recording, hasTranscript: false, label: "Transcribe")
+                        ReprocessingMenu(recording: recording, hasTranscript: false, label: String(localized: "Transcribe"))
                             .environment(context.appSettings)
                             .environment(context.recordingManager)
                             .environment(context.appState)
@@ -591,7 +591,7 @@ struct TranscriptDetailView: View, Equatable {
     }
 
     @ViewBuilder private var processingCommands: some View {
-        ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil, label: "Reprocess")
+        ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil, label: String(localized: "Reprocess"))
             .environment(context.appSettings)
             .environment(context.recordingManager)
             .environment(context.appState)
@@ -717,7 +717,7 @@ struct TranscriptDetailView: View, Equatable {
     private func saveSummaryEdit() async -> Bool {
         guard let edit = summaryEdit else { return false }
         guard !edit.isStale(currentSummary: insights?.summary) else {
-            analysisSaveError = "The summary was regenerated while you were editing. Copy your text, cancel, and edit the new summary."
+            analysisSaveError = String(localized: "The summary was regenerated while you were editing. Copy your text, cancel, and edit the new summary.")
             return false
         }
         var edited = edit.insightsBaseline
@@ -1106,7 +1106,7 @@ struct TranscriptDetailView: View, Equatable {
                     let settings = context.appSettings
                     guard !settings.savedChatPrompts.contains(where: { $0.prompt == question }) else { return }
                     settings.savedChatPrompts.append(SavedChatPrompt(question: question))
-                    chatService.showNotice("Saved as a prompt. Manage your prompts in Settings → AI analysis.")
+                    chatService.showNotice(String(localized: "Saved as a prompt. Manage your prompts in Settings → AI analysis."))
                 },
                 answerDestinations: chatAnswerDestinations(for: chatService)
             )
@@ -1158,10 +1158,11 @@ struct TranscriptDetailView: View, Equatable {
                         liveTurnRow(turn).id(turn.id)
                     }
                     if !mic.isEmpty {
-                        liveVolatileRow(speaker: "You", text: mic).id("vol-mic")
+                        liveVolatileRow(speaker: "You", label: String(localized: "You"), text: mic).id("vol-mic")
                     }
                     if !system.isEmpty {
-                        liveVolatileRow(speaker: "Participant", text: system).id("vol-system")
+                        liveVolatileRow(speaker: "Participant", label: String(localized: "Participant"), text: system)
+                            .id("vol-system")
                     }
                     Color.clear.frame(height: 1).id("live-bottom")
                 }
@@ -1198,17 +1199,18 @@ struct TranscriptDetailView: View, Equatable {
         let subtitle: String
         if isProcessingLive {
             if recording.transcription != nil {
-                headline = "No speech found in this recording"
-                subtitle = "Processing can continue without transcript text."
+                headline = String(localized: "No speech found in this recording")
+                subtitle = String(localized: "Processing can continue without transcript text.")
             } else {
-                headline = inProgressStep?.name ?? "Preparing transcript…"
-                subtitle = "Streaming engines show words as they arrive. Other engines show the transcript when transcription finishes."
+                headline = inProgressStep?.name ?? String(localized: "Preparing transcript…")
+                subtitle = String(localized: "Streaming engines show words as they arrive. Other engines show the transcript when transcription finishes.")
             }
         } else {
             headline = !status.isEmpty
                 ? status
-                : (context.appState.isLiveTranscribing ? "Listening…" : "Preparing live transcription…")
-            subtitle = "Spoken words appear here as you record."
+                : (context.appState.isLiveTranscribing
+                    ? String(localized: "Listening…") : String(localized: "Preparing live transcription…"))
+            subtitle = String(localized: "Spoken words appear here as you record.")
         }
         return VStack(spacing: 12) {
             Spacer()
@@ -1238,7 +1240,7 @@ struct TranscriptDetailView: View, Equatable {
     private func liveTurnRow(_ turn: SpeakerTurn) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             if showSpeakerNames, let id = turn.speakerId {
-                Text(id)
+                Text(Self.liveSpeakerLabel(id))
                     .uiFont(.caption.weight(.semibold))
                     .foregroundStyle(ViewerSpeakerPalette.color(for: id, mode: appearanceMode).color)
             }
@@ -1252,10 +1254,20 @@ struct TranscriptDetailView: View, Equatable {
         .padding(.vertical, 2)
     }
 
-    private func liveVolatileRow(speaker: String, text: String) -> some View {
+    /// Live segments carry the fixed "You" / "Participant" channel ids; show them translated.
+    private static func liveSpeakerLabel(_ id: String) -> String {
+        switch id {
+        case "You": return String(localized: "You")
+        case "Participant": return String(localized: "Participant")
+        default: return id
+        }
+    }
+
+    /// `speaker` is the channel id (keys the colour); `label` is what is shown.
+    private func liveVolatileRow(speaker: String, label: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             if showSpeakerNames {
-                Text(speaker)
+                Text(label)
                     .uiFont(.caption.weight(.semibold))
                     .foregroundStyle(ViewerSpeakerPalette.color(for: speaker, mode: appearanceMode).color)
             }
@@ -1385,7 +1397,7 @@ struct TranscriptDetailView: View, Equatable {
             change(&updated)
             if await saveInsights(updated, basedOn: baseline) { return true }
             analysisSaveError = nil
-            chatService.showNotice("Couldn’t add this answer to the recording. Try again, or edit it from the Summary tab.")
+            chatService.showNotice(String(localized: "Couldn’t add this answer to the recording. Try again, or edit it from the Summary tab."))
             return false
         }
         return ChatAnswerDestinations(
@@ -1407,7 +1419,9 @@ struct TranscriptDetailView: View, Equatable {
             isEmpty: chatService.isStreaming || chatService.conversationBody.isEmpty,
             copy: {
                 Task {
-                    if await chatService.copyConversation(title: title) { chatService.showNotice("Conversation copied.") }
+                    if await chatService.copyConversation(title: title) {
+                        chatService.showNotice(String(localized: "Conversation copied."))
+                    }
                 }
             },
             save: { saveConversation(chatService, title: title) },
@@ -1416,7 +1430,7 @@ struct TranscriptDetailView: View, Equatable {
 
     private func saveConversation(_ chatService: TranscriptChatService, title: String) {
         let panel = NSSavePanel()
-        panel.title = "Save Conversation as Markdown"
+        panel.title = String(localized: "Save Conversation as Markdown")
         panel.allowedContentTypes = [UTType(filenameExtension: "md")
             ?? UTType(importedAs: "net.daringfireball.markdown", conformingTo: .plainText)]
         panel.canCreateDirectories = true
@@ -1426,9 +1440,9 @@ struct TranscriptDetailView: View, Equatable {
             guard await panel.begin() == .OK, let url = panel.url else { return }
             do {
                 try await chatService.exportConversation(title: title, to: url)
-                chatService.showNotice("Conversation saved.")
+                chatService.showNotice(String(localized: "Conversation saved."))
             } catch {
-                chatService.showNotice("Couldn’t save the conversation: \(error.localizedDescription)")
+                chatService.showNotice(String(localized: "Couldn’t save the conversation: \(error.localizedDescription)"))
             }
         }
     }
@@ -1454,9 +1468,9 @@ struct TranscriptDetailView: View, Equatable {
                     try updated.write(to: noteURL, atomically: true, encoding: .utf8)
                 }
             }
-            chatService.showNotice("Conversation added to the recording note.")
+            chatService.showNotice(String(localized: "Conversation added to the recording note."))
         } catch {
-            chatService.showNotice("Couldn’t update the recording note: \(error.localizedDescription)")
+            chatService.showNotice(String(localized: "Couldn’t update the recording note: \(error.localizedDescription)"))
         }
     }
 
@@ -1618,11 +1632,11 @@ struct TranscriptDetailView: View, Equatable {
                 onDeleted()
             } catch {
                 let alert = NSAlert()
-                alert.messageText = "Couldn't delete the recording"
+                alert.messageText = String(localized: "Couldn't delete the recording")
                 // A blocked delete touched nothing; only a failed one may leave files.
                 alert.informativeText = (error as? RecordingBlockedError)?.localizedDescription
-                    ?? "Deletion could not finish. Some files may remain; check storage before retrying."
-                alert.addButton(withTitle: "OK")
+                    ?? String(localized: "Deletion could not finish. Some files may remain; check storage before retrying.")
+                alert.addButton(withTitle: String(localized: "OK"))
                 alert.runModal()
             }
         }
@@ -1638,9 +1652,9 @@ struct TranscriptDetailView: View, Equatable {
     /// Status text for the toolbar accessory.
     private var searchCounterLabel: String {
         guard isSearching else { return "" }
-        if !searchResult.isValid { return "Invalid pattern" }
-        if searchResult.matches.isEmpty { return "No results" }
-        return "\(currentMatchIndex + 1) of \(searchResult.matches.count)"
+        if !searchResult.isValid { return String(localized: "Invalid pattern") }
+        if searchResult.matches.isEmpty { return String(localized: "No results") }
+        return String(localized: "\(currentMatchIndex + 1) of \(searchResult.matches.count)")
     }
 
     /// Recomputes matches over the displayed turns. `setTranscript(_:)` keeps
@@ -1778,7 +1792,7 @@ struct TranscriptDetailView: View, Equatable {
     private func saveInsights(_ updated: RecordingInsights, basedOn baseline: RecordingInsights) async -> Bool {
         analysisSaveError = nil
         guard !isReprocessing else {
-            analysisSaveError = "Reprocessing is in progress. Your draft has been kept."
+            analysisSaveError = String(localized: "Reprocessing is in progress. Your draft has been kept.")
             return false
         }
         guard let url = recording.insightsSidecarURL else {
@@ -1810,14 +1824,14 @@ struct TranscriptDetailView: View, Equatable {
                             }
                         }
                     } catch {
-                        analysisSaveError = "Analysis saved, but the linked Markdown note could not be updated. Your draft is kept so you can retry. \(error.localizedDescription)"
+                        analysisSaveError = String(localized: "Analysis saved, but the linked Markdown note could not be updated. Your draft is kept so you can retry. \(error.localizedDescription)")
                         return false
                     }
                 }
             }
             return true
         } catch {
-            analysisSaveError = "Analysis could not be saved. Your draft is kept. \(error.localizedDescription)"
+            analysisSaveError = String(localized: "Analysis could not be saved. Your draft is kept. \(error.localizedDescription)")
             Logger.recording.error("Failed to save insights sidecar")
             return false
         }

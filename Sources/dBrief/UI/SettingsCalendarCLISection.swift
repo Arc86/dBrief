@@ -121,7 +121,7 @@ struct SettingsCalendarCLISection: View {
                 SettingsRow("Reasoning effort",
                             caption: config.modelID == nil || (config.modelID != "sonnet" && config.modelID != "opus")
                                 ? "Support depends on your Claude model." : nil) {
-                    CLIReasoningEffortPicker(title: "Reasoning effort", selection: Binding(
+                    CLIReasoningEffortPicker(title: String(localized: "Reasoning effort"), selection: Binding(
                         get: { settings.calendarCLIConfig.effort },
                         set: { effort in
                             settings.calendarCLIConfig = settings.calendarCLIConfig.updating(effort: effort)
@@ -328,7 +328,9 @@ struct SettingsCalendarCLISection: View {
                 Label {
                     Text(partial
                         ? "Connected — partial data returned for the test window."
-                        : "Connected — the connector answered the test window\(events > 0 ? " (\(events) events)" : "").")
+                        : events > 0
+                            ? "Connected — the connector answered the test window (\(events) events)."
+                            : "Connected — the connector answered the test window.")
                 } icon: {
                     Image(systemName: partial ? "exclamationmark.triangle" : "checkmark.circle")
                 }

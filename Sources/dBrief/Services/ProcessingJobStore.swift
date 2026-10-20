@@ -32,11 +32,11 @@ actor ProcessingJobStore {
         var errorDescription: String? {
             switch self {
             case .unsupportedVersion(let version):
-                "Processing job version \(version) is not supported."
+                String(localized: "Processing job version \(version) is not supported.")
             case .mismatchedIdentifier:
-                "Processing job identity did not match its storage location."
+                String(localized: "Processing job identity did not match its storage location.")
             case .verificationFailed:
-                "Processing job could not be verified after saving."
+                String(localized: "Processing job could not be verified after saving.")
             }
         }
     }

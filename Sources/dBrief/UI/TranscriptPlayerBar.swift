@@ -92,7 +92,9 @@ struct TranscriptPlayerBar: View {
             palette: palette,
             mode: mode,
             isSeekEnabled: isSeekEnabled,
-            positionDescription: "\(formatTime(displayTime)) of \(playbackDuration > 0 ? formatTime(playbackDuration) : "unknown duration")",
+            positionDescription: playbackDuration > 0
+                ? String(localized: "\(formatTime(displayTime)) of \(formatTime(playbackDuration))")
+                : String(localized: "\(formatTime(displayTime)) of unknown duration"),
             onSeek: seek(toFraction:)
         )
         .frame(height: 42)
@@ -239,7 +241,8 @@ private struct TranscriptPlayerControls<TimelineContent: View>: View {
     }
 
     private func speedLabel(_ speed: Float) -> String {
-        speed == 1.0 ? "1×" : String(format: "%g×", speed)
+        // Locale-aware decimal separator ("0,5×" in Dutch).
+        String(localized: "\(speed.formatted())×")
     }
 }
 

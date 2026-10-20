@@ -246,9 +246,9 @@ final class AppSettings {
         var displayName: String {
             switch self {
             case .appleSpeech: "Apple Speech"
-            case .localWhisper: "Local Whisper"
-            case .parakeetLocal: "Parakeet (Local)"
-            case .remoteEndpoint: "Remote Endpoint"
+            case .localWhisper: String(localized: "Local Whisper")
+            case .parakeetLocal: String(localized: "Parakeet (Local)")
+            case .remoteEndpoint: String(localized: "Remote Endpoint")
             }
         }
 
@@ -256,10 +256,10 @@ final class AppSettings {
         /// and Settings to help users choose.
         var shortDescription: String {
             switch self {
-            case .appleSpeech: "On-device speech with macOS-managed language downloads. Supported macOS 26 locales use SpeechAnalyzer; other cases use the classic recognizer."
-            case .localWhisper: "On-device Whisper with multilingual models. Downloads a model once."
-            case .parakeetLocal: "Fast on-device transcription. English v2 or multilingual v3, with optional speaker identification."
-            case .remoteEndpoint: "Send audio to your own Whisper server or API."
+            case .appleSpeech: String(localized: "On-device speech with macOS-managed language downloads. Supported macOS 26 locales use SpeechAnalyzer; other cases use the classic recognizer.")
+            case .localWhisper: String(localized: "On-device Whisper with multilingual models. Downloads a model once.")
+            case .parakeetLocal: String(localized: "Fast on-device transcription. English v2 or multilingual v3, with optional speaker identification.")
+            case .remoteEndpoint: String(localized: "Send audio to your own Whisper server or API.")
             }
         }
 
@@ -275,15 +275,15 @@ final class AppSettings {
 
         var displayName: String {
             switch self {
-            case .optimistic: "Optimistic"
-            case .confirmFirst: "Confirm first"
+            case .optimistic: String(localized: "Optimistic")
+            case .confirmFirst: String(localized: "Confirm first")
             }
         }
 
         var shortDescription: String {
             switch self {
-            case .optimistic: "Auto-label matched voices and keep processing."
-            case .confirmFirst: "Pause to review speaker names before analysis."
+            case .optimistic: String(localized: "Auto-label matched voices and keep processing.")
+            case .confirmFirst: String(localized: "Pause to review speaker names before analysis.")
             }
         }
     }
@@ -298,9 +298,9 @@ final class AppSettings {
 
         var displayName: String {
             switch self {
-            case .off: "Do nothing"
-            case .prompt: "Ask me"
-            case .autoStop: "Stop automatically"
+            case .off: String(localized: "Do nothing")
+            case .prompt: String(localized: "Ask me")
+            case .autoStop: String(localized: "Stop automatically")
             }
         }
     }
@@ -312,8 +312,8 @@ final class AppSettings {
 
         var displayName: String {
             switch self {
-            case .callInitiatedOnly: "Only recordings started for a call"
-            case .anyActiveRecording: "Any active recording"
+            case .callInitiatedOnly: String(localized: "Only recordings started for a call")
+            case .anyActiveRecording: String(localized: "Any active recording")
             }
         }
     }
@@ -335,8 +335,8 @@ final class AppSettings {
             switch self {
             case .appleIntelligence: "Apple Intelligence"
             case .qwenLocal: "Gemma 4 E4B Local"
-            case .remoteEndpoint: "Remote Endpoint"
-            case .localCLI: "Local CLI"
+            case .remoteEndpoint: String(localized: "Remote Endpoint")
+            case .localCLI: String(localized: "Local CLI")
             }
         }
 
@@ -344,10 +344,10 @@ final class AppSettings {
         /// and Settings to help users choose.
         var shortDescription: String {
             switch self {
-            case .appleIntelligence: "On-device and private. Requires macOS 26 on Apple Silicon."
-            case .qwenLocal: "On-device Gemma model. Private, downloads once."
-            case .remoteEndpoint: "Use an OpenAI-compatible LLM endpoint (e.g. your own server)."
-            case .localCLI: "Run your own command (claude, ollama, llm…)."
+            case .appleIntelligence: String(localized: "On-device and private. Requires macOS 26 on Apple Silicon.")
+            case .qwenLocal: String(localized: "On-device Gemma model. Private, downloads once.")
+            case .remoteEndpoint: String(localized: "Use an OpenAI-compatible LLM endpoint (e.g. your own server).")
+            case .localCLI: String(localized: "Run your own command (claude, ollama, llm…).")
             }
         }
 

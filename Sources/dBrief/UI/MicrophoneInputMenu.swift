@@ -19,7 +19,7 @@ struct MicrophoneInputMenu: NSViewRepresentable {
         let button = NSPopUpButton(frame: .zero, pullsDown: true)
         button.isBordered = false
         button.font = .systemFont(ofSize: 11)
-        button.setAccessibilityLabel("Microphone input")
+        button.setAccessibilityLabel(String(localized: "Microphone input"))
         let menu = NSMenu()
         menu.font = button.font
         menu.delegate = context.coordinator
@@ -43,7 +43,7 @@ struct MicrophoneInputMenu: NSViewRepresentable {
         var parent: MicrophoneInputMenu
         init(parent: MicrophoneInputMenu) { self.parent = parent }
 
-        var chipTitle: String { parent.activeName ?? "Mic" }
+        var chipTitle: String { parent.activeName ?? String(localized: "Mic") }
 
         func menuNeedsUpdate(_ menu: NSMenu) { rebuild(menu) }
 
@@ -52,7 +52,7 @@ struct MicrophoneInputMenu: NSViewRepresentable {
             let title = NSMenuItem(title: chipTitle, action: nil, keyEquivalent: "")
             title.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: nil)
             menu.addItem(title)
-            add("System Default", uid: "", to: menu)
+            add(String(localized: "System Default"), uid: "", to: menu)
             menu.addItem(.separator())
             for device in AudioInputDeviceManager.availableInputDevices() {
                 add(device.displayName, uid: device.uid, to: menu)

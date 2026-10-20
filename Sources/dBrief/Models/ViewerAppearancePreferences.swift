@@ -7,9 +7,9 @@ enum AppThemeMode: String, Codable, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .light: "Light"
-        case .dark: "Dark"
-        case .system: "Follow System"
+        case .light: String(localized: "Light")
+        case .dark: String(localized: "Dark")
+        case .system: String(localized: "Follow System")
         }
     }
 }
@@ -22,10 +22,10 @@ enum ViewerAppearanceMode: String, Codable, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .light: "Light"
-        case .dark: "Dark"
-        case .paper: "Paper"
-        case .darkPaper: "Dark Paper"
+        case .light: String(localized: "Light")
+        case .dark: String(localized: "Dark")
+        case .paper: String(localized: "Paper")
+        case .darkPaper: String(localized: "Dark Paper")
         }
     }
 
@@ -73,8 +73,8 @@ enum ViewerReadingFont: Hashable, Sendable {
 
     var displayName: String {
         switch self {
-        case .sameAsInterface: "Same as Interface Text"
-        case .systemDefault: "Default"
+        case .sameAsInterface: String(localized: "Same as Interface Text")
+        case .systemDefault: String(localized: "Default")
         case .sanFrancisco: "San Francisco"
         case .arial: "Arial"
         case .calibri: "Calibri"
@@ -92,7 +92,7 @@ enum ViewerReadingFont: Hashable, Sendable {
         case .trebuchetMS: "Trebuchet MS"
         case .verdana: "Verdana"
         case .openDyslexic: "OpenDyslexic"
-        case .monospace: "Monospace"
+        case .monospace: String(localized: "Monospace")
         case .installed(let family): family
         }
     }
@@ -186,9 +186,9 @@ enum ViewerDensity: String, Codable, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .compact: "Compact"
-        case .comfortable: "Comfortable"
-        case .spacious: "Spacious"
+        case .compact: String(localized: "Compact")
+        case .comfortable: String(localized: "Comfortable")
+        case .spacious: String(localized: "Spacious")
         }
     }
 

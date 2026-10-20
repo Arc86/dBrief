@@ -7,7 +7,7 @@ struct PromptImprovementPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PromptInspectorHeading(title: "A better prompt", subtitle: "Describe what you’d like to change.", symbol: "sparkles")
+                PromptInspectorHeading(title: String(localized: "A better prompt"), subtitle: String(localized: "Describe what you’d like to change."), symbol: "sparkles")
                 if let config = session.configuration {
                     VStack(alignment: .leading, spacing: 4) {
                         PromptEngineLabel(name: config.displayName, destination: config.destinationDescription)
@@ -35,7 +35,7 @@ struct PromptImprovementPanel: View {
                 HStack {
                     if session.isImproving {
                         PromptGenerationStatus(progress: session.improvementProgress ?? .generating,
-                            generationTitle: "Generating…", cancel: session.cancelImprovement)
+                            generationTitle: String(localized: "Generating…"), cancel: session.cancelImprovement)
                     } else {
                         Button { Task { await session.improve() } } label: { Label("Suggest improvements", systemImage: "sparkles") }
                             .modifier(PromptPrimaryAction())

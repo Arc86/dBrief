@@ -151,7 +151,7 @@ final class TranscriptChatService {
 
     private var answerExportUnavailable: NSError {
         NSError(domain: "dBrief.AnswerExport", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "This answer is no longer available to export. Wait for it to finish, or reopen the current conversation."])
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "This answer is no longer available to export. Wait for it to finish, or reopen the current conversation.")])
     }
 
     func toggleReadAloud(_ message: ChatMessage) {
@@ -450,7 +450,7 @@ final class TranscriptChatService {
                                             canRetrieve: !chatTurns.isEmpty)
                 messages[assistantIdx].content = "Error: \(error.localizedDescription)"
             } else {
-                streamingNotice = "Response interrupted: \(error.localizedDescription)"
+                streamingNotice = String(localized: "Response interrupted: \(error.localizedDescription)")
             }
         }
     }
@@ -466,9 +466,9 @@ final class TranscriptChatService {
             messages[idx].content = Self.scanStoppedNote
             coverage = nil
             offerScan = false
-            streamingNotice = "Stopped checking the whole recording."
+            streamingNotice = String(localized: "Stopped checking the whole recording.")
         } else {
-            streamingNotice = "Stopped generating."
+            streamingNotice = String(localized: "Stopped generating.")
             if messages.last?.role == .assistant, messages.last?.content.isEmpty == true {
                 messages.removeLast()
             }
@@ -641,21 +641,21 @@ final class TranscriptChatService {
         switch engine {
 
         case .localCLI:
-            return errorStream("Local CLI does not support chat. Choose a chat fallback engine in Settings → AI analysis.")
+            return errorStream(String(localized: "Local CLI does not support chat. Choose a chat fallback engine in Settings → AI analysis."))
 
         case .qwenLocal:
             guard let plugin = localPlugin else {
-                return errorStream("Local AI plugin not available")
+                return errorStream(String(localized: "Local AI plugin not available"))
             }
             return await plugin.chatStream(systemPrompt: systemPrompt, userMessage: userMessage)
 
         case .appleIntelligence:
             // Routed to `appleStream` by `sendInRecordingContext` (fresh session per question).
-            return errorStream("Apple Intelligence chat is not available here")
+            return errorStream(String(localized: "Apple Intelligence chat is not available here"))
 
         case .remoteEndpoint:
             guard let endpoint = appSettings.effectiveDefaultAIEndpoint else {
-                return errorStream("No AI endpoint configured. Add one in Settings → AI analysis.")
+                return errorStream(String(localized: "No AI endpoint configured. Add one in Settings → AI analysis."))
             }
             return aiService.streamChat(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
         }
@@ -775,7 +775,7 @@ final class TranscriptChatService {
 
     private func showIndexingStatus() {
         guard !invalidated else { return }
-        indexingStatus = "Preparing chat for this long recording… (the first time downloads a ~480 MB on-device search model)"
+        indexingStatus = String(localized: "Preparing chat for this long recording… (the first time downloads a ~480 MB on-device search model)")
     }
 
     /// Transcript excerpts for one question: cosine (when the index has vectors)
@@ -823,7 +823,7 @@ final class TranscriptChatService {
             await loadInsightsIfNeeded()
             var attempt: AppleChatAttempt = .first
             while true {
-                guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return errorStream("Cancelled") }
+                guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return errorStream(String(localized: "Cancelled")) }
                 let baseProfile = AppleChatBackend.profile
                 let profile = attempt == .first ? baseProfile : baseProfile.shrunk()
                 let historyText = ChatContextPlanner.compactHistory(history, budget: profile.historyTokens,
@@ -857,7 +857,7 @@ final class TranscriptChatService {
                     let found = await excerpts(for: question, profile: profile)
                     prompt = ChatContextPlanner.freshSessionPrompt(history: historyText, excerpts: found, question: question)
                 }
-                guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return errorStream("Cancelled") }
+                guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return errorStream(String(localized: "Cancelled")) }
                 do {
                     let answer = try await AppleChatBackend.respond(instructions: instructions, prompt: prompt)
                     return AsyncThrowingStream { continuation in
@@ -884,7 +884,7 @@ final class TranscriptChatService {
             }
         }
         #endif
-        return errorStream("Apple Intelligence requires macOS 26 or later")
+        return errorStream(String(localized: "Apple Intelligence requires macOS 26 or later"))
     }
 
     // MARK: - Whole-recording scan ("Check the whole recording")
@@ -931,15 +931,15 @@ final class TranscriptChatService {
     private func scanEngine() throws -> (engine: ScanEngine, profile: ChatEngineProfile) {
         switch resolvedChatEngine {
         case .qwenLocal:
-            guard let plugin = localPlugin else { throw ScanFailure(message: "Local AI plugin not available") }
+            guard let plugin = localPlugin else { throw ScanFailure(message: String(localized: "Local AI plugin not available")) }
             return (.gemma(plugin), .gemma)
         case .appleIntelligence:
             #if canImport(FoundationModels)
             if #available(macOS 26, *) { return (.appleIntelligence, AppleChatBackend.profile) }
             #endif
-            throw ScanFailure(message: "Apple Intelligence requires macOS 26 or later")
+            throw ScanFailure(message: String(localized: "Apple Intelligence requires macOS 26 or later"))
         case .remoteEndpoint, .localCLI:
-            throw ScanFailure(message: "Checking the whole recording needs Gemma or Apple Intelligence as the chat engine.")
+            throw ScanFailure(message: String(localized: "Checking the whole recording needs Gemma or Apple Intelligence as the chat engine."))
         }
     }
 
@@ -975,7 +975,7 @@ final class TranscriptChatService {
             for part in parts {
                 try checkScan(sendID)
                 scanProgress = (part.index, part.total)
-                scanStatus = "Checking part \(part.index) of \(part.total)…"
+                scanStatus = String(localized: "Checking part \(part.index) of \(part.total)…")
                 let texts: [String]
                 switch engine {
                 case .gemma(let plugin):
@@ -1004,7 +1004,7 @@ final class TranscriptChatService {
 
             // Reduce: answer from the findings, per group when they don't fit one prompt.
             scanProgress = nil
-            scanStatus = "Writing the answer from what was found…"
+            scanStatus = String(localized: "Writing the answer from what was found…")
             var budget = profile.scanFindingsTokens
             var answer = ""
             var evidenceShortened = false
@@ -1047,15 +1047,15 @@ final class TranscriptChatService {
             }
             try checkScan(sendID)
             if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                throw ScanFailure(message: "The model returned an empty answer.")
+                throw ScanFailure(message: String(localized: "The model returned an empty answer."))
             }
             publish(answer)
             coverage = .full
-            var note = "Checked the whole recording."
+            var note = String(localized: "Checked the whole recording.")
             if declinedParts > 0 {
-                note += " Apple Intelligence declined to read \(declinedParts) of \(parts.count) parts, so anything in them may be missing."
+                note += " " + String(localized: "Apple Intelligence declined to read \(declinedParts) of \(parts.count) parts, so anything in them may be missing.")
             }
-            if evidenceShortened { note += " Some long evidence was shortened." }
+            if evidenceShortened { note += " " + String(localized: "Some long evidence was shortened.") }
             scanFootnote = (assistantID, note)
         } catch {
             guard !invalidated, !Task.isCancelled, activeSendID == sendID,
@@ -1151,7 +1151,7 @@ final class TranscriptChatService {
                 do {
                     if let text = try await ask(piece) { texts.append(text) } else { declined = true }
                 } catch where !(error is CancellationError) && !Task.isCancelled {
-                    throw ScanFailure(message: "Checking the whole recording stopped at part \(part.index) of \(part.total). "
+                    throw ScanFailure(message: String(localized: "Checking the whole recording stopped at part \(part.index) of \(part.total).") + " "
                                       + AppleChatBackend.userMessage(for: error, canScan: false))
                 }
             }

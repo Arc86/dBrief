@@ -58,7 +58,7 @@ struct SpokenSummaryPlayerView: View {
                 Text("Spoken summary")
                     .uiFont(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
-                Text(recordingTitle ?? "This recording")
+                Text(recordingTitle ?? String(localized: "This recording"))
                     .uiFont(.system(size: 11))
                     .foregroundStyle(palette.secondary.color)
                     .lineLimit(1)
@@ -114,9 +114,9 @@ struct SpokenSummaryPlayerView: View {
 
     private var progressSteps: some View {
         VStack(alignment: .leading, spacing: 12) {
-            step("Write a spoken script", index: 0)
-            step("Prepare the voice", index: 1, progress: voiceProgress)
-            step("Generate audio", index: 2)
+            step(String(localized: "Write a spoken script"), index: 0)
+            step(String(localized: "Prepare the voice"), index: 1, progress: voiceProgress)
+            step(String(localized: "Generate audio"), index: 2)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .contain)
@@ -151,7 +151,7 @@ struct SpokenSummaryPlayerView: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
-                    Text(state == .active ? "\(title)…" : title)
+                    Text(state == .active ? String(localized: "\(title)…") : title)
                         .uiFont(.system(size: 13, weight: state == .active ? .medium : .regular))
                         .foregroundStyle(state == .active ? palette.heading.color : palette.secondary.color)
                     if state == .active, let progress {

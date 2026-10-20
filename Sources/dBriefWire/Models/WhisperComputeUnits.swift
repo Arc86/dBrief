@@ -8,9 +8,9 @@ public enum WhisperComputeUnits: String, CaseIterable, Codable, Hashable, Sendab
 
     public var displayName: String {
         switch self {
-        case .cpuAndNeuralEngine: "Neural Engine"
-        case .cpuAndGPU: "Metal GPU"
-        case .all: "All (GPU + Neural Engine)"
+        case .cpuAndNeuralEngine: String(localized: "Neural Engine")
+        case .cpuAndGPU: String(localized: "Metal GPU")
+        case .all: String(localized: "All (GPU + Neural Engine)")
         }
     }
 
@@ -18,7 +18,7 @@ public enum WhisperComputeUnits: String, CaseIterable, Codable, Hashable, Sendab
     /// the others keep their technical names for users who know them.
     public var friendlyName: String {
         switch self {
-        case .all: "Automatic"
+        case .all: String(localized: "Automatic")
         default: displayName
         }
     }

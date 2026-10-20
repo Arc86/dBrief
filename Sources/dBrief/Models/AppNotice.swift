@@ -40,11 +40,11 @@ enum NoticeAction: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .openQueue: "Show Queue & Recovery"
-        case .reviewIntegrations: "Integrations…"
-        case .openRecording: "Open Recording"
-        case .retryCaptureRecovery: "Retry Recovery"
-        case .showRecoveryFiles: "Show Files"
+        case .openQueue: String(localized: "Show Queue & Recovery")
+        case .reviewIntegrations: String(localized: "Integrations…")
+        case .openRecording: String(localized: "Open Recording")
+        case .retryCaptureRecovery: String(localized: "Retry Recovery")
+        case .showRecoveryFiles: String(localized: "Show Files")
         }
     }
 }

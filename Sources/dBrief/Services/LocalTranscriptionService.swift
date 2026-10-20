@@ -137,11 +137,11 @@ enum LocalTranscriptionError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .languageNotSupported: "Speech recognition not available for this language."
-        case .notAvailable: "On-device speech recognition is not available."
-        case .ffmpegNotFound: "ffmpeg is required to transcribe .ogg/.opus files. Install ffmpeg and try again."
-        case .conversionFailed(let message): "Failed to convert audio for transcription. \(message)"
-        case .timeout: "Speech recognition timed out. Try a shorter clip or external transcription."
+        case .languageNotSupported: String(localized: "Speech recognition not available for this language.")
+        case .notAvailable: String(localized: "On-device speech recognition is not available.")
+        case .ffmpegNotFound: String(localized: "ffmpeg is required to transcribe .ogg/.opus files. Install ffmpeg and try again.")
+        case .conversionFailed(let message): String(localized: "Failed to convert audio for transcription. \(message)")
+        case .timeout: String(localized: "Speech recognition timed out. Try a shorter clip or external transcription.")
         }
     }
 }

@@ -118,11 +118,11 @@ actor RecordingFinalizer {
                 try? fileManager.removeItem(at: masterURL)
                 throw error
             } catch {
-                warnings.append("ffmpeg merge failed; using one raw CAF as the master. \(error.localizedDescription)")
+                warnings.append(String(localized: "ffmpeg merge failed; using one raw CAF as the master. \(error.localizedDescription)"))
                 try fallbackPromoteTrack(tracks: tracks, targetURL: masterURL)
             }
         } else {
-            warnings.append("ffmpeg not found. Skipped merge and AAC encode; master is raw CAF.")
+            warnings.append(String(localized: "ffmpeg not found. Skipped merge and AAC encode; master is raw CAF."))
             try fallbackPromoteTrack(tracks: tracks, targetURL: masterURL)
         }
 
@@ -135,13 +135,13 @@ actor RecordingFinalizer {
                         masterURL: masterURL
                     )
                     if segmentURLs.isEmpty {
-                        warnings.append("Segmentation produced no output files.")
+                        warnings.append(String(localized: "Segmentation produced no output files."))
                     }
                 } catch {
-                    warnings.append("Segmentation failed. \(error.localizedDescription)")
+                    warnings.append(String(localized: "Segmentation failed. \(error.localizedDescription)"))
                 }
             } else {
-                warnings.append("Segmentation skipped because ffmpeg is unavailable.")
+                warnings.append(String(localized: "Segmentation skipped because ffmpeg is unavailable."))
             }
         }
 
@@ -164,7 +164,7 @@ actor RecordingFinalizer {
         // the caller can retry from the untouched tracks on the next launch.
         guard hasNonEmptyFile(masterURL), hasNonEmptyFile(metadataURL) else {
             throw RecordingFinalizerError.ffmpegFailed(
-                "Finalized output verification failed; raw capture was retained."
+                String(localized: "Finalized output verification failed; raw capture was retained.")
             )
         }
         removeCaptureTracks(tracks)
@@ -216,7 +216,7 @@ actor RecordingFinalizer {
         )
 
         guard fileManager.fileExists(atPath: sourceURL.path) else {
-            throw RecordingFinalizerError.ffmpegFailed("Imported audio file is missing: \(sourceURL.lastPathComponent)")
+            throw RecordingFinalizerError.ffmpegFailed(String(localized: "Imported audio file is missing: \(sourceURL.lastPathComponent)"))
         }
         // Copy first and consume the source only after metadata is durable. A
         // move here made a metadata-write failure strand the only known source.
@@ -229,13 +229,13 @@ actor RecordingFinalizer {
                 do {
                     segmentURLs = try await createSegments(ffmpegPath: ffmpegPath, masterURL: masterURL)
                     if segmentURLs.isEmpty {
-                        warnings.append("Segmentation produced no output files.")
+                        warnings.append(String(localized: "Segmentation produced no output files."))
                     }
                 } catch {
-                    warnings.append("Segmentation failed. \(error.localizedDescription)")
+                    warnings.append(String(localized: "Segmentation failed. \(error.localizedDescription)"))
                 }
             } else {
-                warnings.append("Segmentation skipped because ffmpeg is unavailable.")
+                warnings.append(String(localized: "Segmentation skipped because ffmpeg is unavailable."))
             }
         }
 
@@ -254,7 +254,7 @@ actor RecordingFinalizer {
         try Task.checkCancellation()
         guard hasNonEmptyFile(masterURL), hasNonEmptyFile(metadataURL) else {
             throw RecordingFinalizerError.ffmpegFailed(
-                "Imported output verification failed; the source was retained."
+                String(localized: "Imported output verification failed; the source was retained.")
             )
         }
         try? fileManager.removeItem(at: sourceURL)
@@ -356,7 +356,7 @@ actor RecordingFinalizer {
                 outputURL.path,
             ]
         case (nil, nil):
-            throw RecordingFinalizerError.ffmpegFailed("No input tracks to finalize.")
+            throw RecordingFinalizerError.ffmpegFailed(String(localized: "No input tracks to finalize."))
         }
 
         // Stream ffmpeg's -progress output into a determinate progress fraction when
@@ -497,7 +497,7 @@ actor RecordingFinalizer {
         } else if let system = tracks.systemURL, hasAudioContent(system) {
             source = system
         } else {
-            throw RecordingFinalizerError.ffmpegFailed("No usable track for fallback.")
+            throw RecordingFinalizerError.ffmpegFailed(String(localized: "No usable track for fallback."))
         }
         if fileManager.fileExists(atPath: targetURL.path) {
             try fileManager.removeItem(at: targetURL)
@@ -614,11 +614,11 @@ enum RecordingFinalizerError: Error, LocalizedError {
         case .ffmpegFailed(let stderr):
             let message = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             if message.isEmpty {
-                return "ffmpeg command failed."
+                return String(localized: "ffmpeg command failed.")
             }
-            return "ffmpeg command failed: \(message)"
+            return String(localized: "ffmpeg command failed: \(message)")
         case .processFailed(let status, let stderrByteCount):
-            return "Audio finalization failed with status \(status) after producing \(stderrByteCount) bytes of diagnostic output. The original recording tracks were preserved."
+            return String(localized: "Audio finalization failed with status \(status) after producing \(stderrByteCount) bytes of diagnostic output. The original recording tracks were preserved.")
         case .processRunner(let error):
             return error.localizedDescription
         }

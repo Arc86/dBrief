@@ -25,7 +25,7 @@ struct ReadingFontPicker: View {
             }
             ForEach(ViewerFonts.choices(keeping: selection, includingSameAsInterface: includesSameAsInterface),
                     id: \.self) { font in
-                Text(ViewerFonts.isAvailable(font) ? font.displayName : "\(font.displayName) (Not Installed)")
+                Text(ViewerFonts.isAvailable(font) ? font.displayName : String(localized: "\(font.displayName) (Not Installed)"))
                     .tag(Choice.font(font))
             }
             Divider()

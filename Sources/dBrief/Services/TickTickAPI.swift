@@ -37,15 +37,15 @@ enum TickTickError: LocalizedError, Equatable, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: "TickTick isn't available in this build."
-        case .notSignedIn: "Sign in to TickTick first."
-        case .stateMismatch: "The TickTick sign-in response didn't match this request. Try again."
-        case .missingCode: "TickTick didn't return a sign-in code. Try again."
-        case .unauthorized: "Your TickTick sign-in expired. Sign in again."
-        case .invalidResponse: "TickTick returned a response dBrief couldn't read."
-        case .http(let code): "TickTick returned an error (\(code))."
-        case .callbackPortUnavailable: "dBrief couldn't listen for the TickTick sign-in on port 47213. Quit the app using it and try again."
-        case .signInTimedOut: "The TickTick sign-in wasn't finished in time. Try again."
+        case .notConfigured: String(localized: "TickTick isn't available in this build.")
+        case .notSignedIn: String(localized: "Sign in to TickTick first.")
+        case .stateMismatch: String(localized: "The TickTick sign-in response didn't match this request. Try again.")
+        case .missingCode: String(localized: "TickTick didn't return a sign-in code. Try again.")
+        case .unauthorized: String(localized: "Your TickTick sign-in expired. Sign in again.")
+        case .invalidResponse: String(localized: "TickTick returned a response dBrief couldn't read.")
+        case .http(let code): String(localized: "TickTick returned an error (\(code)).")
+        case .callbackPortUnavailable: String(localized: "dBrief couldn't listen for the TickTick sign-in on port 47213. Quit the app using it and try again.")
+        case .signInTimedOut: String(localized: "The TickTick sign-in wasn't finished in time. Try again.")
         }
     }
 }

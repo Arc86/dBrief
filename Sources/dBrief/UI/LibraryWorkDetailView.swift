@@ -16,19 +16,19 @@ struct LibraryWorkDetailView: View {
 
     private var actionTitle: String {
         switch item.target {
-        case .queue: "Process Now"
-        case .recovery: "Resume Processing"
-        case .delivery: "Review Deliveries"
-        case .capture: "Recover Audio"
-        case .reprocess: "Resume Reprocess"
+        case .queue: String(localized: "Process Now")
+        case .recovery: String(localized: "Resume Processing")
+        case .delivery: String(localized: "Review Deliveries")
+        case .capture: String(localized: "Recover Audio")
+        case .reprocess: String(localized: "Resume Reprocess")
         }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(item.title).uiFont(.title).textSelection(.enabled)
-                LabeledContent("Status", value: item.status)
+                Text(item.displayTitle).uiFont(.title).textSelection(.enabled)
+                LabeledContent("Status", value: item.displayStatus)
                 LabeledContent("Date", value: item.date.formatted(date: .abbreviated, time: .shortened))
                 if !item.associatedApp.isEmpty {
                     LabeledContent("Application", value: item.associatedApp)

@@ -96,7 +96,7 @@ struct TaskDestinationPicker: View {
                         Text(option.detail.map { "\(option.name) · \($0)" } ?? option.name).tag(option.id)
                     }
                     if let savedID, !options.contains(where: { $0.id == savedID }) {
-                        Text(savedName ?? "Unavailable list").tag(savedID)
+                        Text(savedName ?? String(localized: "Unavailable list")).tag(savedID)
                     }
                 }
                 .labelsHidden()
@@ -128,9 +128,9 @@ struct TaskDestinationPicker: View {
 
     private var pickerTitle: String {
         switch service {
-        case .tickTick: "List"
-        case .todoist: "Project"
-        case .notion: "Destination"
+        case .tickTick: String(localized: "List")
+        case .todoist: String(localized: "Project")
+        case .notion: String(localized: "Destination")
         }
     }
 
@@ -191,7 +191,7 @@ struct TaskDestinationPicker: View {
                 return try await NotionClient().search(token: token).map { destination in
                     let type: NotionParentType = destination.kind == .dataSource ? .dataSource : .page
                     return .init(id: notionTag(type, destination.id), name: destination.name,
-                                 detail: type == .dataSource ? "Database" : "Page")
+                                 detail: type == .dataSource ? String(localized: "Database") : String(localized: "Page"))
                 }
             }
         }

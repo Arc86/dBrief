@@ -44,7 +44,8 @@ struct RecordingListSectionHeader<Actions: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(title)
-            .accessibilityValue([count.map { "\($0)" }, subtitle, expanded ? "expanded" : "collapsed"]
+            .accessibilityValue([count.map { "\($0)" }, subtitle,
+                                 expanded ? String(localized: "expanded") : String(localized: "collapsed")]
                 .compactMap { $0 }.joined(separator: ", "))
             .help(expanded ? "Collapse \(title)" : "Expand \(title)")
             actions
@@ -117,7 +118,7 @@ struct RecordingListPlayButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(isPlaying ? "Pause" : "Play") \(title)")
+        .accessibilityLabel(isPlaying ? "Pause \(title)" : "Play \(title)")
         .help("Play or pause recording")
     }
 }

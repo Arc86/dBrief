@@ -353,7 +353,7 @@ actor CalendarCLIService {
             return try await transport.list(window: window, config: config)
         } catch is CancellationError {
             return CalendarCLIListResult(entries: [], completeness: .blocked,
-                                         message: "The connection test was cancelled.")
+                                         message: String(localized: "The connection test was cancelled."))
         } catch {
             Logger.calendar.error("Calendar CLI connection test failed: \(error.localizedDescription)")
             return CalendarCLIListResult(entries: [], completeness: .blocked,
@@ -402,16 +402,16 @@ enum CalendarCLIServiceError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .attendeePolicyForbids:
-            "Attendee loading is set to Never for the Claude CLI calendar source."
+            String(localized: "Attendee loading is set to Never for the Claude CLI calendar source.")
         case .identityMismatch:
-            "The fetched roster did not match the requested meeting."
+            String(localized: "The fetched roster did not match the requested meeting.")
         case .refreshFailed:
-            "The calendar list could not be refreshed."
+            String(localized: "The calendar list could not be refreshed.")
         }
     }
 }
 
 /// Bounded failure text for probes: never raw stderr or connector output.
 enum CalendarCLIProbeFailure {
-    static let text = "The calendar CLI call failed. Check the connection in Settings."
+    static var text: String { String(localized: "The calendar CLI call failed. Check the connection in Settings.") }
 }

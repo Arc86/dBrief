@@ -97,7 +97,7 @@ private struct ReprocessingEditor: View {
     private var validationError: String? {
         if options.requiresAnalysis, case .custom(let code) = options.outputLanguage,
            code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "Enter an AI output language code."
+            return String(localized: "Enter an AI output language code.")
         }
         do { try options.validate(); return nil } catch { return error.localizedDescription }
     }
@@ -107,7 +107,7 @@ private struct ReprocessingEditor: View {
             PanelWindowHeader(
                 title: options.operation.title,
                 subtitle: recording.generatedTitle ?? recording.meetingTitleDraft,
-                detail: usingPrevious ? "Using previous attempt settings" : "Using current defaults"
+                detail: usingPrevious ? String(localized: "Using previous attempt settings") : String(localized: "Using current defaults")
             )
             .padding(.horizontal, 24)
             .padding(.top, 22)
@@ -118,14 +118,14 @@ private struct ReprocessingEditor: View {
                     if options.requiresTranscription { transcriptionControls }
                     if options.requiresAnalysis { analysisControls }
                     if options.operation == .speakers {
-                        PanelCard(title: "Speakers") {
-                            PanelNote("Detect speakers on-device using the original audio. Transcript words and timings are preserved; existing speaker assignments and names are replaced.")
+                        PanelCard(title: String(localized: "Speakers")) {
+                            PanelNote(String(localized: "Detect speakers on-device using the original audio. Transcript words and timings are preserved; existing speaker assignments and names are replaced."))
                         }
                     }
                     destinationDisclosure
-                    PanelNote("Current results stay readable while processing; editing is temporarily paused. Successful results replace the current set, with one previous set available to restore. Changes apply only to this attempt.")
+                    PanelNote(String(localized: "Current results stay readable while processing; editing is temporarily paused. Successful results replace the current set, with one previous set available to restore. Changes apply only to this attempt."))
                     if discardingRunID != nil {
-                        PanelNote("Start also discards this recording's unfinished run in Queue & Recovery. Its saved progress can't be resumed afterwards.", tone: .warning)
+                        PanelNote(String(localized: "Start also discards this recording's unfinished run in Queue & Recovery. Its saved progress can't be resumed afterwards."), tone: .warning)
                     }
                     if let message = error ?? validationError {
                         PanelNote(message, tone: .danger).textSelection(.enabled)
@@ -176,11 +176,11 @@ private struct ReprocessingEditor: View {
     }
 
     @ViewBuilder private var transcriptionControls: some View {
-        PanelCard(title: "Transcription") {
+        PanelCard(title: String(localized: "Transcription")) {
             if options.engine == .appleSpeech {
-                AppleSpeechLanguagePicker(selection: $options.spokenLanguage, title: "Spoken language")
+                AppleSpeechLanguagePicker(selection: $options.spokenLanguage, title: String(localized: "Spoken language"))
             } else {
-                PanelRow(label: "Spoken language") {
+                PanelRow(label: String(localized: "Spoken language")) {
                     Picker("Spoken language", selection: $options.spokenLanguage) {
                         Text(options.engine == .appleSpeech ? "Automatic (system language)" : "Automatic detection").tag("")
                         ForEach(languageCodes, id: \.self) { code in
@@ -190,41 +190,41 @@ private struct ReprocessingEditor: View {
                     .labelsHidden().fixedSize()
                 }
             }
-            PanelRow(label: "Transcription") {
+            PanelRow(label: String(localized: "Transcription")) {
                 Picker("Transcription", selection: transcriptionChoice) {
                     Text("On this Mac").tag(ServiceChoice.onThisMac)
-                    endpointSection("Remote services", settings.transcriptionEndpoints,
+                    endpointSection(String(localized: "Remote services"), settings.transcriptionEndpoints,
                                     isSelected: options.engine == .remoteEndpoint, saved: options.transcriptionEndpoint)
                 }
                 .labelsHidden().fixedSize()
             }
             switch options.engine {
             case .localWhisper:
-                PanelRow(label: "Whisper model") { Text(WhisperModelInfo.parse(options.whisperModelName).displayName) }
-                PanelNote("Models download on first use.")
+                PanelRow(label: String(localized: "Whisper model")) { Text(WhisperModelInfo.parse(options.whisperModelName).displayName) }
+                PanelNote(String(localized: "Models download on first use."))
             case .parakeetLocal:
-                PanelRow(label: "Parakeet model") { Text(ParakeetModelInfo.find(options.parakeetModelVariant).displayName) }
-                PanelNote("Parakeet detects language automatically. v2 supports English; v3 supports 25 European languages. The spoken language selection does not force Parakeet decoding.")
+                PanelRow(label: String(localized: "Parakeet model")) { Text(ParakeetModelInfo.find(options.parakeetModelVariant).displayName) }
+                PanelNote(String(localized: "Parakeet detects language automatically. v2 supports English; v3 supports 25 European languages. The spoken language selection does not force Parakeet decoding."))
             case .remoteEndpoint:
                 if options.transcriptionEndpoint == nil {
-                    PanelNote("No remote transcription service is configured. Add one in Settings → Transcription.")
+                    PanelNote(String(localized: "No remote transcription service is configured. Add one in Settings → Transcription."))
                 }
             case .appleSpeech:
-                PanelNote("Uses Apple's speech model for the selected language.")
+                PanelNote(String(localized: "Uses Apple's speech model for the selected language."))
             }
             if options.engine != .remoteEndpoint {
                 Button("Change model…") { showWhisperComparison = true }
                     .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
             }
             MenuPanelHairline()
-            PanelRow(label: "Detect speakers") {
+            PanelRow(label: String(localized: "Detect speakers")) {
                 Toggle("Detect speakers", isOn: $options.diarizationEnabled).labelsHidden().controlSize(.mini)
             }
-            PanelRow(label: "Regenerate AI analysis") {
+            PanelRow(label: String(localized: "Regenerate AI analysis")) {
                 Toggle("Regenerate AI analysis", isOn: $options.regenerateAI).labelsHidden().controlSize(.mini)
             }
             if !options.regenerateAI {
-                PanelNote("Existing analysis will be kept and marked as based on the previous transcript.")
+                PanelNote(String(localized: "Existing analysis will be kept and marked as based on the previous transcript."))
             }
         }
     }
@@ -248,29 +248,29 @@ private struct ReprocessingEditor: View {
     }
 
     private var analysisControls: some View {
-        PanelCard(title: "AI analysis") {
-            PanelRow(label: "AI engine") {
+        PanelCard(title: String(localized: "AI analysis")) {
+            PanelRow(label: String(localized: "AI engine")) {
                 Picker("AI engine", selection: analysisChoice) {
                     ForEach(AppSettings.AIEngine.allCases.filter { $0 != .remoteEndpoint }, id: \.self) { engine in
                         Text(engine.displayName).tag(ServiceChoice.local(engine))
                     }
-                    endpointSection("Remote endpoints", settings.aiEndpoints,
+                    endpointSection(String(localized: "Remote endpoints"), settings.aiEndpoints,
                                     isSelected: options.aiEngine == .remoteEndpoint, saved: options.aiEndpoint)
                 }
                 .labelsHidden().fixedSize()
             }
             if options.aiEngine == .remoteEndpoint && options.aiEndpoint == nil {
-                PanelNote("No remote AI endpoint is configured. Add one in Settings → AI analysis.")
+                PanelNote(String(localized: "No remote AI endpoint is configured. Add one in Settings → AI analysis."))
             }
             if supportsCalendarReload {
-                PanelRow(label: "Refresh selected calendar attendees") {
+                PanelRow(label: String(localized: "Refresh selected calendar attendees")) {
                     Toggle("Refresh selected calendar attendees", isOn: Binding(
                         get: { options.loadCalendarParticipants == true },
                         set: { options.loadCalendarParticipants = $0 }))
                     .labelsHidden().controlSize(.mini)
                 }
             }
-            PanelRow(label: "AI output language") {
+            PanelRow(label: String(localized: "AI output language")) {
                 Picker("AI output language", selection: outputLanguageSelection) {
                     Text("Match transcript").tag("match")
                     Text("English").tag("en")
@@ -344,26 +344,26 @@ private struct ReprocessingEditor: View {
     }
 
     private var destinationDisclosure: some View {
-        PanelCard(title: "Processing destinations") {
+        PanelCard(title: String(localized: "Processing destinations")) {
             if options.requiresTranscription && options.engine == .remoteEndpoint {
-                PanelRow(label: "Audio") { Text(destination(options.transcriptionEndpoint)) }
+                PanelRow(label: String(localized: "Audio")) { Text(destination(options.transcriptionEndpoint)) }
             }
             if options.requiresAnalysis && options.aiEngine == .remoteEndpoint {
-                PanelRow(label: "Transcript") { Text(destination(options.aiEndpoint)) }
+                PanelRow(label: String(localized: "Transcript")) { Text(destination(options.aiEndpoint)) }
             }
             if options.requiresAnalysis && options.aiEngine == .localCLI {
-                PanelNote("Transcript is passed to your configured Local CLI command, which may use an external service.")
+                PanelNote(String(localized: "Transcript is passed to your configured Local CLI command, which may use an external service."))
             }
             if options.requiresTranscription && !options.vocabulary.isEmpty && options.spellingEngine == .remoteEndpoint {
-                PanelRow(label: "Vocabulary correction") { Text(destination(options.aiEndpoint)) }
+                PanelRow(label: String(localized: "Vocabulary correction")) { Text(destination(options.aiEndpoint)) }
             }
-            PanelNote("Speaker detection runs on this Mac. Integration delivery and exports are separate actions.")
+            PanelNote(String(localized: "Speaker detection runs on this Mac. Integration delivery and exports are separate actions."))
         }
     }
 
     private func destination(_ endpoint: Endpoint?) -> String {
-        guard let endpoint else { return "No endpoint configured" }
-        let host = URL(string: endpoint.baseURL)?.host ?? "configured endpoint"
+        guard let endpoint else { return String(localized: "No endpoint configured") }
+        let host = URL(string: endpoint.baseURL)?.host ?? String(localized: "configured endpoint")
         return "\(endpoint.name) (\(host))"
     }
 

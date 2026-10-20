@@ -8,8 +8,8 @@ struct FocusReaderContent {
 
         var title: String {
             switch self {
-            case .notes: "Notes"
-            case .transcript: "Transcript"
+            case .notes: String(localized: "Notes")
+            case .transcript: String(localized: "Transcript")
             }
         }
     }
@@ -52,7 +52,7 @@ struct FocusReaderContent {
 
     private static func durationText(_ seconds: TimeInterval) -> String {
         let minutes = max(1, Int(seconds / 60))
-        return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
+        return minutes >= 60 ? String(localized: "\(minutes / 60) h \(minutes % 60) min") : String(localized: "\(minutes) min")
     }
 }
 

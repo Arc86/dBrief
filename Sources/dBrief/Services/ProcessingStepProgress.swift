@@ -4,7 +4,7 @@ import dBriefWire
 /// Shown while a long recording is analyzed in parts (map-reduce), which takes
 /// roughly twice as long as a single pass.
 enum LongAnalysisNotice {
-    static let text = "Long recordings take longer to analyze"
+    static var text: String { String(localized: "Long recordings take longer to analyze") }
 }
 
 /// MainActor bridge for callbacks that may arrive after their backend has returned.
@@ -66,14 +66,14 @@ extension ProcessingStepProgress {
             case .idle:
                 break
             case .transcribing:
-                step.name = "Transcribing (Parakeet)"
+                step.name = String(localized: "Transcribing (Parakeet)")
                 if job.transcriptionStartedAt == nil {
                     job.transcriptionStartedAt = Date()
                 }
             case .newSegments:
                 break // Parakeet doesn't produce live segments
             case .diarizing:
-                step.name = "Identifying speakers"
+                step.name = String(localized: "Identifying speakers")
                 job.transcriptionStartedAt = nil
                 step.progress = nil
                 step.detail = nil
@@ -83,12 +83,12 @@ extension ProcessingStepProgress {
                 step.progress = progress
                 switch stage {
                 case .parakeetModel:
-                    step.name = "Downloading Parakeet model…"
+                    step.name = String(localized: "Downloading Parakeet model…")
                 case .parakeetModelLoading:
-                    step.name = "Loading Parakeet model…"
+                    step.name = String(localized: "Loading Parakeet model…")
                     step.progress = nil
                 case .speakerKitModel:
-                    step.name = "Downloading speaker model…"
+                    step.name = String(localized: "Downloading speaker model…")
                 default:
                     break
                 }
@@ -103,7 +103,7 @@ extension ProcessingStepProgress {
             case .idle:
                 break
             case .transcribing:
-                step.name = "Transcribing (Local WhisperKit)"
+                step.name = String(localized: "Transcribing (Local WhisperKit)")
                 if job.transcriptionStartedAt == nil {
                     job.transcriptionStartedAt = Date()
                 }
@@ -118,54 +118,55 @@ extension ProcessingStepProgress {
                 }
                 return // don't update step name
             case .diarizing:
-                step.name = "Identifying speakers"
+                step.name = String(localized: "Identifying speakers")
                 job.transcriptionStartedAt = nil
                 step.progress = nil
                 step.detail = nil
             case .analyzing:
-                step.name = "Analyzing transcript (Gemma 4 E4B local)"
+                step.name = String(localized: "Analyzing transcript (Gemma 4 E4B local)")
                 step.progress = nil
                 step.detail = nil
             case let .analyzingPart(index, total):
-                step.name = "Analyzing long recording in \(total) parts" // engine-neutral: Apple Intelligence emits it too (Task 8)
-                step.detail = (index > total ? "Combining \(total) parts" : "Part \(index) of \(total)")
-                    + " · \(LongAnalysisNotice.text)"
+                step.name = String(localized: "Analyzing long recording in \(total) parts") // engine-neutral: Apple Intelligence emits it too (Task 8)
+                step.detail = index > total
+                    ? String(localized: "Combining \(total) parts · \(LongAnalysisNotice.text)")
+                    : String(localized: "Part \(index) of \(total) · \(LongAnalysisNotice.text)")
                 step.progress = min(1, max(0, Double(index - 1) / Double(max(total, 1) + 1)))
             case .downloading(let progress, let stage):
                 step.progress = progress
                 switch stage {
                 case .whisperModel:
-                    step.name = "Downloading WhisperKit model…"
+                    step.name = String(localized: "Downloading WhisperKit model…")
                 case .whisperModelLoading:
-                    step.name = "Loading WhisperKit model…"
+                    step.name = String(localized: "Loading WhisperKit model…")
                     step.progress = nil // loading is indeterminate
                 case .llmModelPreparing:
-                    step.name = "Preparing Gemma model…"
+                    step.name = String(localized: "Preparing Gemma model…")
                     step.progress = nil
                 case .llmModelLoading:
-                    step.name = "Loading Gemma model…"
+                    step.name = String(localized: "Loading Gemma model…")
                     step.progress = nil
                 case .llmModel:
-                    step.name = "Downloading Gemma model"
+                    step.name = String(localized: "Downloading Gemma model")
                 case .speakerKitModel:
-                    step.name = "Downloading SpeakerKit model"
+                    step.name = String(localized: "Downloading SpeakerKit model")
                 case .parakeetModel:
-                    step.name = "Downloading Parakeet model…"
+                    step.name = String(localized: "Downloading Parakeet model…")
                 case .parakeetModelLoading:
-                    step.name = "Loading Parakeet model…"
+                    step.name = String(localized: "Loading Parakeet model…")
                     step.progress = nil
                 case .ttsModel:
-                    step.name = "Downloading TTS model…"
+                    step.name = String(localized: "Downloading TTS model…")
                 case .ttsModelLoading:
-                    step.name = "Loading TTS model…"
+                    step.name = String(localized: "Loading TTS model…")
                     step.progress = nil
                 case .kokoroTTSModel:
-                    step.name = "Downloading Kokoro voice model…"
+                    step.name = String(localized: "Downloading Kokoro voice model…")
                 case .kokoroTTSModelLoading:
-                    step.name = "Loading Kokoro voice model…"
+                    step.name = String(localized: "Loading Kokoro voice model…")
                     step.progress = nil
                 case .embeddingModel:
-                    step.name = "Downloading search model…"
+                    step.name = String(localized: "Downloading search model…")
                 }
             }
         }

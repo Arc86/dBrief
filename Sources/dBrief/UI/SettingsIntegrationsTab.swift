@@ -78,7 +78,7 @@ struct SettingsIntegrationsTab: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             let state = state(for: destination)
-            SettingsStatusPill(LocalizedStringKey(state.title), kind: state.kind)
+            SettingsStatusPill(verbatim: state.title, kind: state.kind)
             Image(systemName: "chevron.right")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(palette.secondary.color)
@@ -123,33 +123,41 @@ struct SettingsIntegrationsTab: View {
     }
 
     private func state(for destination: IntegrationDestination) -> (title: String, kind: SettingsStatusPill.Kind) {
-        guard isEnabled(destination) else { return ("Off", .neutral) }
-        return needsSetup(destination) ? ("Needs setup", .warning) : ("On", .success)
+        guard isEnabled(destination) else { return (String(localized: "Off"), .neutral) }
+        return needsSetup(destination) ? (String(localized: "Needs setup"), .warning) : (String(localized: "On"), .success)
     }
 
     private func summary(for destination: IntegrationDestination) -> String? {
         guard isEnabled(destination) else { return nil }
         switch destination {
         case .obsidian:
-            guard let vault = appSettings.obsidianVaultURL else { return "Choose a vault" }
+            guard let vault = appSettings.obsidianVaultURL else { return String(localized: "Choose a vault") }
             return "\(vault.lastPathComponent) · \(appSettings.obsidianFolderDisplayName(relativePath: appSettings.obsidianDefaultFolderRelativePath))"
         case .appleNotes:
             let folder = appSettings.integrations.appleNotes.folderName
-            return folder.isEmpty ? "Default folder" : "Folder “\(folder)”"
+            return folder.isEmpty ? String(localized: "Default folder") : String(localized: "Folder “\(folder)”")
         case .appleReminders:
             let list = appSettings.integrations.appleReminders.listName
-            return "One reminder per action item · " + (list.isEmpty ? "default list" : "list “\(list)”")
+            return list.isEmpty
+                ? String(localized: "One reminder per action item · default list")
+                : String(localized: "One reminder per action item · list “\(list)”")
         case .webhook:
             let host = URLComponents(string: appSettings.integrations.webhook.url)?.host
-            return host.map { "\($0) · \(appSettings.integrations.webhook.fields.count) fields" } ?? "Add a URL"
+            let fieldCount = appSettings.integrations.webhook.fields.count
+            return host.map { String(localized: "\($0) · \(fieldCount) fields") } ?? String(localized: "Add a URL")
         case .tickTick:
-            return "One task per action item · list “\(appSettings.integrations.tickTick.projectName ?? "Inbox")”"
+            let list = appSettings.integrations.tickTick.projectName ?? String(localized: "Inbox")
+            return String(localized: "One task per action item · list “\(list)”")
         case .todoist:
-            return "One task per action item · project “\(appSettings.integrations.todoist.projectName ?? "Inbox")”"
+            let project = appSettings.integrations.todoist.projectName ?? String(localized: "Inbox")
+            return String(localized: "One task per action item · project “\(project)”")
         case .notion:
             let notion = appSettings.integrations.notion
-            guard !notion.parentID.isEmpty else { return "Choose a page or database" }
-            return "\(notion.parentType == .dataSource ? "Database" : "Page") “\(notion.parentName ?? "Untitled")”"
+            guard !notion.parentID.isEmpty else { return String(localized: "Choose a page or database") }
+            let name = notion.parentName ?? String(localized: "Untitled")
+            return notion.parentType == .dataSource
+                ? String(localized: "Database “\(name)”")
+                : String(localized: "Page “\(name)”")
         case .evernote, .googleKeep, .oneNote:
             return nil
         }
@@ -196,7 +204,7 @@ struct SettingsIntegrationsTab: View {
 
     private func textRow(_ label: String, optional: Bool = false, secure: Bool = false,
                          _ text: Binding<String>) -> some View {
-        SettingsRow(verbatim: label, caption: optional ? "Optional" : nil) {
+        SettingsRow(verbatim: label, caption: optional ? String(localized: "Optional") : nil) {
             Group {
                 if secure {
                     SecureField(label, text: text)
@@ -217,15 +225,15 @@ struct SettingsIntegrationsTab: View {
     private var obsidianDetail: some View {
         @Bindable var settings = appSettings
         SettingsCard("Obsidian") {
-            enableRow("Send to Obsidian", $settings.obsidianEnabled)
+            enableRow(String(localized: "Send to Obsidian"), $settings.obsidianEnabled)
             if appSettings.obsidianEnabled {
-                SettingsRow(verbatim: "Vault", caption: vaultPathText, systemImage: "folder") {
+                SettingsRow(verbatim: String(localized: "Vault"), caption: vaultPathText, systemImage: "folder") {
                     Button("Choose…") { chooseVault { url in appSettings.obsidianVaultURL = url } }
                         .buttonStyle(.settingsSecondary)
                 }
-                SettingsRow(verbatim: "Default folder",
+                SettingsRow(verbatim: String(localized: "Default folder"),
                             caption: appSettings.obsidianVaultURL == nil
-                                ? "Choose a vault first."
+                                ? String(localized: "Choose a vault first.")
                                 : appSettings.obsidianFolderDisplayName(relativePath: appSettings.obsidianDefaultFolderRelativePath),
                             systemImage: "folder") {
                     Button("Choose…") {
@@ -245,10 +253,10 @@ struct SettingsIntegrationsTab: View {
     private var appleNotesDetail: some View {
         @Bindable var settings = appSettings
         SettingsCard("Apple Notes") {
-            enableRow("Send to Apple Notes", $settings.integrations.appleNotes.enabled)
+            enableRow(String(localized: "Send to Apple Notes"), $settings.integrations.appleNotes.enabled)
             if appSettings.integrations.appleNotes.enabled {
-                textRow("Account name", optional: true, $settings.integrations.appleNotes.accountName)
-                textRow("Folder name", optional: true, $settings.integrations.appleNotes.folderName)
+                textRow(String(localized: "Account name"), optional: true, $settings.integrations.appleNotes.accountName)
+                textRow(String(localized: "Folder name"), optional: true, $settings.integrations.appleNotes.folderName)
                 testRow(for: .appleNotes)
             }
         }
@@ -261,9 +269,9 @@ struct SettingsIntegrationsTab: View {
     private var appleRemindersDetail: some View {
         @Bindable var settings = appSettings
         SettingsCard("Apple Reminders", description: "Only action items are sent, one reminder each") {
-            enableRow("Send to Apple Reminders", $settings.integrations.appleReminders.enabled)
+            enableRow(String(localized: "Send to Apple Reminders"), $settings.integrations.appleReminders.enabled)
             if appSettings.integrations.appleReminders.enabled {
-                textRow("Default list", optional: true, $settings.integrations.appleReminders.listName)
+                textRow(String(localized: "Default list"), optional: true, $settings.integrations.appleReminders.listName)
                 testRow(for: .appleReminders)
             }
         }
@@ -273,7 +281,7 @@ struct SettingsIntegrationsTab: View {
     private var tickTickDetail: some View {
         @Bindable var settings = appSettings
         SettingsCard("TickTick", description: "Only action items are sent, one task each") {
-            enableRow("Send to TickTick", $settings.integrations.tickTick.enabled)
+            enableRow(String(localized: "Send to TickTick"), $settings.integrations.tickTick.enabled)
             if appSettings.integrations.tickTick.enabled {
                 tickTickAccountRow
                 if tickTickAuth.isSignedIn {
@@ -287,16 +295,16 @@ struct SettingsIntegrationsTab: View {
     @ViewBuilder
     private var tickTickAccountRow: some View {
         if tickTickAuth.isSignedIn {
-            SettingsRow(verbatim: "TickTick account", caption: "Connected", systemImage: "person.crop.circle") {
+            SettingsRow(verbatim: String(localized: "TickTick account"), caption: String(localized: "Connected"), systemImage: "person.crop.circle") {
                 Button("Sign out") { Task { await tickTickAuth.signOut() } }
                     .buttonStyle(.settingsSecondary)
             }
         } else {
-            SettingsRow(verbatim: "TickTick account",
+            SettingsRow(verbatim: String(localized: "TickTick account"),
                         caption: tickTickAuth.isSigningIn
-                            ? "Finish signing in in your browser."
+                            ? String(localized: "Finish signing in in your browser.")
                             : tickTickSignInError
-                                ?? (tickTickAuth.sessionExpired ? "Your TickTick sign-in expired. Sign in again." : "Not connected"),
+                                ?? (tickTickAuth.sessionExpired ? String(localized: "Your TickTick sign-in expired. Sign in again.") : String(localized: "Not connected")),
                         systemImage: "person.crop.circle") {
                 if tickTickAuth.isSigningIn {
                     Button("Cancel") { tickTickAuth.cancelSignIn() }
@@ -313,7 +321,7 @@ struct SettingsIntegrationsTab: View {
 
     private var tickTickListRow: some View {
         let saved = appSettings.integrations.tickTick
-        return SettingsRow(verbatim: "List", systemImage: "list.bullet") {
+        return SettingsRow(verbatim: String(localized: "List"), systemImage: "list.bullet") {
             TaskDestinationPicker(service: .tickTick, savedID: saved.projectID, savedName: saved.projectName) { id, name in
                 var config = appSettings.integrations.tickTick
                 config.projectID = id
@@ -327,15 +335,15 @@ struct SettingsIntegrationsTab: View {
     private var todoistDetail: some View {
         @Bindable var settings = appSettings
         SettingsCard("Todoist", description: "Only action items are sent, one task each") {
-            enableRow("Send to Todoist", $settings.integrations.todoist.enabled)
+            enableRow(String(localized: "Send to Todoist"), $settings.integrations.todoist.enabled)
             if appSettings.integrations.todoist.enabled {
-                textRow("API token", secure: true, $settings.todoistToken)
-                SettingsRow(verbatim: "Where to find it", caption: "Todoist → Settings → Integrations → Developer") {
+                textRow(String(localized: "API token"), secure: true, $settings.todoistToken)
+                SettingsRow(verbatim: String(localized: "Where to find it"), caption: String(localized: "Todoist → Settings → Integrations → Developer")) {
                     Button("Open Todoist") { NSWorkspace.shared.open(TodoistAPI.tokenSettingsURL) }
                         .buttonStyle(.settingsSecondary)
                 }
                 if appSettings.todoistToken.isEmpty {
-                    warningRow("An API token is required.")
+                    warningRow(String(localized: "An API token is required."))
                 } else {
                     todoistProjectRow
                     testRow(for: .todoist)
@@ -346,7 +354,7 @@ struct SettingsIntegrationsTab: View {
 
     private var todoistProjectRow: some View {
         let saved = appSettings.integrations.todoist
-        return SettingsRow(verbatim: "Project", systemImage: "list.bullet") {
+        return SettingsRow(verbatim: String(localized: "Project"), systemImage: "list.bullet") {
             TaskDestinationPicker(service: .todoist, savedID: saved.projectID, savedName: saved.projectName) { id, name in
                 var config = appSettings.integrations.todoist
                 config.projectID = id
@@ -371,18 +379,18 @@ struct SettingsIntegrationsTab: View {
         @Bindable var settings = appSettings
         let notion = appSettings.integrations.notion
         SettingsCard("Notion", description: "One page per meeting, under a page or in a database") {
-            enableRow("Send to Notion", $settings.integrations.notion.enabled)
+            enableRow(String(localized: "Send to Notion"), $settings.integrations.notion.enabled)
             if notion.enabled {
-                textRow("Integration secret", secure: true, $settings.notionToken)
-                SettingsRow(verbatim: "Where to get it",
-                            caption: "Create an internal integration, then connect your page or database to it (••• → Connections).") {
+                textRow(String(localized: "Integration secret"), secure: true, $settings.notionToken)
+                SettingsRow(verbatim: String(localized: "Where to get it"),
+                            caption: String(localized: "Create an internal integration, then connect your page or database to it (••• → Connections).")) {
                     Button("Open Notion") { NSWorkspace.shared.open(NotionAPI.integrationsURL) }
                         .buttonStyle(.settingsSecondary)
                 }
                 if appSettings.notionToken.isEmpty {
-                    warningRow("An integration secret is required.")
+                    warningRow(String(localized: "An integration secret is required."))
                 } else {
-                    SettingsRow(verbatim: "Destination", caption: "Pages and databases connected to the integration",
+                    SettingsRow(verbatim: String(localized: "Destination"), caption: String(localized: "Pages and databases connected to the integration"),
                                 systemImage: "doc.text") {
                         TaskDestinationPicker(
                             service: .notion,
@@ -396,7 +404,7 @@ struct SettingsIntegrationsTab: View {
                             appSettings.integrations.notion = config
                         }
                     }
-                    if notion.parentID.isEmpty { warningRow("Choose a page or database.") }
+                    if notion.parentID.isEmpty { warningRow(String(localized: "Choose a page or database.")) }
                     testRow(for: .notion)
                 }
             }
@@ -404,8 +412,8 @@ struct SettingsIntegrationsTab: View {
         if notion.enabled {
             SettingsCard("Include in the page") {
                 ForEach([DeliveryField.summary, .actionItems, .tags, .sentiment, .meetingInfo, .transcript]) { field in
-                    SettingsRow(verbatim: field == .meetingInfo ? "Attendees" : field.displayName,
-                                caption: field == .transcript ? "The full transcript at the end of the page. Long meetings make long pages." : nil) {
+                    SettingsRow(verbatim: field == .meetingInfo ? String(localized: "Attendees") : field.displayName,
+                                caption: field == .transcript ? String(localized: "The full transcript at the end of the page. Long meetings make long pages.") : nil) {
                         Toggle(field.displayName, isOn: $settings.integrations.notion.fields[contains: field])
                     }
                 }
@@ -417,12 +425,12 @@ struct SettingsIntegrationsTab: View {
     private var evernoteDetail: some View {
         @Bindable var settings = appSettings
         SettingsCard("Evernote") {
-            enableRow("Send to Evernote", $settings.integrations.evernote.enabled)
+            enableRow(String(localized: "Send to Evernote"), $settings.integrations.evernote.enabled)
             if appSettings.integrations.evernote.enabled {
-                textRow("Token", secure: true, $settings.evernoteToken)
-                textRow("API base URL", $settings.integrations.evernote.apiBaseURL)
-                textRow("Notebook ID", optional: true, $settings.integrations.evernote.notebookID)
-                if appSettings.evernoteToken.isEmpty { warningRow("A token is required.") }
+                textRow(String(localized: "Token"), secure: true, $settings.evernoteToken)
+                textRow(String(localized: "API base URL"), $settings.integrations.evernote.apiBaseURL)
+                textRow(String(localized: "Notebook ID"), optional: true, $settings.integrations.evernote.notebookID)
+                if appSettings.evernoteToken.isEmpty { warningRow(String(localized: "A token is required.")) }
                 testRow(for: .evernote)
             }
         }
@@ -435,11 +443,11 @@ struct SettingsIntegrationsTab: View {
     private var googleKeepDetail: some View {
         @Bindable var settings = appSettings
         SettingsCard("Google Keep", description: "The Keep API may need Google Workspace setup") {
-            enableRow("Send to Google Keep", $settings.integrations.googleKeep.enabled)
+            enableRow(String(localized: "Send to Google Keep"), $settings.integrations.googleKeep.enabled)
             if appSettings.integrations.googleKeep.enabled {
-                textRow("OAuth token", secure: true, $settings.googleKeepToken)
-                textRow("API base URL", $settings.integrations.googleKeep.apiBaseURL)
-                if appSettings.googleKeepToken.isEmpty { warningRow("A token is required.") }
+                textRow(String(localized: "OAuth token"), secure: true, $settings.googleKeepToken)
+                textRow(String(localized: "API base URL"), $settings.integrations.googleKeep.apiBaseURL)
+                if appSettings.googleKeepToken.isEmpty { warningRow(String(localized: "A token is required.")) }
                 testRow(for: .googleKeep)
             }
         }
@@ -452,12 +460,12 @@ struct SettingsIntegrationsTab: View {
     private var oneNoteDetail: some View {
         @Bindable var settings = appSettings
         SettingsCard("Microsoft OneNote") {
-            enableRow("Send to OneNote", $settings.integrations.oneNote.enabled)
+            enableRow(String(localized: "Send to OneNote"), $settings.integrations.oneNote.enabled)
             if appSettings.integrations.oneNote.enabled {
-                textRow("Graph token", secure: true, $settings.oneNoteToken)
-                textRow("Graph base URL", $settings.integrations.oneNote.graphBaseURL)
-                textRow("Section ID", optional: true, $settings.integrations.oneNote.sectionID)
-                if appSettings.oneNoteToken.isEmpty { warningRow("A token is required.") }
+                textRow(String(localized: "Graph token"), secure: true, $settings.oneNoteToken)
+                textRow(String(localized: "Graph base URL"), $settings.integrations.oneNote.graphBaseURL)
+                textRow(String(localized: "Section ID"), optional: true, $settings.integrations.oneNote.sectionID)
+                if appSettings.oneNoteToken.isEmpty { warningRow(String(localized: "A token is required.")) }
                 testRow(for: .oneNote)
             }
         }
@@ -482,9 +490,9 @@ struct SettingsIntegrationsTab: View {
         Group {
             SettingsCard("Webhook",
                          description: "Each delivery has an Idempotency-Key; retry unconfirmed sends with Integrations… on the recording") {
-                enableRow("Send to a webhook", $settings.integrations.webhook.enabled)
+                enableRow(String(localized: "Send to a webhook"), $settings.integrations.webhook.enabled)
                 if appSettings.integrations.webhook.enabled {
-                    textRow("URL", secure: true, $settings.integrations.webhook.url)
+                    textRow(String(localized: "URL"), secure: true, $settings.integrations.webhook.url)
                     SettingsRow("Timeout") {
                         HStack(spacing: 6) {
                             TextField("Timeout", value: $settings.integrations.webhook.timeoutSeconds,
@@ -495,7 +503,7 @@ struct SettingsIntegrationsTab: View {
                             Text("seconds").uiFont(.system(size: 12)).foregroundStyle(palette.secondary.color)
                         }
                     }
-                    if appSettings.integrations.webhook.url.isEmpty { warningRow("A URL is required.") }
+                    if appSettings.integrations.webhook.url.isEmpty { warningRow(String(localized: "A URL is required.")) }
                     testRow(for: .webhook)
                 }
             }
@@ -651,7 +659,7 @@ struct SettingsIntegrationsTab: View {
         if let url = appSettings.obsidianVaultURL {
             return url.path(percentEncoded: false)
         }
-        return "Not set"
+        return String(localized: "Not set")
     }
 
     private func chooseVault(completion: @escaping (URL) -> Void) {
@@ -660,7 +668,7 @@ struct SettingsIntegrationsTab: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
-        panel.message = "Choose your Obsidian vault folder"
+        panel.message = String(localized: "Choose your Obsidian vault folder")
         if panel.runModal() == .OK, let url = panel.url {
             completion(url)
         }
@@ -674,7 +682,7 @@ struct SettingsIntegrationsTab: View {
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
         panel.directoryURL = vaultURL
-        panel.message = "Choose a folder inside your Obsidian vault"
+        panel.message = String(localized: "Choose a folder inside your Obsidian vault")
         if panel.runModal() == .OK, let url = panel.url {
             guard let relativePath = appSettings.obsidianRelativePath(for: url) else { return }
             completion(relativePath)

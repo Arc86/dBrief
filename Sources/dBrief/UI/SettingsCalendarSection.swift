@@ -54,7 +54,7 @@ struct SettingsCalendarSection: View {
                                 SettingsStatusPill("None selected", kind: .warning)
                                     .help("iCal matching will return no meetings.")
                             } else if unavailableICalCalendarCount > 0 {
-                                SettingsStatusPill(verbatim: "\(unavailableICalCalendarCount) unavailable", kind: .warning)
+                                SettingsStatusPill(verbatim: String(localized: "\(unavailableICalCalendarCount) unavailable"), kind: .warning)
                                     .help(unavailableICalCalendarMessage)
                             }
                             calendarMenu
@@ -82,14 +82,14 @@ struct SettingsCalendarSection: View {
 
             case .outlook:
                 if microsoftAuthService.isSignedIn {
-                    SettingsRow(verbatim: microsoftAuthService.accountInfo?.displayName ?? "Microsoft account",
+                    SettingsRow(verbatim: microsoftAuthService.accountInfo?.displayName ?? String(localized: "Microsoft account"),
                                 caption: microsoftAuthService.accountInfo?.email,
                                 systemImage: "person.crop.circle") {
                         Button("Sign out") { microsoftAuthService.signOut() }
                             .buttonStyle(.settingsSecondary)
                     }
                 } else {
-                    SettingsRow(verbatim: "Microsoft account", caption: outlookSignInError, systemImage: "person.crop.circle") {
+                    SettingsRow(verbatim: String(localized: "Microsoft account"), caption: outlookSignInError, systemImage: "person.crop.circle") {
                         Button("Sign in with Microsoft") {
                             outlookSignInError = nil
                             Task { @MainActor in
@@ -177,14 +177,14 @@ struct SettingsCalendarSection: View {
 
     private var iCalCalendarSelectionSummary: String {
         guard let selected = appSettings.selectedICalCalendarIDs else {
-            return "All calendars"
+            return String(localized: "All calendars")
         }
-        guard !selected.isEmpty else { return "No calendars" }
+        guard !selected.isEmpty else { return String(localized: "No calendars") }
         if selected.count == 1,
            let calendar = availableICalCalendars.first(where: { selected.contains($0.id) }) {
             return calendar.title
         }
-        return selected.count == 1 ? "1 calendar" : "\(selected.count) calendars"
+        return String(localized: "\(selected.count) calendars")
     }
 
     private var unavailableICalCalendarCount: Int {
@@ -195,8 +195,7 @@ struct SettingsCalendarSection: View {
 
     private var unavailableICalCalendarMessage: String {
         let count = unavailableICalCalendarCount
-        let noun = count == 1 ? "calendar is" : "calendars are"
-        return "\(count) selected \(noun) unavailable and won’t provide meetings."
+        return String(localized: "\(count) selected calendars are unavailable and won’t provide meetings.")
     }
 
     private func toggleICalCalendar(_ id: String) {

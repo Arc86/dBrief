@@ -11,15 +11,15 @@ enum YouTubeDownloadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .ytDlpNotFound:
-            return "yt-dlp not found. Use the \"Download yt-dlp\" button below."
+            return String(localized: "yt-dlp not found. Use the \"Download yt-dlp\" button below.")
         case .invalidURL:
-            return "Please enter a valid URL."
+            return String(localized: "Please enter a valid URL.")
         case .downloadFailed(let msg):
-            return "Download failed: \(msg)"
+            return String(localized: "Download failed: \(msg)")
         case .noAudioFileFound:
-            return "No audio file was produced after download."
+            return String(localized: "No audio file was produced after download.")
         case .ytDlpBinaryDownloadFailed(let msg):
-            return "Could not download yt-dlp: \(msg)"
+            return String(localized: "Could not download yt-dlp: \(msg)")
         }
     }
 }

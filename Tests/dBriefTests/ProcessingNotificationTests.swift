@@ -13,7 +13,7 @@ import Testing
     }
 
     @Test func failuresAreAnnouncedWithANextStep() {
-        let failed = ProcessingNotification.content(.failed(stage: "Transcription"), title: "Weekly sync")
+        let failed = ProcessingNotification.content(.failed(stage: "transcription"), title: "Weekly sync")
         #expect(failed.title == "Processing didn't finish")
         #expect(failed.body == "“Weekly sync”: transcription failed. Open it to retry.")
         let issues = ProcessingNotification.content(.finishedWithIssues(failedSteps: ["Generating summary", "Send: Notion"]),

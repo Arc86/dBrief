@@ -7,9 +7,9 @@ enum ModelIntent: Hashable {
 
     var title: String {
         switch self {
-        case .fastest: "Fastest"
-        case .recommended: "Recommended"
-        case .mostAccurate: "Most accurate"
+        case .fastest: String(localized: "Fastest")
+        case .recommended: String(localized: "Recommended")
+        case .mostAccurate: String(localized: "Most accurate")
         }
     }
 
@@ -114,26 +114,34 @@ enum ModelSuggestions {
         var result: [ModelSuggestion] = []
         if let fastest {
             var reason = if case .codes = fastest.profile.languages, name == nil {
-                "Quickest on Apple Silicon. Skip it for meetings in other languages."
+                String(localized: "Quickest on Apple Silicon. Skip it for meetings in other languages.")
+            } else if let name {
+                String(localized: "Quickest for \(name) on this Mac.")
             } else {
-                "Quickest for \(name ?? "your meetings") on this Mac."
+                String(localized: "Quickest for your meetings on this Mac.")
             }
-            if fastest.accuracy <= 2 { reason += " Lowest accuracy; for quick drafts." }
+            if fastest.accuracy <= 2 { reason += " " + String(localized: "Lowest accuracy; for quick drafts.") }
             result.append(ModelSuggestion(intent: .fastest, modelID: fastest.id, reason: reason))
         }
         if let recommended {
-            let reason = recommended.id == WhisperModelInfo.recommendedModelID
-                ? "Best all-rounder: any language, light on memory." + (downloaded.contains(recommended.id) ? " Ready now." : "")
-                : "Best fit for \(name ?? "your meetings") on this Mac."
+            let reason = if recommended.id == WhisperModelInfo.recommendedModelID {
+                downloaded.contains(recommended.id)
+                    ? String(localized: "Best all-rounder: any language, light on memory. Ready now.")
+                    : String(localized: "Best all-rounder: any language, light on memory.")
+            } else if let name {
+                String(localized: "Best fit for \(name) on this Mac.")
+            } else {
+                String(localized: "Best fit for your meetings on this Mac.")
+            }
             result.append(ModelSuggestion(intent: .recommended, modelID: recommended.id, reason: reason))
         }
         if case let (pick, isFallback)? = mostAccurate {
             let reason = if isFallback {
-                "Slow. For recordings where every word matters."
+                String(localized: "Slow. For recordings where every word matters.")
             } else if let name {
-                "Fewest errors for \(name) meetings."
+                String(localized: "Fewest errors for \(name) meetings.")
             } else {
-                "Fewest errors in \(pick.profile.languageLabel)."
+                String(localized: "Fewest errors in \(pick.profile.languageLabel).")
             }
             result.append(ModelSuggestion(intent: .mostAccurate, modelID: pick.id, reason: reason))
         }

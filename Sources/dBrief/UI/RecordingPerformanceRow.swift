@@ -18,12 +18,12 @@ struct RecordingPerformanceRow: Identifiable {
         /// Display label for the step.
         var title: String {
             switch self {
-            case .finalize: "Finalize audio"
-            case .transcribe: "Transcribe"
-            case .diarize: "Diarize"
-            case .ai: "AI analysis"
-            case .vocab: "Vocabulary fix"
-            case .title: "Title"
+            case .finalize: String(localized: "Finalize audio")
+            case .transcribe: String(localized: "Transcribe")
+            case .diarize: String(localized: "Diarize")
+            case .ai: String(localized: "AI analysis")
+            case .vocab: String(localized: "Vocabulary fix")
+            case .title: String(localized: "Title")
             }
         }
     }
@@ -126,7 +126,7 @@ enum RecordingPerformanceBuilder {
             let caption: String?
             if let inf = record.inferenceTime, inf > 0 {
                 let overhead = max(0, t - inf)
-                caption = "model \(Self.compact(inf)) · +overhead \(Self.compact(overhead))"
+                caption = String(localized: "model \(Self.compact(inf)) · +overhead \(Self.compact(overhead))")
             } else {
                 caption = nil
             }

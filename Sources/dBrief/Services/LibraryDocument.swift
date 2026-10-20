@@ -6,11 +6,11 @@ enum LibraryRecordingStatus: String, Codable, CaseIterable, Sendable {
     /// Shared with the menu panel's `RecordingStatus` labels.
     var title: String {
         switch self {
-        case .queued: "Queued"
-        case .failed: "Needs attention"
-        case .incomplete: "Incomplete"
-        case .unprocessed: "Not processed"
-        case .done: "Done"
+        case .queued: String(localized: "Queued")
+        case .failed: String(localized: "Needs attention")
+        case .incomplete: String(localized: "Incomplete")
+        case .unprocessed: String(localized: "Not processed")
+        case .done: String(localized: "Done")
         }
     }
 

@@ -110,7 +110,7 @@ struct SummaryView: View {
                         .foregroundStyle(palette.heading.color)
 
                     Spacer(minLength: 8)
-                    Text("\(summary.split(whereSeparator: { $0.isWhitespace }).count.formatted()) words")
+                    Text("\(summary.split(whereSeparator: { $0.isWhitespace }).count) words")
                         .uiFont(.system(size: 11))
                         .foregroundStyle(palette.secondary.color)
                         .padding(.trailing, 8)
@@ -308,16 +308,16 @@ struct SummaryView: View {
         if isReadOnly {
             // One message for the lock, whether or not results exist yet.
             return hasOtherAnalysis
-                ? "Current results stay readable in the other tabs until the new ones are ready."
-                : "The new results appear here when reprocessing finishes."
+                ? String(localized: "Current results stay readable in the other tabs until the new ones are ready.")
+                : String(localized: "The new results appear here when reprocessing finishes.")
         }
         if hasOtherAnalysis {
-            return "This recording has other analysis, but no summary text was saved."
+            return String(localized: "This recording has other analysis, but no summary text was saved.")
         }
         if canGenerate {
-            return "Generate a summary and the other available analysis from this transcript."
+            return String(localized: "Generate a summary and the other available analysis from this transcript.")
         }
-        return "A transcript is needed before analysis can be generated."
+        return String(localized: "A transcript is needed before analysis can be generated.")
     }
 
     private var generatingState: some View {

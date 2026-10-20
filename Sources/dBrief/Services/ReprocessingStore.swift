@@ -53,14 +53,14 @@ actor ReprocessingStore {
         case changedInput(String), noPreviousResults, invalidStatus, unsafeFile(String)
         var errorDescription: String? {
             switch self {
-            case .missingAudio: "The original recording is missing. Locate it before resuming."
-            case .alreadyPending: "This recording already has a pending reprocessing attempt."
-            case .invalidSuffix(let suffix): "Reprocessing does not own the file type \(suffix)."
-            case .invalidManifest: "The saved reprocessing attempt is incomplete or damaged."
-            case .changedInput(let name): "\(name) changed since this attempt started. The saved candidate has been preserved."
-            case .noPreviousResults: "No previous result set is available to restore."
-            case .invalidStatus: "This attempt cannot be changed in its current state."
-            case .unsafeFile(let name): "Reprocessing cannot use a symbolic link or non-regular file: \(name)."
+            case .missingAudio: String(localized: "The original recording is missing. Locate it before resuming.")
+            case .alreadyPending: String(localized: "This recording already has a pending reprocessing attempt.")
+            case .invalidSuffix(let suffix): String(localized: "Reprocessing does not own the file type \(suffix).")
+            case .invalidManifest: String(localized: "The saved reprocessing attempt is incomplete or damaged.")
+            case .changedInput(let name): String(localized: "\(name) changed since this attempt started. The saved candidate has been preserved.")
+            case .noPreviousResults: String(localized: "No previous result set is available to restore.")
+            case .invalidStatus: String(localized: "This attempt cannot be changed in its current state.")
+            case .unsafeFile(let name): String(localized: "Reprocessing cannot use a symbolic link or non-regular file: \(name).")
             }
         }
     }

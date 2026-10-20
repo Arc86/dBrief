@@ -106,7 +106,8 @@ struct SpeakerTimelineBar: View {
         }
         .accessibilityElement()
         .accessibilityLabel("Speaker timeline")
-        .accessibilityValue(isSeekEnabled ? (positionDescription ?? "\(Int(fraction * 100)) percent") : "Seeking unavailable")
+        .accessibilityValue(isSeekEnabled ? (positionDescription ?? String(localized: "\(Int(fraction * 100)) percent"))
+                            : String(localized: "Seeking unavailable"))
         .accessibilityHint(isSeekEnabled ? "Use left and right arrow keys to seek." : "Audio position cannot be changed.")
         .accessibilityAdjustableAction { direction in
             switch direction {

@@ -70,15 +70,15 @@ enum Theme {
     /// Vibrant palette for profile identity icons — the deliberate pop of color
     /// called out in the Profiles ticket.
     static let profileColorOptions: [ColorOption] = [
-        ColorOption(key: "blue", label: "Blue", color: .blue),
-        ColorOption(key: "indigo", label: "Indigo", color: .indigo),
-        ColorOption(key: "purple", label: "Purple", color: .purple),
-        ColorOption(key: "pink", label: "Pink", color: .pink),
-        ColorOption(key: "red", label: "Red", color: .red),
-        ColorOption(key: "orange", label: "Orange", color: .orange),
-        ColorOption(key: "green", label: "Green", color: .green),
-        ColorOption(key: "teal", label: "Teal", color: .teal),
-        ColorOption(key: "gray", label: "Gray", color: .gray)
+        ColorOption(key: "blue", label: String(localized: "Blue"), color: .blue),
+        ColorOption(key: "indigo", label: String(localized: "Indigo"), color: .indigo),
+        ColorOption(key: "purple", label: String(localized: "Purple"), color: .purple),
+        ColorOption(key: "pink", label: String(localized: "Pink"), color: .pink),
+        ColorOption(key: "red", label: String(localized: "Red"), color: .red),
+        ColorOption(key: "orange", label: String(localized: "Orange"), color: .orange),
+        ColorOption(key: "green", label: String(localized: "Green"), color: .green),
+        ColorOption(key: "teal", label: String(localized: "Teal"), color: .teal),
+        ColorOption(key: "gray", label: String(localized: "Gray"), color: .gray)
     ]
 
     /// Resolve a persisted color key to its `Color` (falls back to blue).

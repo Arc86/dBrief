@@ -32,9 +32,9 @@ extension RecordingManager {
                              calendarProfileID: UUID? = nil) async throws -> ReprocessingWorkflow.Result {
         let index = appState.processingSteps.count
         let name = switch stage {
-        case .transcription: "Retranscribing audio"
-        case .speakers: "Detecting speakers"
-        case .analysis: "Regenerating AI results"
+        case .transcription: String(localized: "Retranscribing audio")
+        case .speakers: String(localized: "Detecting speakers")
+        case .analysis: String(localized: "Regenerating AI results")
         }
         appState.processingSteps.append(.init(name: name, status: .inProgress))
         let result: ReprocessingWorkflow.Result
@@ -175,7 +175,7 @@ extension RecordingManager {
                     message: error.localizedDescription)
                 guard !Task.isCancelled, !self.processingCancellationInProgress,
                       self.appState.processingJob === job else { return }
-                self.appState.post(.error, "Reprocessing didn't finish: \(error.localizedDescription) Current results were kept.",
+                self.appState.post(.error, String(localized: "Reprocessing didn't finish: \(error.localizedDescription) Current results were kept."),
                                    source: .reprocessing, recordingURL: job.recording.finalizedAudioURL, actions: [.openQueue])
                 self.notify(.reprocessFailed, about: job.recording)
                 await self.endReprocessing(job)
@@ -259,7 +259,7 @@ extension RecordingManager {
                 job.recording.calendarEvent = resolved.event
             } else {
                 if appState.processingSteps.indices.contains(stepIndex) {
-                    appState.processingSteps[stepIndex].detail = "Calendar attendees were unavailable"
+                    appState.processingSteps[stepIndex].detail = String(localized: "Calendar attendees were unavailable")
                 }
                 let allowed = latest.flatMap { calendarConfiguration?.restoredConfig(using: $0) }
                 if allowed == nil || (job.recording.calendarEvent?.attendees.count ?? 0) > (allowed?.maxAttendees ?? 0) {

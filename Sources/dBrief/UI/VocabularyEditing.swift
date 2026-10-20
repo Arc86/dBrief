@@ -35,7 +35,7 @@ struct VocabularyEditing {
         } else {
             let matches = terms.indices.filter { terms[$0] == source.term }
             guard matches.count == 1 else {
-                error = "This term changed or was removed. Cancel and choose the term again."
+                error = String(localized: "This term changed or was removed. Cancel and choose the term again.")
                 return
             }
             index = matches[0]
@@ -54,8 +54,8 @@ struct VocabularyEditing {
 
         var message: String {
             switch self {
-            case .empty: "Enter a term before saving."
-            case .duplicate: "This term is already in your vocabulary."
+            case .empty: String(localized: "Enter a term before saving.")
+            case .duplicate: String(localized: "This term is already in your vocabulary.")
             }
         }
     }

@@ -108,7 +108,7 @@ final class RecordingActionWindowController {
         .environment(\.calmAppearance, appSettings.reduceNeon)
             .modifier(AppAppearanceScope(settings: appSettings))
         presenter.show(
-            title: "Link Calendar Meeting",
+            title: String(localized: "Link Calendar Meeting"),
             contentSize: NSSize(width: 540, height: 300),
             content: AnyView(root),
             onClose: { [weak self] in self?.restoreActivationPolicy() }

@@ -90,7 +90,7 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
         )
         win.contentViewController = hosting
         win.setContentSize(SpeakerReviewView.contentSize)
-        win.title = "Identify Speakers"
+        win.title = String(localized: "Identify Speakers")
         if parent != nil {
             win.titlebarAppearsTransparent = true
             win.titleVisibility = .hidden

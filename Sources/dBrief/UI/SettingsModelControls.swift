@@ -16,7 +16,7 @@ struct ModelActionsMenu: View {
                 Task {
                     do {
                         try await purge()
-                        message = "Local \(modelName) model cache removed."
+                        message = String(localized: "Local \(modelName) model cache removed.")
                     } catch {
                         message = error.localizedDescription
                     }

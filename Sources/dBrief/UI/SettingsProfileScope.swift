@@ -72,7 +72,7 @@ struct SettingsProfileScope {
                                 isOverridden: override != nil, note: note))
         }
         func toggle(_ id: Field, _ label: String, _ baseline: Bool, _ override: Bool?) {
-            add(id, label, baseline, override, format: { $0 ? "On" : "Off" })
+            add(id, label, baseline, override, format: { $0 ? String(localized: "On") : String(localized: "Off") })
         }
         func provider(_ id: Field, _ label: String, _ baseline: Endpoint?,
                       _ overrideID: UUID?, _ endpoints: [Endpoint]) {
@@ -80,10 +80,10 @@ struct SettingsProfileScope {
             let endpoint = overrideID.flatMap { id in endpoints.first { $0.id == id } }
             let missing = overrideID != nil && endpoint == nil
             rows.append(Summary(id: id, label: label,
-                                defaultValue: baseline?.name ?? "Not configured",
-                                profileValue: (endpoint ?? baseline)?.name ?? "Not configured",
+                                defaultValue: baseline?.name ?? String(localized: "Not configured"),
+                                profileValue: (endpoint ?? baseline)?.name ?? String(localized: "Not configured"),
                                 isOverridden: overrideID != nil,
-                                note: missing ? "Selected provider is unavailable; using the app default." : nil))
+                                note: missing ? String(localized: "Selected provider is unavailable; using the app default.") : nil))
         }
         func destination(_ id: Field, _ label: String, _ baseline: URL, _ override: String?) {
             guard fields.contains(id) else { return }
@@ -93,61 +93,61 @@ struct SettingsProfileScope {
             let unavailable = override != nil && !Self.isDirectory(resolved)
             rows.append(Summary(id: id, label: label, defaultValue: baseline.path,
                                 profileValue: resolved.path, isOverridden: override != nil,
-                                note: emptyOverride ? "Empty destination; using the app default."
-                                : unavailable ? "Destination is unavailable. It is kept for recovery; choose an accessible folder." : nil))
+                                note: emptyOverride ? String(localized: "Empty destination; using the app default.")
+                                : unavailable ? String(localized: "Destination is unavailable. It is kept for recovery; choose an accessible folder.") : nil))
         }
 
         let engine = overrides.transcriptionEngine ?? settings.transcriptionEngine
         let languageNote: String?
         if engine == .parakeetLocal {
-            languageNote = "Parakeet does not use the profile language override. It is kept for other engines."
+            languageNote = String(localized: "Parakeet does not use the profile language override. It is kept for other engines.")
         } else if engine == .localWhisper && overrides.transcriptionLanguage != nil {
-            languageNote = "This engine’s current transcription pass uses the app language setting. The profile override is kept."
+            languageNote = String(localized: "This engine’s current transcription pass uses the app language setting. The profile override is kept.")
         } else {
             languageNote = nil
         }
         if fields.contains(.language) {
             func languageLabel(_ code: String, engine: AppSettings.TranscriptionEngine) -> String {
-                if code.isEmpty { return engine == .appleSpeech ? "System language" : "Auto-detect" }
+                if code.isEmpty { return engine == .appleSpeech ? String(localized: "System language") : String(localized: "Auto-detect") }
                 return Locale.current.localizedString(forIdentifier: code) ?? code
             }
-            rows.append(Summary(id: .language, label: "Audio language",
+            rows.append(Summary(id: .language, label: String(localized: "Audio language"),
                                 defaultValue: languageLabel(settings.transcriptionLanguage, engine: settings.transcriptionEngine),
                                 profileValue: languageLabel(overrides.transcriptionLanguage ?? settings.transcriptionLanguage, engine: engine),
                                 isOverridden: overrides.transcriptionLanguage != nil, note: languageNote))
         }
-        add(.vocabulary, "Vocabulary", settings.customVocabulary, overrides.customVocabulary,
-            format: { $0.isEmpty ? "No custom terms" : $0.joined(separator: ", ") })
-        add(.transcriptionEngine, "Transcription engine", settings.transcriptionEngine, overrides.transcriptionEngine,
+        add(.vocabulary, String(localized: "Vocabulary"), settings.customVocabulary, overrides.customVocabulary,
+            format: { $0.isEmpty ? String(localized: "No custom terms") : $0.joined(separator: ", ") })
+        add(.transcriptionEngine, String(localized: "Transcription engine"), settings.transcriptionEngine, overrides.transcriptionEngine,
             format: { $0.displayName })
-        provider(.transcriptionService, "Transcription service", settings.defaultTranscriptionEndpoint,
+        provider(.transcriptionService, String(localized: "Transcription service"), settings.defaultTranscriptionEndpoint,
                  overrides.transcriptionEndpointId, settings.transcriptionEndpoints)
-        toggle(.aiEnabled, "AI analysis", settings.aiProcessingEnabled, overrides.aiProcessingEnabled)
-        add(.aiEngine, "AI engine", settings.aiEngine, overrides.aiEngine, format: { $0.displayName })
-        provider(.aiProvider, "AI provider", settings.defaultAIEndpoint, overrides.aiEndpointId, settings.aiEndpoints)
-        add(.analysisEffort, "AI analysis CLI effort", settings.localCLIConfig.effort,
+        toggle(.aiEnabled, String(localized: "AI analysis"), settings.aiProcessingEnabled, overrides.aiProcessingEnabled)
+        add(.aiEngine, String(localized: "AI engine"), settings.aiEngine, overrides.aiEngine, format: { $0.displayName })
+        provider(.aiProvider, String(localized: "AI provider"), settings.defaultAIEndpoint, overrides.aiEndpointId, settings.aiEndpoints)
+        add(.analysisEffort, String(localized: "AI analysis CLI effort"), settings.localCLIConfig.effort,
             overrides.localCLIReasoningEffort, format: { Self.effortName($0) },
             note: (overrides.aiEngine ?? settings.aiEngine) != .localCLI
-                ? "Saved, but inactive until Local CLI is selected as the AI engine."
+                ? String(localized: "Saved, but inactive until Local CLI is selected as the AI engine.")
                 : settings.localCLIConfig.effortProvider == .commandDefault
-                ? "Saved, but inactive until the effort provider is Claude Code." : nil)
-        add(.calendarEffort, "Calendar CLI effort", settings.calendarCLIConfig.effort,
+                ? String(localized: "Saved, but inactive until the effort provider is Claude Code.") : nil)
+        add(.calendarEffort, String(localized: "Calendar CLI effort"), settings.calendarCLIConfig.effort,
             overrides.calendarCLIReasoningEffort, format: { Self.effortName($0) },
             note: settings.effectiveCalendarSource != .claudeCLI
-                ? "Saved, but inactive until Claude CLI is the calendar source."
+                ? String(localized: "Saved, but inactive until Claude CLI is the calendar source.")
                 : settings.calendarCLIConfig.modelID?.lowercased().contains("haiku") == true
-                ? "Saved, but not applicable to the selected Haiku model." : nil)
-        add(.summaryPrompt, "Summary prompt", settings.summaryPrompt, overrides.summaryPrompt, format: { $0 })
-        add(.actionsPrompt, "Action items prompt", settings.actionItemsPrompt, overrides.actionItemsPrompt, format: { $0 })
-        add(.tagsPrompt, "Tags prompt", settings.tagsPrompt, overrides.tagsPrompt, format: { $0 })
-        toggle(.transcriptionTask, "Transcription task", settings.autoTranscribe, overrides.autoTranscribe)
-        toggle(.summaryTask, "Summary task", settings.autoSummary, overrides.autoSummary)
-        toggle(.actionsTask, "Action items task", settings.autoActionItems, overrides.autoActionItems)
-        toggle(.tagsTask, "Tags task", settings.autoTags, overrides.autoTags)
-        toggle(.calendarParticipantsTask, "Calendar attendees", settings.autoLoadCalendarParticipants,
+                ? String(localized: "Saved, but not applicable to the selected Haiku model.") : nil)
+        add(.summaryPrompt, String(localized: "Summary prompt"), settings.summaryPrompt, overrides.summaryPrompt, format: { $0 })
+        add(.actionsPrompt, String(localized: "Action items prompt"), settings.actionItemsPrompt, overrides.actionItemsPrompt, format: { $0 })
+        add(.tagsPrompt, String(localized: "Tags prompt"), settings.tagsPrompt, overrides.tagsPrompt, format: { $0 })
+        toggle(.transcriptionTask, String(localized: "Transcription task"), settings.autoTranscribe, overrides.autoTranscribe)
+        toggle(.summaryTask, String(localized: "Summary task"), settings.autoSummary, overrides.autoSummary)
+        toggle(.actionsTask, String(localized: "Action items task"), settings.autoActionItems, overrides.autoActionItems)
+        toggle(.tagsTask, String(localized: "Tags task"), settings.autoTags, overrides.autoTags)
+        toggle(.calendarParticipantsTask, String(localized: "Calendar attendees"), settings.autoLoadCalendarParticipants,
                overrides.autoLoadCalendarParticipants)
-        destination(.recordingFolder, "Recording folder", settings.recordingFolderURL, overrides.recordingFolderPath)
-        destination(.transcriptFolder, "Transcript folder", settings.transcriptionFolderURL, overrides.transcriptionFolderPath)
+        destination(.recordingFolder, String(localized: "Recording folder"), settings.recordingFolderURL, overrides.recordingFolderPath)
+        destination(.transcriptFolder, String(localized: "Transcript folder"), settings.transcriptionFolderURL, overrides.transcriptionFolderPath)
 
         // Match effectiveObsidianVaultURL: unlike recording destinations, an
         // unavailable vault override falls back to the app's configured vault.
@@ -158,30 +158,30 @@ struct SettingsProfileScope {
                 let url = URL(fileURLWithPath: path, isDirectory: true)
                 return Self.isDirectory(url) ? url : nil
             }
-            rows.append(Summary(id: .obsidianVault, label: "Obsidian vault",
-                                defaultValue: settings.obsidianVaultURL?.path ?? "Not configured",
-                                profileValue: (vaultURL ?? settings.obsidianVaultURL)?.path ?? "Not configured",
+            rows.append(Summary(id: .obsidianVault, label: String(localized: "Obsidian vault"),
+                                defaultValue: settings.obsidianVaultURL?.path ?? String(localized: "Not configured"),
+                                profileValue: (vaultURL ?? settings.obsidianVaultURL)?.path ?? String(localized: "Not configured"),
                                 isOverridden: vaultPath != nil,
-                                note: vaultPath != nil && vaultURL == nil ? "Vault override is empty or unavailable; using the app default." : nil))
+                                note: vaultPath != nil && vaultURL == nil ? String(localized: "Vault override is empty or unavailable; using the app default.") : nil))
         }
-        add(.obsidianFolder, "Obsidian notes folder", settings.obsidianDefaultFolderRelativePath,
-            overrides.obsidianDefaultFolderRelativePath, format: { $0.isEmpty ? "Vault root" : $0 })
+        add(.obsidianFolder, String(localized: "Obsidian notes folder"), settings.obsidianDefaultFolderRelativePath,
+            overrides.obsidianDefaultFolderRelativePath, format: { $0.isEmpty ? String(localized: "Vault root") : $0 })
         func taskList(_ id: Field, _ label: String, baseName: String?, overrideID: String?, overrideName: String?) {
             guard fields.contains(id) else { return }
-            let profileName = overrideID.map { $0.isEmpty ? "Inbox" : overrideName ?? "Unnamed" } ?? baseName ?? "Inbox"
-            rows.append(Summary(id: id, label: label, defaultValue: baseName ?? "Inbox", profileValue: profileName,
+            let profileName = overrideID.map { $0.isEmpty ? String(localized: "Inbox") : overrideName ?? String(localized: "Unnamed") } ?? baseName ?? String(localized: "Inbox")
+            rows.append(Summary(id: id, label: label, defaultValue: baseName ?? String(localized: "Inbox"), profileValue: profileName,
                                 isOverridden: overrideID != nil, note: nil))
         }
-        taskList(.tickTickList, "TickTick list", baseName: settings.integrations.tickTick.projectName,
+        taskList(.tickTickList, String(localized: "TickTick list"), baseName: settings.integrations.tickTick.projectName,
                  overrideID: overrides.tickTickProjectID, overrideName: overrides.tickTickProjectName)
-        taskList(.todoistProject, "Todoist project", baseName: settings.integrations.todoist.projectName,
+        taskList(.todoistProject, String(localized: "Todoist project"), baseName: settings.integrations.todoist.projectName,
                  overrideID: overrides.todoistProjectID, overrideName: overrides.todoistProjectName)
         if fields.contains(.notionDestination) {
             let notion = settings.integrations.notion
-            let baseName = notion.parentID.isEmpty ? "Not chosen" : notion.parentName ?? "Untitled"
+            let baseName = notion.parentID.isEmpty ? String(localized: "Not chosen") : notion.parentName ?? String(localized: "Untitled")
             let overrideID = overrides.notionParentID.flatMap { $0.isEmpty ? nil : $0 }
-            rows.append(Summary(id: .notionDestination, label: "Notion destination", defaultValue: baseName,
-                                profileValue: overrideID == nil ? baseName : overrides.notionParentName ?? "Untitled",
+            rows.append(Summary(id: .notionDestination, label: String(localized: "Notion destination"), defaultValue: baseName,
+                                profileValue: overrideID == nil ? baseName : overrides.notionParentName ?? String(localized: "Untitled"),
                                 isOverridden: overrideID != nil, note: nil))
         }
         summaries = rows
@@ -198,12 +198,12 @@ struct SettingsProfileScope {
 
     private static func effortName(_ effort: CLIReasoningEffort) -> String {
         switch effort {
-        case .cliDefault: "CLI default"
-        case .low: "Low"
-        case .medium: "Medium"
-        case .high: "High"
-        case .xhigh: "Extra high"
-        case .max: "Maximum"
+        case .cliDefault: String(localized: "CLI default")
+        case .low: String(localized: "Low")
+        case .medium: String(localized: "Medium")
+        case .high: String(localized: "High")
+        case .xhigh: String(localized: "Extra high")
+        case .max: String(localized: "Maximum")
         }
     }
 

@@ -32,10 +32,10 @@ struct CalendarLinkSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PanelWindowHeader(
-                title: saved ? "Calendar meeting linked" : "Link calendar meeting",
+                title: saved ? String(localized: "Calendar meeting linked") : String(localized: "Link calendar meeting"),
                 subtitle: saved ? nil : (meetingList.map {
-                    "Meetings from \($0.recordingStart.formatted(date: .abbreviated, time: .omitted)), with likely matches first."
-                } ?? "Meetings from the recording’s original day, with likely matches first.")
+                    String(localized: "Meetings from \($0.recordingStart.formatted(date: .abbreviated, time: .omitted)), with likely matches first.")
+                } ?? String(localized: "Meetings from the recording’s original day, with likely matches first."))
             )
             .padding(.horizontal, 24)
             .padding(.top, 22)
@@ -65,15 +65,15 @@ struct CalendarLinkSheet: View {
 
     @ViewBuilder private var savedContent: some View {
         PanelCard {
-            PanelNote("The meeting context is saved. Existing generated results are kept until you choose to regenerate them.")
-            PanelNote("Re-run AI analysis to update the summary, action items, and tags using the meeting agenda and participants. Review speaker names in the transcript using the meeting attendees.")
-            PanelNote("Previously exported files and content sent to integrations are not updated automatically.")
+            PanelNote(String(localized: "The meeting context is saved. Existing generated results are kept until you choose to regenerate them."))
+            PanelNote(String(localized: "Re-run AI analysis to update the summary, action items, and tags using the meeting agenda and participants. Review speaker names in the transcript using the meeting attendees."))
+            PanelNote(String(localized: "Previously exported files and content sent to integrations are not updated automatically."))
         }
     }
 
     @ViewBuilder private var pickerContent: some View {
         if loading && meetingList == nil {
-            PanelProgressLabel("Loading meetings…")
+            PanelProgressLabel(String(localized: "Loading meetings…"))
         } else {
             if let status = meetingList?.statusMessage {
                 Label(status, systemImage: "calendar.badge.clock")
@@ -81,12 +81,12 @@ struct CalendarLinkSheet: View {
                     .foregroundStyle(palette.secondary.color)
                     .accessibilityAddTraits(.updatesFrequently)
             }
-            if refreshing { PanelProgressLabel("Refreshing this date…") }
+            if refreshing { PanelProgressLabel(String(localized: "Refreshing this date…")) }
             if events.isEmpty {
                 if let empty = meetingList?.emptyMessage { PanelNote(empty) }
             } else {
                 PanelCard {
-                    PanelRow(label: "Meeting") {
+                    PanelRow(label: String(localized: "Meeting")) {
                         Picker("Meeting", selection: Binding(
                             get: { selectedID },
                             set: { selectedID = $0; if retainedSelection?.0 != $0 { retainedSelection = nil } }
@@ -101,7 +101,7 @@ struct CalendarLinkSheet: View {
                     }
                     if let event = selected {
                         if !event.attendeeNames.isEmpty {
-                            PanelRow(label: "Attendees") {
+                            PanelRow(label: String(localized: "Attendees")) {
                                 Text(event.attendeeNames.joined(separator: ", ")).lineLimit(3)
                             }
                         }
@@ -116,14 +116,14 @@ struct CalendarLinkSheet: View {
                             .frame(maxHeight: 110)
                         }
                         MenuPanelHairline()
-                        PanelRow(label: "Use meeting title") {
+                        PanelRow(label: String(localized: "Use meeting title")) {
                             Toggle("Use meeting title", isOn: $updateTitle).labelsHidden().controlSize(.mini)
                         }
-                        PanelRow(label: "Replace participants with attendees") {
+                        PanelRow(label: String(localized: "Replace participants with attendees")) {
                             Toggle("Replace participants with meeting attendees", isOn: $updateParticipants)
                                 .labelsHidden().controlSize(.mini)
                         }
-                        PanelNote("The full calendar context is saved even when these fields are kept.")
+                        PanelNote(String(localized: "The full calendar context is saved even when these fields are kept."))
                     }
                 }
             }
@@ -167,8 +167,9 @@ struct CalendarLinkSheet: View {
     }
 
     private func label(_ event: CalendarEvent) -> String {
-        let title = event.title.isEmpty ? "Untitled meeting" : event.title
-        return event.isAllDay ? "\(title) — All day" : "\(title) — \(event.startDate.formatted(date: .omitted, time: .shortened))–\(event.endDate.formatted(date: .omitted, time: .shortened))"
+        let title = event.title.isEmpty ? String(localized: "Untitled meeting") : event.title
+        if event.isAllDay { return String(localized: "\(title) — All day") }
+        return "\(title) — \(event.startDate.formatted(date: .omitted, time: .shortened))–\(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
 
     private func loadCached() async {

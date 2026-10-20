@@ -164,7 +164,7 @@ final class RecordingManager {
         switch engine {
         case .qwenLocal:
             required = MemoryThreshold.gemma4_e4b
-            modelName = "Gemma 4 E4B (Local)"
+            modelName = String(localized: "Gemma 4 E4B (Local)")
         case .appleIntelligence, .remoteEndpoint, .localCLI:
             return nil   // no local model loaded
         }
@@ -215,7 +215,7 @@ final class RecordingManager {
                 let candidate = input.candidate
                 let recording = Recording(id: candidate.manifest.id, date: candidate.manifest.startedAt,
                     fileURL: candidate.manifestURL.deletingLastPathComponent().appendingPathComponent("capture"),
-                    meetingTitleDraft: "Recovered recording")
+                    meetingTitleDraft: String(localized: "Recovered recording"))
                 recording.capturedTracks = candidate.capturedTracks
                 recording.recoveryManifestURL = candidate.manifestURL
                 recording.fileSize = input.fileSize
@@ -235,10 +235,10 @@ final class RecordingManager {
 
         if failedCount == 0 {
             appState.post(.info, recoveredCount == 1
-                ? "Recovered an interrupted recording. It's in the recording library."
-                : "Recovered \(recoveredCount) interrupted recordings. They're in the recording library.", source: .recovery)
+                ? String(localized: "Recovered an interrupted recording. It's in the recording library.")
+                : String(localized: "Recovered \(recoveredCount) interrupted recordings. They're in the recording library."), source: .recovery)
         } else {
-            appState.post(.warning, "Recovered \(recoveredCount) of \(recoveredCount + failedCount) interrupted recordings. The original capture files of the others were kept.",
+            appState.post(.warning, String(localized: "Recovered \(recoveredCount) of \(recoveredCount + failedCount) interrupted recordings. The original capture files of the others were kept."),
                           source: .recovery, actions: [.retryCaptureRecovery, .showRecoveryFiles])
         }
         return failedCount == 0
@@ -255,13 +255,13 @@ final class RecordingManager {
             queuePaused = try await queueScheduleStore.load().paused
             guard !queuePaused else { return }
         } catch {
-            queueLoadError = "Saved queue settings could not be read. Automatic recovery is paused."
+            queueLoadError = String(localized: "Saved queue settings could not be read. Automatic recovery is paused.")
             return
         }
         let discovery = await processingJobStore.discover()
 
         if !discovery.issues.isEmpty {
-            appState.post(.warning, "Some saved processing records can't be read. They were left untouched; move them aside in Queue & Recovery.",
+            appState.post(.warning, String(localized: "Some saved processing records can't be read. They were left untouched; move them aside in Queue & Recovery."),
                           source: .recovery, actions: [.openQueue])
         }
 
@@ -278,7 +278,7 @@ final class RecordingManager {
                         try? await queueScheduleStore.retireItem(at: audioURL, expectedID: record.id)
                     }
                 } catch {
-                    appState.post(.warning, "A recovered recording's Markdown note was found, but dBrief couldn't save that it finished. Its files were left untouched.",
+                    appState.post(.warning, String(localized: "A recovered recording's Markdown note was found, but dBrief couldn't save that it finished. Its files were left untouched."),
                                   source: .recovery, actions: [.openQueue])
                 }
                 continue
@@ -292,7 +292,7 @@ final class RecordingManager {
             guard let recording = recovered else {
                 record.markFailed(.missingInput, at: Date())
                 try? await processingJobStore.save(record)
-                appState.post(.warning, "An unfinished processing run can't find its recording. Reconnect its storage, or remove it in Queue & Recovery.",
+                appState.post(.warning, String(localized: "An unfinished processing run can't find its recording. Reconnect its storage, or remove it in Queue & Recovery."),
                               source: .recovery, actions: [.openQueue])
                 continue
             }
@@ -307,7 +307,7 @@ final class RecordingManager {
                   !reviewingIntegrationDeliveries, !queueSafetyHold, !queuePauseWriteInProgress,
                   !queueEnqueueInProgress, pauseGeneration == queuePauseGeneration else { return }
             queueMutationInProgress = false // Synchronous admission handoff to launchJob.
-            appState.post(.info, "Resuming interrupted processing.", source: .recovery)
+            appState.post(.info, String(localized: "Resuming interrupted processing."), source: .recovery)
             let request = record.request
             launchJob(
                 recording: recording,
@@ -358,7 +358,7 @@ final class RecordingManager {
         } catch {
             guard !Task.isCancelled, appState.processingJob === job else { return }
             appState.processingSteps.append(ProcessingStep(
-                name: "Loading saved transcript", status: .failed(error.localizedDescription)))
+                name: String(localized: "Loading saved transcript"), status: .failed(error.localizedDescription)))
             await markPersistedJobFailed(.missingInput, job: job)
             await ensureRetryQueue(for: job)
             guard !Task.isCancelled, appState.processingJob === job else { return }
@@ -417,10 +417,10 @@ final class RecordingManager {
     func startRecording(associatedApp: String? = nil, callBundleId: String? = nil) async throws {
         guard !captureCoordinator.isBusy else { throw CaptureCoordinator.Failure.busy }
         guard !postRecordingAction.isBusy else {
-            throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wait for the current recording to finish saving before recording again."])
+            throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: String(localized: "Wait for the current recording to finish saving before recording again.")])
         }
         guard !recoveryMaintenanceInProgress else {
-            throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wait for recording cleanup to finish before recording."])
+            throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: String(localized: "Wait for recording cleanup to finish before recording.")])
         }
         // A new capture replaces the review form; queue that recording instead of dropping it.
         let displaced = takeReviewForNewCapture()
@@ -533,7 +533,7 @@ final class RecordingManager {
             guard !terminating else { return }
             appState.announcer.announce(.stopped)
             if result.fileSize == 0 {
-                appState.post(.error, "No audio was written. The recovery session was kept so this failure can be investigated.", source: .capture)
+                appState.post(.error, String(localized: "No audio was written. The recovery session was kept so this failure can be investigated."), source: .capture)
             }
             if recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
@@ -616,13 +616,13 @@ final class RecordingManager {
                 autoQueued: review.autoQueued,
                 profileID: review.profileID), for: recording)
         } catch {
-            appState.post(.error, "Couldn't queue the recording you were reviewing. It will be recovered the next time dBrief opens. \(error.localizedDescription)", source: .review)
+            appState.post(.error, String(localized: "Couldn't queue the recording you were reviewing. It will be recovered the next time dBrief opens. \(error.localizedDescription)"), source: .review)
             return
         }
         appSettings.finishAutomaticRouting(for: recording.id)
         appState.post(.info, review.autoQueued
-            ? "Your previous recording will be processed in the background while you record."
-            : "Your previous recording was saved to the queue so the new recording could start. Process it from Queue & Recovery.",
+            ? String(localized: "Your previous recording will be processed in the background while you record.")
+            : String(localized: "Your previous recording was saved to the queue so the new recording could start. Process it from Queue & Recovery."),
             source: .review, actions: review.autoQueued ? [] : [.openQueue])
         queueEnqueueInProgress = false
         await refreshWorkQueue()
@@ -634,12 +634,12 @@ final class RecordingManager {
     func requestRecording(associatedApp: String? = nil, callBundleId: String? = nil) async {
         appState.notices.clear(source: .capture)
         do { try await startRecording(associatedApp: associatedApp, callBundleId: callBundleId) }
-        catch { appState.post(.error, "Couldn't start recording: \(error.localizedDescription)", source: .capture) }
+        catch { appState.post(.error, String(localized: "Couldn't start recording: \(error.localizedDescription)"), source: .capture) }
     }
 
     func requestResume() {
         do { try resumeRecording() }
-        catch { appState.post(.error, "Couldn't resume recording: \(error.localizedDescription)", source: .capture) }
+        catch { appState.post(.error, String(localized: "Couldn't resume recording: \(error.localizedDescription)"), source: .capture) }
     }
 
     func stopRecording() async {
@@ -764,7 +764,7 @@ final class RecordingManager {
                 if request.profile.postRecordingPolicy == .process && request.transcribe
                     && self.appSettings.effectiveTranscriptionEngine == .remoteEndpoint
                     && self.appSettings.effectiveDefaultTranscriptionEndpoint == nil {
-                    self.appState.post(.error, "Choose a transcription endpoint before processing this recording.", source: .review)
+                    self.appState.post(.error, String(localized: "Choose a transcription endpoint before processing this recording."), source: .review)
                     return
                 }
                 switch request.profile.postRecordingPolicy {
@@ -850,7 +850,7 @@ final class RecordingManager {
         do {
             try captureCoordinator.switchInputDevice(to: uid)
         } catch {
-            appState.post(.error, "Couldn't switch microphone: \(error.localizedDescription)", source: .capture)
+            appState.post(.error, String(localized: "Couldn't switch microphone: \(error.localizedDescription)"), source: .capture)
         }
     }
 
@@ -901,7 +901,7 @@ final class RecordingManager {
                     // Without a step the panel would sit empty while the lookup finishes.
                     let index = recording.calendarLookupInFlight ? self.appState.processingSteps.count : nil
                     if index != nil {
-                        self.appState.processingSteps.append(ProcessingStep(name: "Calendar event", status: .inProgress))
+                        self.appState.processingSteps.append(ProcessingStep(name: String(localized: "Calendar event"), status: .inProgress))
                     }
                     await recording.calendarLookupTask?.value
                     try self.requireProcessingOwnership(job)
@@ -912,7 +912,7 @@ final class RecordingManager {
                     try self.requireProcessingOwnership(job)
                     if let index = progress.finalizationIndex { self.markCompleted(index) }
                     let problems = recording.finalizationWarnings.filter { !FinalizationWarning.isInformational($0) }
-                    if let step = ProcessingStep.warnings("Audio finalization warnings", problems) {
+                    if let step = ProcessingStep.warnings(String(localized: "Audio finalization warnings"), problems) {
                         self.appState.processingSteps.append(step)
                     }
                 }, meetingContext: { @MainActor in
@@ -932,7 +932,7 @@ final class RecordingManager {
                     try self.requireProcessingOwnership(job)
                     if loaded {
                         progress.transcriptionIndex = self.appState.processingSteps.count
-                        self.appState.processingSteps.append(ProcessingStep(name: "Loaded saved transcript", status: .inProgress))
+                        self.appState.processingSteps.append(ProcessingStep(name: String(localized: "Loaded saved transcript"), status: .inProgress))
                     }
                     recording.transcription = result
                 }, saveTranscript: { @MainActor result in
@@ -948,7 +948,7 @@ final class RecordingManager {
                     try self.requireProcessingOwnership(job)
                     if fresh { self.appSettings.lifetimeTranscribedSeconds += recording.duration }
                     if let index = progress.transcriptionIndex { self.markCompleted(index) }
-                    if fresh, let step = ProcessingStep.warnings("Transcription warnings", result.warnings ?? []) {
+                    if fresh, let step = ProcessingStep.warnings(String(localized: "Transcription warnings"), result.warnings ?? []) {
                         self.appState.processingSteps.append(step)
                     }
                 }, speakers: { @MainActor result, perf in
@@ -989,14 +989,15 @@ final class RecordingManager {
                 }
             case .speakers:
                 if transcribe {
-                    appState.processingSteps.append(ProcessingStep(name: "Preparing speakers", status: .failed(failure.underlying.localizedDescription)))
+                    appState.processingSteps.append(ProcessingStep(name: String(localized: "Preparing speakers"), status: .failed(failure.underlying.localizedDescription)))
                 }
             }
             guard !Task.isCancelled, appState.processingJob === job else { return }
             let stage = switch failure.phase {
-            case .finalization: "Audio finalization"
-            case .transcription: "Transcription"
-            case .speakers: "Speaker detection"
+            // Lower case: shown mid-sentence ("“Title”: transcription failed.").
+            case .finalization: String(localized: "audio finalization", comment: "Mid-sentence: “Title”: audio finalization failed.")
+            case .transcription: String(localized: "transcription", comment: "Mid-sentence: “Title”: transcription failed.")
+            case .speakers: String(localized: "speaker detection", comment: "Mid-sentence: “Title”: speaker detection failed.")
             }
             notify(.failed(stage: stage), about: recording)
             await markPersistedJobFailed(failure.stage, job: job)
@@ -1029,7 +1030,7 @@ final class RecordingManager {
         let pipeline = processingPipeline
         let service = calendarCLIService
         job.calendarParticipantStepIndex = appState.processingSteps.count
-        appState.processingSteps.append(ProcessingStep(name: "Calendar attendees", status: .inProgress))
+        appState.processingSteps.append(ProcessingStep(name: String(localized: "Calendar attendees"), status: .inProgress))
         job.calendarParticipantTask = Task {
             try await pipeline.enrichCalendarParticipants(prior: prior,
                 frozenConfiguration: frozenConfig, currentConfiguration: currentConfig,
@@ -1104,7 +1105,7 @@ final class RecordingManager {
         }
         if let index = job.calendarParticipantStepIndex {
             if outcome.state == .warning {
-                appState.processingSteps[index].detail = "Calendar attendees were unavailable"
+                appState.processingSteps[index].detail = String(localized: "Calendar attendees were unavailable")
             }
             markCompleted(index)
         }
@@ -1115,7 +1116,7 @@ final class RecordingManager {
         try requireProcessingOwnership(job)
         let index = appState.processingSteps.count
         progress.finalizationIndex = index
-        appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
+        appState.processingSteps.append(ProcessingStep(name: String(localized: "Finalizing audio"), status: .inProgress))
         let callback = ProcessingStepProgress(appState: appState, job: job, stepIndex: index)
         defer { callback.invalidate() }
         try await ensureRecordingFinalized(recording: job.recording) { fraction in
@@ -1138,10 +1139,10 @@ final class RecordingManager {
         let index = appState.processingSteps.count
         progress.transcriptionIndex = index
         let name: String = switch settings.engine {
-        case .appleSpeech: "Transcribing (Apple Speech)"
-        case .localWhisper: "Transcribing (Local Whisper)"
-        case .parakeetLocal: "Transcribing (Parakeet)"
-        case .remoteEndpoint: "Transcribing audio"
+        case .appleSpeech: String(localized: "Transcribing (Apple Speech)")
+        case .localWhisper: String(localized: "Transcribing (Local Whisper)")
+        case .parakeetLocal: String(localized: "Transcribing (Parakeet)")
+        case .remoteEndpoint: String(localized: "Transcribing audio")
         }
         appState.processingSteps.append(ProcessingStep(name: name, status: .inProgress))
         let output = try await transcribeRecordingAudio(recording: recording, stepIndex: index, settings: settings)
@@ -1204,7 +1205,7 @@ final class RecordingManager {
                     transcribe: transcribe, summary: summary, actionItems: actionItems, tags: tags,
                     localAIAvailable: localAIAvailable, perf: perf,
                     stopBeforeIntegrations: stopBeforeIntegrations)
-                self.appState.recordingStatusNote = "Waiting for speaker confirmation"
+                self.appState.recordingStatusNote = String(localized: "Waiting for speaker confirmation")
                 self.appState.recordingStatusNoteIsProblem = false
                 SpeakerReviewWindowController.shared.show()
                 self.sendReviewReadyNotification()
@@ -1281,7 +1282,7 @@ final class RecordingManager {
                     guard (!summary || recording.summary != nil),
                           (!actionItems || recording.actionItems != nil), (!tags || recording.tags != nil) else {
                         throw NSError(domain: "RecordingManager", code: 6, userInfo: [
-                            NSLocalizedDescriptionKey: "One or more requested analysis outputs failed."
+                            NSLocalizedDescriptionKey: String(localized: "One or more requested analysis outputs failed.")
                         ])
                     }
                     try await self.persistInsightsSidecar(for: recording, markdownURL: nil)
@@ -1302,7 +1303,7 @@ final class RecordingManager {
                 }, markdown: { @MainActor selectedMode in
                     try self.requireProcessingOwnership(job)
                     progress.markdownIndex = self.appState.processingSteps.count
-                    self.appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
+                    self.appState.processingSteps.append(ProcessingStep(name: String(localized: "Writing Markdown"), status: .inProgress))
                     let markdownMode: ProcessingPipeline.MarkdownMode = selectedMode == .retry ? .regenerate
                         : .restartable(jobID: job.id, savedPlan: job.persistedRecord?.markdownExport,
                             alreadyCompleted: job.persistedRecord?.checkpoint.hasCompleted(.markdownGenerated) == true)
@@ -1342,14 +1343,14 @@ final class RecordingManager {
                 let failedNames = appState.processingSteps.compactMap { step -> String? in
                     if case .failed = step.status { return step.name } else { return nil }
                 }
-                notify(.finishedWithIssues(failedSteps: failedNames.isEmpty ? ["Processing"] : failedNames), about: job.recording)
+                notify(.finishedWithIssues(failedSteps: failedNames.isEmpty ? [String(localized: "Processing")] : failedNames), about: job.recording)
             }
             await finishJob(job, completed: result == .completed)
         } catch {
             // Owning-task cancellation and replacement are handled by Stop. An
             // unexpected adapter failure still retires the active job explicitly.
             guard !Task.isCancelled, appState.processingJob === job else { return }
-            notify(.failed(stage: "Processing"), about: job.recording)
+            notify(.failed(stage: String(localized: "processing", comment: "Mid-sentence: “Title”: processing failed.")), about: job.recording)
             await markPersistedJobFailed(.analysis, job: job)
             await ensureRetryQueue(for: job)
             guard !Task.isCancelled, appState.processingJob === job else { return }
@@ -1370,7 +1371,7 @@ final class RecordingManager {
         try requireProcessingOwnership(job)
         guard !text.isEmpty else { return }
         let index = appState.processingSteps.count
-        appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
+        appState.processingSteps.append(ProcessingStep(name: String(localized: "Generating Title"), status: .inProgress))
         defer {
             if !Task.isCancelled, appState.processingJob === job { markCompleted(index) }
         }
@@ -1387,8 +1388,8 @@ final class RecordingManager {
         let stage: PersistedProcessingJob.FailureStage
         switch failure.phase {
         case .loadingAnalysis, .savingAnalysis:
-            let name = failure.phase == .loadingAnalysis ? "Loading saved analysis"
-                : failure.phase == .savingAnalysis ? "Saving analysis" : "Analyzing recording"
+            let name = failure.phase == .loadingAnalysis ? String(localized: "Loading saved analysis")
+                : failure.phase == .savingAnalysis ? String(localized: "Saving analysis") : String(localized: "Analyzing recording")
             appState.processingSteps.append(ProcessingStep(name: name, status: .failed(failure.underlying.localizedDescription), kind: .analysis))
             stage = .analysis
         case .analyzing:
@@ -1454,9 +1455,9 @@ final class RecordingManager {
                     try self.requireProcessingOwnership(job)
                     switch warning {
                     case .journal:
-                        self.appState.post(.warning, "Processing finished, but dBrief couldn't save that it finished. If it shows up in Queue & Recovery, remove it from the list.", source: .processing, actions: [.openQueue])
+                        self.appState.post(.warning, String(localized: "Processing finished, but dBrief couldn't save that it finished. If it shows up in Queue & Recovery, remove it from the list."), source: .processing, actions: [.openQueue])
                     case .metadata:
-                        self.appState.post(.warning, "Processing finished, but the library's processed date couldn't be saved. dBrief will try again later.", source: .processing)
+                        self.appState.post(.warning, String(localized: "Processing finished, but the library's processed date couldn't be saved. dBrief will try again later."), source: .processing)
                     }
                 }, validateOwnership: { @MainActor in try self.requireProcessingOwnership(job) }))
             try requireProcessingOwnership(job)
@@ -1630,14 +1631,14 @@ final class RecordingManager {
         job.reprocessingAttemptID = reprocessingAttemptID
         job.observesProcessingFromStart = existingRecord?.checkpoint.lastCompletedStage == nil
         guard canLaunchProcessing(for: recording, reprocessingAttemptID: reprocessingAttemptID) else {
-            let message = "Finish the active processing, speaker review, or cleanup operation first."
+            let message = String(localized: "Finish the active processing, speaker review, or cleanup operation first.")
             appState.post(.error, message, source: .processing)
             onPreparationFailure?(message)
             return job
         }
         if reprocessingAttemptID == nil, let profileID = existingRecord?.source.profileID {
             guard appSettings.profiles.contains(where: { $0.id == profileID }) else {
-                let message = "This recording’s saved profile was deleted. Choose a profile and retry from the recording."
+                let message = String(localized: "This recording’s saved profile was deleted. Choose a profile and retry from the recording.")
                 appState.post(.error, message, source: .processing)
                 onPreparationFailure?(message)
                 return job
@@ -1683,7 +1684,7 @@ final class RecordingManager {
                     }
                 }
             } catch {
-                let message = "Couldn't save processing progress. The recording was not processed."
+                let message = String(localized: "Couldn't save processing progress. The recording was not processed.")
                 self.appState.post(.error, message, source: .processing)
                 onPreparationFailure?(message)
                 if self.appState.processingJob === job {
@@ -1694,7 +1695,7 @@ final class RecordingManager {
                 return
             }
             guard !Task.isCancelled else {
-                onPreparationFailure?("Processing was cancelled before it started. You can try again.")
+                onPreparationFailure?(String(localized: "Processing was cancelled before it started. You can try again."))
                 return
             }
             let context = await recording.privacyContext()
@@ -1799,7 +1800,7 @@ final class RecordingManager {
         do {
             snapshot = try await queueScheduleStore.snapshot(configuredFolders: configuredQueueFolders)
         } catch {
-            queueLoadError = "Saved queue settings could not be read. No queued work was started."
+            queueLoadError = String(localized: "Saved queue settings could not be read. No queued work was started.")
             return
         }
         guard completingCancellation || !Task.isCancelled,
@@ -1836,7 +1837,7 @@ final class RecordingManager {
         recording.participants = item.selectedParticipants
         if let profileID = item.profileID {
             guard appSettings.profiles.contains(where: { $0.id == profileID }) else {
-                queueLoadError = "This queued recording’s profile was deleted. Choose a profile and retry from the recording."
+                queueLoadError = String(localized: "This queued recording’s profile was deleted. Choose a profile and retry from the recording.")
                 drainAllQueued = false
                 return
             }
@@ -1985,7 +1986,7 @@ final class RecordingManager {
                 }, validateOwnership: { @MainActor in try self.requireReviewOwnership(operation, recording: recording) }))
         } catch {
             guard ownsReviewOperation(operation, recording: recording) else { return }
-            appState.post(.error, "Speaker changes could not be saved. Processing remains retryable.", source: .processing)
+            appState.post(.error, String(localized: "Speaker changes could not be saved. Processing remains retryable."), source: .processing)
             if let job = operation.job {
                 await markPersistedJobFailed(.speakerReview, job: job)
                 guard ownsReviewOperation(operation, recording: recording) else { return }
@@ -2033,7 +2034,7 @@ final class RecordingManager {
             // job while this resumed analysis is still running. `runAnalysisAndExport`
             // ends by calling `finishJob(_:)`, which tears the job down and drains.
             guard let job = operation.job, appState.processingJob === job else {
-                appState.post(.error, "The saved processing job is no longer active.", source: .processing)
+                appState.post(.error, String(localized: "The saved processing job is no longer active."), source: .processing)
                 return
             }
             do {
@@ -2041,7 +2042,7 @@ final class RecordingManager {
                 try requireReviewOwnership(operation, recording: recording)
             } catch {
                 guard ownsReviewOperation(operation, recording: recording) else { return }
-                appState.post(.error, "Speaker names were saved, but processing couldn't save its progress. Resume it from Queue & Recovery.", source: .processing, actions: [.openQueue])
+                appState.post(.error, String(localized: "Speaker names were saved, but processing couldn't save its progress. Resume it from Queue & Recovery."), source: .processing, actions: [.openQueue])
                 await markPersistedJobFailed(.persistence, job: job)
                 guard ownsReviewOperation(operation, recording: recording) else { return }
                 await finishJob(job, completed: false)
@@ -2074,8 +2075,8 @@ final class RecordingManager {
 
     private func sendReviewReadyNotification() {
         let content = UNMutableNotificationContent()
-        content.title = "Confirm speakers"
-        content.body = "Review who's who to finish processing this recording."
+        content.title = String(localized: "Confirm speakers")
+        content.body = String(localized: "Review who's who to finish processing this recording.")
         content.sound = .default
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
@@ -2120,12 +2121,12 @@ final class RecordingManager {
             return
         }
         guard canLaunchProcessing(for: recording) else {
-            postRecordingAction.finish(token: token, error: "Finish the active processing or queue operation first.")
+            postRecordingAction.finish(token: token, error: String(localized: "Finish the active processing or queue operation first."))
             return
         }
         let profileID = recording.profileSelection.reviewProfileID(savedManualID: appSettings.activeProfileId)
         guard appSettings.profiles.contains(where: { $0.id == profileID }) else {
-            postRecordingAction.finish(token: token, error: "Choose an available profile before processing.")
+            postRecordingAction.finish(token: token, error: String(localized: "Choose an available profile before processing."))
             return
         }
         appSettings.routeAutomatically(to: profileID, for: recording.id)
@@ -2193,7 +2194,7 @@ final class RecordingManager {
         appState.liveInferenceText = nil
         for i in appState.processingSteps.indices {
             if case .inProgress = appState.processingSteps[i].status {
-                appState.processingSteps[i].status = .failed("Cancelled by user")
+                appState.processingSteps[i].status = .failed(String(localized: "Cancelled by user"))
             }
         }
         if appState.pendingSpeakerReview?.recording === job.recording {
@@ -2266,8 +2267,8 @@ final class RecordingManager {
         queueSafetyHold = true
         queuePaused = true
         appState.post(.error, warning == .journal
-            ? "Processing stopped, but its saved progress couldn't be updated. The queue is paused for now; check storage, then resume the queue."
-            : "Processing stopped, but it couldn't be added back to the queue. The queue is paused for now; check storage, then resume the queue.", source: .queue, actions: [.openQueue])
+            ? String(localized: "Processing stopped, but its saved progress couldn't be updated. The queue is paused for now; check storage, then resume the queue.")
+            : String(localized: "Processing stopped, but it couldn't be added back to the queue. The queue is paused for now; check storage, then resume the queue."), source: .queue, actions: [.openQueue])
     }
 
     /// Audio types the import paths accept: the open panel, a file dropped on the
@@ -2297,7 +2298,7 @@ final class RecordingManager {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = Self.importableAudioTypes
-        panel.message = "Choose an audio file to transcribe"
+        panel.message = String(localized: "Choose an audio file to transcribe")
 
         let response = MenuBarPanel.runModal(panel)
         if !appSettings.showDockIcon {
@@ -2340,7 +2341,7 @@ final class RecordingManager {
                 // The coordinator cleans up a cancelled copy before returning.
             } catch {
                 if !Task.isCancelled, generation == pickedImportGeneration, recordingReviewSlot.canAcceptImport(snapshot) {
-                    appState.post(.error, "Couldn't read \(url.lastPathComponent). \(error.localizedDescription)", source: .imports)
+                    appState.post(.error, String(localized: "Couldn't read \(url.lastPathComponent). \(error.localizedDescription)"), source: .imports)
                 }
             }
         }
@@ -2385,7 +2386,7 @@ final class RecordingManager {
         } catch is CancellationError {
             return
         } catch {
-            appState.post(.error, "Watched folder: couldn't read \(sourceURL.lastPathComponent). \(error.localizedDescription)", source: .imports)
+            appState.post(.error, String(localized: "Watched folder: couldn't read \(sourceURL.lastPathComponent). \(error.localizedDescription)"), source: .imports)
             return
         }
 
@@ -2660,28 +2661,28 @@ final class RecordingManager {
 
     private func labelForSummary(engine: AppSettings.AIEngine) -> String {
         switch engine {
-        case .appleIntelligence: "Generating summary (Apple Intelligence)"
-        case .qwenLocal: "Generating summary (Gemma 4 E4B local)"
-        case .remoteEndpoint: "Generating summary"
-        case .localCLI: "Generating summary (Local CLI)"
+        case .appleIntelligence: String(localized: "Generating summary (Apple Intelligence)")
+        case .qwenLocal: String(localized: "Generating summary (Gemma 4 E4B local)")
+        case .remoteEndpoint: String(localized: "Generating summary")
+        case .localCLI: String(localized: "Generating summary (Local CLI)")
         }
     }
 
     private func labelForActionItems(engine: AppSettings.AIEngine) -> String {
         switch engine {
-        case .appleIntelligence: "Extracting action items (Apple Intelligence)"
-        case .qwenLocal: "Extracting action items (Gemma 4 E4B local)"
-        case .remoteEndpoint: "Extracting action items"
-        case .localCLI: "Extracting action items (Local CLI)"
+        case .appleIntelligence: String(localized: "Extracting action items (Apple Intelligence)")
+        case .qwenLocal: String(localized: "Extracting action items (Gemma 4 E4B local)")
+        case .remoteEndpoint: String(localized: "Extracting action items")
+        case .localCLI: String(localized: "Extracting action items (Local CLI)")
         }
     }
 
     private func labelForTags(engine: AppSettings.AIEngine) -> String {
         switch engine {
-        case .appleIntelligence: "Analyzing tags (Apple Intelligence)"
-        case .qwenLocal: "Analyzing tags & sentiment (Gemma 4 E4B local)"
-        case .remoteEndpoint: "Analyzing tags & sentiment"
-        case .localCLI: "Analyzing tags & sentiment (Local CLI)"
+        case .appleIntelligence: String(localized: "Analyzing tags (Apple Intelligence)")
+        case .qwenLocal: String(localized: "Analyzing tags & sentiment (Gemma 4 E4B local)")
+        case .remoteEndpoint: String(localized: "Analyzing tags & sentiment")
+        case .localCLI: String(localized: "Analyzing tags & sentiment (Local CLI)")
         }
     }
 
@@ -2710,10 +2711,10 @@ final class RecordingManager {
         if !fields.isEmpty { recording.beginAnalysis() }
         let appleUnavailable: String? = {
             #if canImport(FoundationModels)
-            guard #available(macOS 26, *) else { return "Apple Intelligence requires macOS 26+." }
-            return localAIAvailable ? nil : "Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match."
+            guard #available(macOS 26, *) else { return String(localized: "Apple Intelligence requires macOS 26+.") }
+            return localAIAvailable ? nil : String(localized: "Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match.")
             #else
-            return "Apple Intelligence is unavailable in this build."
+            return String(localized: "Apple Intelligence is unavailable in this build.")
             #endif
         }()
         let input = ProcessingPipeline.AnalysisRequest(transcription: transcription,
@@ -2982,9 +2983,9 @@ final class RecordingManager {
                           self.appState.processingSteps.indices.contains(stepIndex) else { return }
                     switch event {
                     case .transcribingSegment(let index, let count):
-                        self.appState.processingSteps[stepIndex].name = "Transcribing audio (segment \(index)/\(count))"
+                        self.appState.processingSteps[stepIndex].name = String(localized: "Transcribing audio (segment \(index)/\(count))")
                     case .correctingVocabulary:
-                        self.appState.processingSteps[stepIndex].name = "Correcting vocabulary…"
+                        self.appState.processingSteps[stepIndex].name = String(localized: "Correcting vocabulary…")
                         self.appState.processingJob?.transcriptionStartedAt = nil
                         self.appState.processingSteps[stepIndex].progress = nil
                         self.appState.processingSteps[stepIndex].detail = nil
@@ -2995,7 +2996,7 @@ final class RecordingManager {
         guard appState.processingJob === owner else { throw CancellationError() }
         if let note = result.vocabularyWarning {
             recording.processingNotes.append(note)
-            appState.processingSteps.append(ProcessingStep(name: "Vocabulary correction skipped", status: .warning(note)))
+            appState.processingSteps.append(ProcessingStep(name: String(localized: "Vocabulary correction skipped"), status: .warning(note)))
         }
         return result
     }
@@ -3070,11 +3071,10 @@ final class RecordingManager {
                 throw TranscriptionError.invalidEndpoint
             }
 
-            let segmentLabel: String
-            if let segmentIndex, let segmentCount {
-                segmentLabel = "segment \(segmentIndex)/\(segmentCount)"
+            let segment: (index: Int, count: Int)? = if let segmentIndex, let segmentCount {
+                (segmentIndex, segmentCount)
             } else {
-                segmentLabel = "audio"
+                nil
             }
             return try await transcriptionService.transcribe(
                 fileURL: url,
@@ -3093,7 +3093,11 @@ final class RecordingManager {
                 progress: { chunk in
                     Task { @MainActor in
                         progress.update { step, _ in
-                            step.name = "Transcribing \(segmentLabel) (chunk \(chunk.current)/\(chunk.total))"
+                            step.name = if let segment {
+                                String(localized: "Transcribing segment \(segment.index)/\(segment.count) (chunk \(chunk.current)/\(chunk.total))")
+                            } else {
+                                String(localized: "Transcribing audio (chunk \(chunk.current)/\(chunk.total))")
+                            }
                         }
                     }
                 }
@@ -3148,7 +3152,7 @@ final class RecordingManager {
                 let id = recording.profileSelection.reviewProfileID(savedManualID: appSettings.activeProfileId)
                 guard let selected = appSettings.profiles.first(where: { $0.id == id }) else {
                     throw NSError(domain: "RecordingManager", code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "Choose an available profile before saving this recording."])
+                        userInfo: [NSLocalizedDescriptionKey: String(localized: "Choose an available profile before saving this recording.")])
                 }
                 profile = selected
             } else {
@@ -3424,7 +3428,7 @@ final class RecordingManager {
         do {
             _ = try await processingJobStore.moveAside(folder)
         } catch {
-            appState.post(.error, "Couldn't move “\(folder.lastPathComponent)” aside. Check that the folder still exists and storage is available.", source: .queue, actions: [.openQueue])
+            appState.post(.error, String(localized: "Couldn't move “\(folder.lastPathComponent)” aside. Check that the folder still exists and storage is available."), source: .queue, actions: [.openQueue])
         }
         await refreshWorkQueue()
     }
@@ -3483,7 +3487,7 @@ final class RecordingManager {
     private func saveQueueItem(_ item: QueueItem, for recording: Recording) async throws {
         guard let audio = recording.finalizedAudioURL else {
             throw NSError(domain: "RecordingManager", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "Cannot determine queue file path — recording not finalized."
+                NSLocalizedDescriptionKey: String(localized: "Cannot determine queue file path — recording not finalized.")
             ])
         }
         var resolved = item
@@ -3526,11 +3530,11 @@ final class RecordingManager {
             hasUnreadableRecords = !discovery.issues.isEmpty
             unreadableRecordFolders = discovery.issues.compactMap(\.directoryURL)
             queueLoadError = discovery.issues.isEmpty ? nil
-                : "Some saved processing records can't be read. They were left untouched; move them aside to continue."
+                : String(localized: "Some saved processing records can't be read. They were left untouched; move them aside to continue.")
         } catch {
             guard generation == queueRefreshGeneration else { return }
             hasUnreadableRecords = true
-            queueLoadError = "Saved queue or delivery records could not be read. Their files were left untouched."
+            queueLoadError = String(localized: "Saved queue or delivery records could not be read. Their files were left untouched.")
         }
     }
 
@@ -3553,7 +3557,7 @@ final class RecordingManager {
             return true
         } catch {
             guard generation == queuePauseGeneration else { return false }
-            appState.post(.error, "Couldn't save the queue setting. Check available storage and try again.", source: .queue, actions: [.openQueue])
+            appState.post(.error, String(localized: "Couldn't save the queue setting. Check available storage and try again."), source: .queue, actions: [.openQueue])
             return false
         }
     }
@@ -3568,7 +3572,7 @@ final class RecordingManager {
             pendingQueueItems = snapshot.items.filter {
                 $0.audioURL.standardizedFileURL != appState.processingJob?.recording.finalizedAudioURL?.standardizedFileURL
             }
-        } catch { appState.post(.error, "Couldn't save the queue order. The previous order is unchanged.", source: .queue, actions: [.openQueue]) }
+        } catch { appState.post(.error, String(localized: "Couldn't save the queue order. The previous order is unchanged."), source: .queue, actions: [.openQueue]) }
         queueMutationInProgress = false
         queueRefreshGeneration += 1
         await drainQueueIfNeeded()
@@ -3590,7 +3594,7 @@ final class RecordingManager {
             _ = await setQueuePaused(true, clearSafetyHold: false)
             queueSafetyHold = true
             queuePaused = true
-            appState.post(.error, "Couldn't remove the queued item. Processing is paused for this session; check storage and try again.", source: .queue, actions: [.openQueue])
+            appState.post(.error, String(localized: "Couldn't remove the queued item. Processing is paused for this session; check storage and try again."), source: .queue, actions: [.openQueue])
         }
         queueMutationInProgress = false
         queueRefreshGeneration += 1
@@ -3609,7 +3613,7 @@ final class RecordingManager {
         do {
             try await dismissRecoveryRecord(id: id)
             await refreshWorkQueue()
-        } catch { appState.post(.error, "Couldn't dismiss this recovery item. Check storage and try again.", source: .queue, actions: [.openQueue]) }
+        } catch { appState.post(.error, String(localized: "Couldn't dismiss this recovery item. Check storage and try again."), source: .queue, actions: [.openQueue]) }
     }
 
     /// Discards an unfinished run so the recording can be reprocessed from scratch
@@ -3635,7 +3639,7 @@ final class RecordingManager {
                   record.dismissedFromQueue != true, record.status != .completed,
                   !record.checkpoint.hasCompleted(.markdownGenerated) else { return }
             guard let recording = try await recordingForRecovery(record) else {
-                appState.post(.error, "The recording is unavailable. Reconnect its storage, then try Resume again.", source: .queue, actions: [.openQueue])
+                appState.post(.error, String(localized: "The recording is unavailable. Reconnect its storage, then try Resume again."), source: .queue, actions: [.openQueue])
                 return
             }
             guard appState.processingJob == nil else { return }
@@ -3653,7 +3657,7 @@ final class RecordingManager {
                         summary: request.summary, actionItems: request.actionItems, tags: request.tags)
                 }
             }
-        } catch { appState.post(.error, "Couldn't load this recovery item. Its saved files were left untouched.", source: .queue, actions: [.openQueue]) }
+        } catch { appState.post(.error, String(localized: "Couldn't load this recovery item. Its saved files were left untouched."), source: .queue, actions: [.openQueue]) }
     }
 
     /// Why the library can't start work on `target` now, or nil. Queue, recovery and
@@ -3661,7 +3665,7 @@ final class RecordingManager {
     /// interrupted capture waits until capture and review are idle.
     func libraryWorkBlockMessage(_ target: LibraryWorkItem.Target) -> String? {
         if let job = appState.processingJob {
-            return "Wait for “\(job.recording.generatedTitle ?? job.recording.meetingTitleDraft)” to finish processing."
+            return String(localized: "Wait for “\(job.recording.generatedTitle ?? job.recording.meetingTitleDraft)” to finish processing.")
         }
         if let operation = appActivity.operation { return RecordingBlock.busy(operation).message }
         if target == .capture, !canPerformLibraryWork { return RecordingBlock.recordingInProgress.message }
@@ -3704,18 +3708,18 @@ final class RecordingManager {
         case .queue(let id, let audio):
             await drainQueueIfNeeded(preferredAudioURL: audio, expectedID: id)
             guard appState.processingJob?.id == id else {
-                throw NSError(domain: "LibraryWork", code: 1, userInfo: [NSLocalizedDescriptionKey: queueLoadError ?? "This queued recording could not be started. Refresh the queue and try again."])
+                throw NSError(domain: "LibraryWork", code: 1, userInfo: [NSLocalizedDescriptionKey: queueLoadError ?? String(localized: "This queued recording could not be started. Refresh the queue and try again.")])
             }
         case .processing(let id):
             await resumeRecoveryItem(id)
             guard appState.processingJob?.id == id else {
-                throw NSError(domain: "LibraryWork", code: 2, userInfo: [NSLocalizedDescriptionKey: appState.lastError ?? "This recovery item could not be resumed. Refresh the library and try again."])
+                throw NSError(domain: "LibraryWork", code: 2, userInfo: [NSLocalizedDescriptionKey: appState.lastError ?? String(localized: "This recovery item could not be resumed. Refresh the library and try again.")])
             }
         case .delivery(let id, let audio):
             await reviewIntegrationDeliveries(for: audio, batchID: id)
         case .capture(let id):
             guard await recoverInterruptedSessions(only: id) else {
-                throw NSError(domain: "LibraryWork", code: 3, userInfo: [NSLocalizedDescriptionKey: "This interrupted recording could not be recovered. Reconnect its storage and try again."])
+                throw NSError(domain: "LibraryWork", code: 3, userInfo: [NSLocalizedDescriptionKey: String(localized: "This interrupted recording could not be recovered. Reconnect its storage and try again.")])
             }
         }
         await refreshWorkQueue()
@@ -3861,14 +3865,14 @@ final class RecordingManager {
                 })
             try requireProcessingOwnership(job)
             if result.held {
-                appState.post(.info, "Recovered processing up to the Markdown note. Integrations weren't sent automatically; send them with Integrations….",
+                appState.post(.info, String(localized: "Recovered processing up to the Markdown note. Integrations weren't sent automatically; send them with Integrations…."),
                               source: .integrations, recordingURL: job.recording.finalizedAudioURL,
                               actions: job.recording.finalizedAudioURL.map { [.reviewIntegrations($0)] } ?? [])
                 return true
             }
             for entry in result.batch.deliveries {
-                guard !appState.processingSteps.contains(where: { $0.name == "Send: \(entry.destination.displayName)" }) else { continue }
-                appState.processingSteps.append(ProcessingStep(name: "Send: \(entry.destination.displayName)",
+                guard !appState.processingSteps.contains(where: { $0.name == Self.sendStepName(entry.destination) }) else { continue }
+                appState.processingSteps.append(ProcessingStep(name: Self.sendStepName(entry.destination),
                     status: entry.isComplete ? .completed : .failed(entry.statusDescription), kind: .delivery))
             }
             guard result.batch.isComplete else {
@@ -3882,7 +3886,7 @@ final class RecordingManager {
         } catch {
             guard !Task.isCancelled, appState.processingJob === job else { return false }
             if stopBeforeIntegrations {
-                appState.post(.warning, "The Markdown note was saved, but dBrief couldn't save that it finished. Check it in Queue & Recovery.", source: .integrations, actions: [.openQueue])
+                appState.post(.warning, String(localized: "The Markdown note was saved, but dBrief couldn't save that it finished. Check it in Queue & Recovery."), source: .integrations, actions: [.openQueue])
             } else {
                 appState.post(.error, error.localizedDescription, source: .integrations)
                 await markPersistedJobFailed(.integrations, job: job)
@@ -3931,16 +3935,21 @@ final class RecordingManager {
             })
     }
 
+    /// One spelling for a delivery step's name: steps are created and found by it.
+    static func sendStepName(_ destination: IntegrationDestination) -> String {
+        String(localized: "Send: \(destination.displayName)")
+    }
+
     private func applyDeliveryEvent(_ event: ProcessingPipeline.DeliveryEvent, job: ProcessingJob) {
         guard !Task.isCancelled, appState.processingJob === job else { return }
         switch event {
         case .started(let entry):
-            appState.processingSteps.append(ProcessingStep(name: "Send: \(entry.destination.displayName)", status: .inProgress, kind: .delivery))
+            appState.processingSteps.append(ProcessingStep(name: Self.sendStepName(entry.destination), status: .inProgress, kind: .delivery))
         case .finished(let result):
-            guard let index = appState.processingSteps.lastIndex(where: { $0.name == "Send: \(result.destination.displayName)" }) else { return }
+            guard let index = appState.processingSteps.lastIndex(where: { $0.name == Self.sendStepName(result.destination) }) else { return }
             switch result.status {
             case .success, .skipped: appState.processingSteps[index].status = .completed
-            case .failed: appState.processingSteps[index].status = .failed("Delivery unconfirmed. Check the destination, then retry with Integrations….")
+            case .failed: appState.processingSteps[index].status = .failed(String(localized: "Delivery unconfirmed. Check the destination, then retry with Integrations…."))
             }
         }
     }
@@ -3957,29 +3966,29 @@ final class RecordingManager {
             try Task.checkCancellation()
             guard let batch = loadedBatch else {
                 let alert = NSAlert()
-                alert.messageText = "No saved integration deliveries"
-                alert.informativeText = "This recording has no tracked sends. Older app versions did not record delivery outcomes, so dBrief cannot safely retry them here."
-                alert.addButton(withTitle: "Close")
+                alert.messageText = String(localized: "No saved integration deliveries")
+                alert.informativeText = String(localized: "This recording has no tracked sends. Older app versions did not record delivery outcomes, so dBrief cannot safely retry them here.")
+                alert.addButton(withTitle: String(localized: "Close"))
                 alert.runModal()
                 return
             }
             let remaining = batch.deliveries.filter { !$0.isComplete }
             let alert = NSAlert()
-            alert.messageText = "Integration deliveries"
+            alert.messageText = String(localized: "Integration deliveries")
             alert.informativeText = batch.deliveries.isEmpty
-                ? "No integrations were enabled for this processing job."
+                ? String(localized: "No integrations were enabled for this processing job.")
                 : batch.deliveries.map { "\($0.destination.displayName): \($0.statusDescription)" }.joined(separator: "\n\n")
             let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 28))
             // With several unsent, the first entry sends them all in one go.
             let offersAll = remaining.count > 1
             if !remaining.isEmpty {
-                if offersAll { picker.addItem(withTitle: "All remaining (\(remaining.count))") }
+                if offersAll { picker.addItem(withTitle: String(localized: "All remaining (\(remaining.count))")) }
                 picker.addItems(withTitles: remaining.map { $0.destination.displayName })
-                picker.setAccessibilityLabel("Integrations to send")
+                picker.setAccessibilityLabel(String(localized: "Integrations to send"))
                 alert.accessoryView = picker
-                alert.addButton(withTitle: "Send")
+                alert.addButton(withTitle: String(localized: "Send"))
             }
-            alert.addButton(withTitle: "Close")
+            alert.addButton(withTitle: String(localized: "Close"))
             guard alert.runModal() == .alertFirstButtonReturn, !remaining.isEmpty else { return }
             let index = picker.indexOfSelectedItem
             let selected = offersAll && index == 0 ? remaining : [remaining[index - (offersAll ? 1 : 0)]]
@@ -3989,28 +3998,28 @@ final class RecordingManager {
                 ListFormatter.localizedString(byJoining: destinations.map(\.displayName))
             }
             guard !plan.destinations.isEmpty else {
-                appState.post(.error, "Enable \(names(plan.disabled)) in Settings before retrying.", source: .integrations)
+                appState.post(.error, String(localized: "Enable \(names(plan.disabled)) in Settings before retrying."), source: .integrations)
                 return
             }
             if plan.needsConfirmation {
                 let warning = NSAlert()
                 warning.alertStyle = .warning
                 let sending = selected.map(\.destination).filter(plan.destinations.contains)
-                warning.messageText = sending.count == 1 ? "Retry \(names(sending))?" : "Send \(names(sending))?"
+                warning.messageText = sending.count == 1 ? String(localized: "Retry \(names(sending))?") : String(localized: "Send \(names(sending))?")
                 var explanations: [String] = []
                 if plan.allowUncertainRetry {
-                    explanations.append("The previous attempt to \(names(plan.duplicateRisk)) may already have created a note, reminders, or a webhook event. Check the destination first. Retrying may create duplicates. Webhook deduplication depends on the receiver honoring the idempotency key.")
+                    explanations.append(String(localized: "The previous attempt to \(names(plan.duplicateRisk)) may already have created a note, reminders, or a webhook event. Check the destination first. Retrying may create duplicates. Webhook deduplication depends on the receiver honoring the idempotency key."))
                 }
                 if plan.acceptConfigurationChange {
-                    explanations.append("The settings for \(names(plan.configurationChanged)) have changed. Using current settings may send this saved content to a different account, folder, or URL, or include different selected fields.")
+                    explanations.append(String(localized: "The settings for \(names(plan.configurationChanged)) have changed. Using current settings may send this saved content to a different account, folder, or URL, or include different selected fields."))
                 }
                 warning.informativeText = explanations.joined(separator: "\n\n")
-                warning.addButton(withTitle: "Cancel")
-                warning.addButton(withTitle: plan.acceptConfigurationChange ? "Send with Current Settings" : "Retry Anyway")
+                warning.addButton(withTitle: String(localized: "Cancel"))
+                warning.addButton(withTitle: plan.acceptConfigurationChange ? String(localized: "Send with Current Settings") : String(localized: "Retry Anyway"))
                 guard warning.runModal() == .alertSecondButtonReturn else { return }
             }
             guard appState.processingJob == nil else {
-                appState.post(.error, "Wait for the active processing job to finish before retrying integrations.", source: .integrations)
+                appState.post(.error, String(localized: "Wait for the active processing job to finish before retrying integrations."), source: .integrations)
                 return
             }
             let recording = Recording(id: batch.recordingID, date: batch.bundle.createdAt,
@@ -4030,9 +4039,9 @@ final class RecordingManager {
                         acceptConfigurationChange: plan.acceptConfigurationChange)
                     guard !Task.isCancelled, self.appState.processingJob === retryJob else { return }
                     for entry in result.deliveries where plan.destinations.contains(entry.destination)
-                        && !self.appState.processingSteps.contains(where: { $0.name == "Send: \(entry.destination.displayName)" }) {
+                        && !self.appState.processingSteps.contains(where: { $0.name == Self.sendStepName(entry.destination) }) {
                         self.appState.processingSteps.append(ProcessingStep(
-                            name: "Send: \(entry.destination.displayName)",
+                            name: Self.sendStepName(entry.destination),
                             status: entry.isComplete ? .completed : .failed(entry.statusDescription), kind: .delivery))
                     }
                     if result.isComplete {

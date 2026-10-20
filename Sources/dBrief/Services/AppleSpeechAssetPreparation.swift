@@ -19,9 +19,9 @@ enum AppleSpeechAssetPreparation {
             let name = Locale(identifier: "en").localizedString(forLanguageCode:
                 Locale(identifier: locale).language.languageCode?.identifier ?? locale) ?? locale
             if state == .unsupported {
-                return "Apple’s \(name) transcription model is currently unavailable on this Mac. macOS lists the language but cannot provide its speech model."
+                return String(localized: "Apple’s \(name) transcription model is currently unavailable on this Mac. macOS lists the language but cannot provide its speech model.")
             }
-            return "Apple’s \(name) transcription model is not ready. The download did not finish; try again when connected to the internet."
+            return String(localized: "Apple’s \(name) transcription model is not ready. The download did not finish; try again when connected to the internet.")
         }
 
         var diagnostic: String {
@@ -48,7 +48,7 @@ enum AppleSpeechAssetPreparation {
         var detail: String?
         for attempt in 0..<2 {
             try Task.checkCancellation()
-            report(attempt == 0 ? "Preparing language…" : "Retrying language download…")
+            report(attempt == 0 ? String(localized: "Preparing language…") : String(localized: "Retrying language download…"))
             do {
                 try await install()
                 detail = nil

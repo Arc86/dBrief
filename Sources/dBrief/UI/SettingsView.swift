@@ -74,7 +74,7 @@ struct SettingsView: View {
                             Text(result.title)
                                 .uiFont(.system(size: 12.5, weight: .medium))
                                 .foregroundStyle(palette.heading.color)
-                            Text(result.destination.page.title + (result.requiresAdvanced ? " · Advanced" : ""))
+                            Text(result.requiresAdvanced ? String(localized: "\(result.destination.page.title) · Advanced") : result.destination.page.title)
                                 .uiFont(.system(size: 11))
                                 .foregroundStyle(palette.secondary.color)
                         }

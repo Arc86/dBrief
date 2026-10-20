@@ -46,11 +46,11 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
         var needsDuplicateConfirmation: Bool { status == .inFlight || status == .uncertain }
         var statusDescription: String {
             switch status {
-            case .pending: "Not sent"
-            case .inFlight, .uncertain: "Delivery unconfirmed — retry may create duplicates"
-            case .succeeded: "Sent"
-            case .skipped: "Skipped — no content to send"
-            case .blocked: "Not sent — integration settings changed or are disabled"
+            case .pending: String(localized: "Not sent")
+            case .inFlight, .uncertain: String(localized: "Delivery unconfirmed — retry may create duplicates")
+            case .succeeded: String(localized: "Sent")
+            case .skipped: String(localized: "Skipped — no content to send")
+            case .blocked: String(localized: "Not sent — integration settings changed or are disabled")
             }
         }
     }

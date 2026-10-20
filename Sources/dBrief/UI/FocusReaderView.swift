@@ -115,7 +115,7 @@ struct FocusReaderView: View {
     @ViewBuilder
     private func notes(_ content: FocusReaderContent) -> some View {
         if let summary = content.summary {
-            section("Summary") {
+            section(String(localized: "Summary")) {
                 MarkdownText(summary, readingFont: readingFont)
                     .font(readingFont)
                     .lineSpacing(lineSpacing)
@@ -124,7 +124,7 @@ struct FocusReaderView: View {
             }
         }
         if !content.actionGroups.isEmpty {
-            section("Action items") {
+            section(String(localized: "Action items")) {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(content.actionGroups) { group in
                         VStack(alignment: .leading, spacing: 8) {
@@ -143,7 +143,7 @@ struct FocusReaderView: View {
                                     Image(systemName: done ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(done ? palette.primary.color : palette.secondary.color)
                                 }
-                                .accessibilityLabel("\(done ? "Done" : "To do"): \(item.text)")
+                                .accessibilityLabel(done ? "Done: \(item.text)" : "To do: \(item.text)")
                             }
                         }
                     }
@@ -151,7 +151,7 @@ struct FocusReaderView: View {
             }
         }
         if !content.tags.isEmpty {
-            section("Tags") {
+            section(String(localized: "Tags")) {
                 FlowLayout(spacing: 8) {
                     ForEach(content.tags, id: \.self) { tag in
                         Text(tag)
@@ -309,8 +309,8 @@ struct FocusReaderView: View {
                        in: FocusReaderTextSettings.lineHeightRange, step: 0.1)
                     .frame(width: 180)
                     .accessibilityLabel("Line spacing")
-                    .accessibilityValue(String(format: "%.1f times the text size", settings.lineHeight))
-                Text(String(format: "%.1f×", settings.lineHeight))
+                    .accessibilityValue("\(settings.lineHeight, specifier: "%.1f") times the text size")
+                Text("\(settings.lineHeight, specifier: "%.1f")×")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .trailing)

@@ -22,9 +22,9 @@ enum VoiceLibraryDisplay {
 
         var label: String {
             switch self {
-            case .weak: "Weak"
-            case .good: "Good"
-            case .strong: "Strong"
+            case .weak: String(localized: "Weak")
+            case .good: String(localized: "Good")
+            case .strong: String(localized: "Strong")
             }
         }
     }
@@ -98,7 +98,7 @@ enum VoiceLibraryDisplay {
     /// "N voiceprint(s)".
     static func sampleSummary(_ person: KnownPerson) -> String {
         let n = person.voiceprints.count
-        return "\(n) voiceprint\(n == 1 ? "" : "s")"
+        return String(AttributedString(localized: "^[\(n) voiceprint](inflect: true)").characters)
     }
 
     /// Newest-first; people with no prints sort last; ties broken by case-insensitive name.

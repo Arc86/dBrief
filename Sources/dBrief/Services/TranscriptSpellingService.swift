@@ -46,11 +46,11 @@ actor TranscriptSpellingService {
         var message: String {
             switch self {
             case .noEngine:
-                "Vocabulary correction skipped: no AI engine is available. Choose one in Settings → AI analysis."
+                String(localized: "Vocabulary correction skipped: no AI engine is available. Choose one in Settings → AI analysis.")
             case .engineFailed:
-                "Vocabulary correction skipped: the AI engine didn't respond. The transcript is unchanged."
+                String(localized: "Vocabulary correction skipped: the AI engine didn't respond. The transcript is unchanged.")
             case .unreadableAnswer:
-                "Vocabulary correction skipped: the AI engine's answer couldn't be read. The transcript is unchanged."
+                String(localized: "Vocabulary correction skipped: the AI engine's answer couldn't be read. The transcript is unchanged.")
             }
         }
     }
@@ -159,7 +159,7 @@ actor TranscriptSpellingService {
 
     private enum SpellingError: LocalizedError {
         case noEngine
-        var errorDescription: String? { "No AI engine available for vocabulary correction." }
+        var errorDescription: String? { String(localized: "No AI engine available for vocabulary correction.") }
     }
 
     // MARK: - Prompts & parsing

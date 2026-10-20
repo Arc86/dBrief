@@ -31,20 +31,20 @@ final class PromptEditorToolbar: NSObject, NSToolbarDelegate {
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         if id == moreID {
             let item = NSMenuToolbarItem(itemIdentifier: id)
-            item.label = "Prompt options"
+            item.label = String(localized: "Prompt options")
             item.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: item.label)
             let menu = NSMenu()
-            let restore = NSMenuItem(title: session.identity.scope == .appDefaults ? "Restore Default" : "Use App Default", action: #selector(restoreDefault), keyEquivalent: "")
+            let restore = NSMenuItem(title: session.identity.scope == .appDefaults ? String(localized: "Restore Default") : String(localized: "Use App Default"), action: #selector(restoreDefault), keyEquivalent: "")
             restore.target = self
             menu.addItem(restore)
-            let undo = NSMenuItem(title: "Undo AI Edit", action: #selector(undoAI), keyEquivalent: "")
+            let undo = NSMenuItem(title: String(localized: "Undo AI Edit"), action: #selector(undoAI), keyEquivalent: "")
             undo.target = self
             menu.addItem(undo)
             item.menu = menu
             return item
         }
         let item = NSToolbarItem(itemIdentifier: id)
-        item.label = id == improveID ? "Improve with AI" : "Try Prompt"
+        item.label = id == improveID ? String(localized: "Improve with AI") : String(localized: "Try Prompt")
         item.toolTip = item.label
         item.image = NSImage(systemSymbolName: id == improveID ? "sparkles" : "play.rectangle", accessibilityDescription: item.label)
         item.target = self

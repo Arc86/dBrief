@@ -34,10 +34,12 @@ struct IntegrationRetryPlan: Equatable, Sendable {
     var allowUncertainRetry: Bool { !duplicateRisk.isEmpty }
     var acceptConfigurationChange: Bool { !configurationChanged.isEmpty }
 
+    // Notices are matched against these in the same run, so both sides use the same
+    // translated text.
     static let processingAttentionMessage =
-        "Some integrations need attention. Use Integrations… to review or retry individual sends."
+        String(localized: "Some integrations need attention. Use Integrations… to review or retry individual sends.")
     static let retryAttentionMessage =
-        "Some deliveries still need attention. Use Integrations… to review them."
+        String(localized: "Some deliveries still need attention. Use Integrations… to review them.")
     static let attentionMessages = [processingAttentionMessage, retryAttentionMessage]
 
     /// Only these errors are cleared once every delivery has gone out; any

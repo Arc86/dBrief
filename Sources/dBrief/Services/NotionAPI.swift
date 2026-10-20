@@ -11,13 +11,13 @@ enum NotionError: LocalizedError, Equatable, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .missingToken: "Paste your Notion integration secret first."
-        case .missingDestination: "Choose a Notion page or database to send notes to."
-        case .unauthorized: "Notion rejected the integration secret. Paste a new one in Settings → Integrations → Notion."
-        case .notShared: "Notion can't see that page or database. Connect it to your integration (••• → Connections)."
-        case .rateLimited: "Notion is limiting requests right now. Try again in a minute."
-        case .invalidResponse: "Notion returned a response dBrief couldn't read."
-        case .http(let code): "Notion returned an error (\(code))."
+        case .missingToken: String(localized: "Paste your Notion integration secret first.")
+        case .missingDestination: String(localized: "Choose a Notion page or database to send notes to.")
+        case .unauthorized: String(localized: "Notion rejected the integration secret. Paste a new one in Settings → Integrations → Notion.")
+        case .notShared: String(localized: "Notion can't see that page or database. Connect it to your integration (••• → Connections).")
+        case .rateLimited: String(localized: "Notion is limiting requests right now. Try again in a minute.")
+        case .invalidResponse: String(localized: "Notion returned a response dBrief couldn't read.")
+        case .http(let code): String(localized: "Notion returned an error (\(code)).")
         }
     }
 }
@@ -262,10 +262,10 @@ enum NotionAPI {
                 let properties = result["properties"] as? [String: Any] ?? [:]
                 let title = properties.values.compactMap { $0 as? [String: Any] }
                     .first { $0["type"] as? String == "title" }?["title"] as? [[String: Any]]
-                return NotionDestination(kind: .page, id: id, name: plainText(title) ?? "Untitled")
+                return NotionDestination(kind: .page, id: id, name: plainText(title) ?? String(localized: "Untitled"))
             case "data_source":
                 return NotionDestination(kind: .dataSource, id: id,
-                                         name: plainText(result["title"] as? [[String: Any]]) ?? "Untitled database")
+                                         name: plainText(result["title"] as? [[String: Any]]) ?? String(localized: "Untitled database"))
             default:
                 return nil
             }

@@ -17,13 +17,13 @@ struct CLIReasoningEffortPicker: View {
 
     private func label(for effort: CLIReasoningEffort) -> String {
         let name: String = switch effort {
-        case .cliDefault: "CLI default"
-        case .low: "Low"
-        case .medium: "Medium"
-        case .high: "High"
-        case .xhigh: "Extra high"
-        case .max: "Maximum"
+        case .cliDefault: String(localized: "CLI default")
+        case .low: String(localized: "Low")
+        case .medium: String(localized: "Medium")
+        case .high: String(localized: "High")
+        case .xhigh: String(localized: "Extra high")
+        case .max: String(localized: "Maximum")
         }
-        return effort == recommendation ? "\(name) · Recommended" : name
+        return effort == recommendation ? String(localized: "\(name) · Recommended") : name
     }
 }

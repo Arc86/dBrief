@@ -186,6 +186,8 @@ enum LocalCLIServiceError: Error, LocalizedError {
     case invalidJSON(String)
     case outputTooLong
 
+    // The messages SettingsErrorSanitizer / UserFacingError match on (empty command,
+    // launch failure, exit code, no output, invalid JSON) stay English on purpose.
     var errorDescription: String? {
         switch self {
         case .emptyCommand:
@@ -195,11 +197,11 @@ enum LocalCLIServiceError: Error, LocalizedError {
         case .nonZeroExit(let code, _):
             "Local CLI command exited with code \(code): check the command and its authentication."
         case .unsupportedEffort:
-            "This CLI does not support the selected effort. Update Claude CLI or choose CLI default."
+            String(localized: "This CLI does not support the selected effort. Update Claude CLI or choose CLI default.")
         case .timeout(let seconds):
-            "Local CLI command timed out after \(seconds)s."
+            String(localized: "Local CLI command timed out after \(seconds)s.")
         case .outputTooLong:
-            "Local CLI output exceeded the length limit. Request a shorter result."
+            String(localized: "Local CLI output exceeded the length limit. Request a shorter result.")
         case .emptyOutput:
             "Local CLI command produced no output."
         case .invalidJSON:

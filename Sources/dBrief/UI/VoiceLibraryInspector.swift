@@ -74,7 +74,7 @@ private struct PersonDetail: View {
         }
 
         VStack(alignment: .leading, spacing: 5) {
-            label("Company")
+            label(String(localized: "Company"))
             // A fresh field per person: a draft typed for one person must never be
             // saved onto the next one when the selection changes mid-edit.
             VoiceLibraryCompanyField(company: person.company, bordered: true) { actions.setCompany(person, $0) }
@@ -83,7 +83,7 @@ private struct PersonDetail: View {
 
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                label("Recognition")
+                label(String(localized: "Recognition"))
                 Spacer()
                 VoiceLibraryStrengthMeter(strength: strength)
                 Text(strength.label)
@@ -97,7 +97,7 @@ private struct PersonDetail: View {
         }
 
         VStack(alignment: .leading, spacing: 0) {
-            label("Voiceprints (\(person.voiceprints.count))").padding(.bottom, 4)
+            label(String(localized: "Voiceprints (\(person.voiceprints.count))")).padding(.bottom, 4)
             // Index identity: `capturedAt` can repeat within a second, and the list is a
             // fixed-order snapshot until the next reload.
             ForEach(Array(person.voiceprints.sorted { $0.capturedAt > $1.capturedAt }.enumerated()), id: \.offset) { _, print in
@@ -137,15 +137,15 @@ private struct PersonDetail: View {
 
     private var heardCaption: String {
         guard let first = VoiceLibraryDisplay.firstHeard(person),
-              let last = VoiceLibraryDisplay.lastSeen(person) else { return "No voiceprints" }
-        return "First heard \(first.formatted(date: .abbreviated, time: .omitted)) · last heard \(last.formatted(.relative(presentation: .named)))"
+              let last = VoiceLibraryDisplay.lastSeen(person) else { return String(localized: "No voiceprints") }
+        return String(localized: "First heard \(first.formatted(date: .abbreviated, time: .omitted)) · last heard \(last.formatted(.relative(presentation: .named)))")
     }
 
     private var strengthHint: String {
         switch strength {
-        case .weak: "One voiceprint. Name them in another recording to recognise them more reliably."
-        case .good: "Recognised well. One more voiceprint makes it more reliable."
-        case .strong: "Enough voiceprints to recognise them reliably."
+        case .weak: String(localized: "One voiceprint. Name them in another recording to recognise them more reliably.")
+        case .good: String(localized: "Recognised well. One more voiceprint makes it more reliable.")
+        case .strong: String(localized: "Enough voiceprints to recognise them reliably.")
         }
     }
 

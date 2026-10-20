@@ -84,8 +84,9 @@ public enum ChatScanEstimate {
     public static let gemmaSecondsPerToken = 0.0061
 
     public static func label(isGemma: Bool, transcriptTokens: Int) -> String {
-        guard isGemma else { return "takes a few minutes" }
+        guard isGemma else { return String(localized: "takes a few minutes") }
         let minutes = max(1, Int((Double(transcriptTokens) * gemmaSecondsPerToken / 60).rounded()))
-        return minutes == 1 ? "about a minute" : "about \(minutes) minutes"
+        // Two keys, not a plural rule: "a minute" has no number in it.
+        return minutes == 1 ? String(localized: "about a minute") : String(localized: "about \(minutes) minutes")
     }
 }

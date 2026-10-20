@@ -21,7 +21,7 @@ actor AppleSpeechAnalyzerService {
         await SpeechTranscriber.supportedLocale(equivalentTo: locale) != nil
     }
 
-    /// - Parameter status: human-readable progress updates ("Preparing language…", "Transcribing…").
+    /// - Parameter status: human-readable progress updates ("Preparing language…", String(localized: "Transcribing…")).
     func transcribe(
         fileURL: URL,
         language: String,
@@ -61,7 +61,7 @@ actor AppleSpeechAnalyzerService {
                 return chunks
             }
 
-            status("Transcribing…")
+            status(String(localized: "Transcribing…"))
             do {
                 _ = try await analyzer.analyzeSequence(from: audioFile)
                 try await analyzer.finalizeAndFinishThroughEndOfInput()
@@ -110,9 +110,9 @@ enum AppleSpeechAnalyzerError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .localeNotSupported:
-            "Apple Speech (macOS 26) does not support this language."
+            String(localized: "Apple Speech (macOS 26) does not support this language.")
         case .audioLoadFailed(let message):
-            "Could not read the audio for transcription. \(message)"
+            String(localized: "Could not read the audio for transcription. \(message)")
         }
     }
 }

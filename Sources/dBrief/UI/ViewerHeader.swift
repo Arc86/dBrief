@@ -74,7 +74,7 @@ struct ViewerHeader<Commands: View>: View {
         HStack(spacing: 5) {
             Image(systemName: subtitle == nil ? "house" : "calendar")
                 .accessibilityHidden(true)
-            Text(subtitle ?? "Recording library")
+            Text(subtitle ?? String(localized: "Recording library"))
                 .lineLimit(1)
         }
         .uiFont(.system(size: 11, weight: .medium).monospacedDigit())
@@ -153,7 +153,7 @@ struct ViewerHeader<Commands: View>: View {
         .buttonStyle(.plain)
         .focused($focusedMode, equals: destination)
         .accessibilityLabel(destination == .actions
-            ? "Actions, \(unfinishedCount) unfinished"
+            ? String(localized: "Actions, \(unfinishedCount) unfinished")
             : destination.displayName)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("viewer-tab-\(destination.rawValue)")
@@ -175,10 +175,10 @@ struct ViewerHeader<Commands: View>: View {
 
     @ViewBuilder private var utilityIcons: some View {
         if let onFocusReader {
-            HeaderIconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "Focus Reader (⇧⌘F)",
-                             action: onFocusReader)
+            HeaderIconButton(symbol: "arrow.up.left.and.arrow.down.right",
+                             label: String(localized: "Focus Reader (⇧⌘F)"), action: onFocusReader)
         }
-        HeaderIconButton(symbol: "textformat.size", label: "Display options") {
+        HeaderIconButton(symbol: "textformat.size", label: String(localized: "Display options")) {
             readingOptionsPresented.toggle()
         }
         .popover(isPresented: $readingOptionsPresented) {
@@ -186,7 +186,7 @@ struct ViewerHeader<Commands: View>: View {
                 ViewerReadingOptions(preferences: $readingPreferences)
             }
         }
-        HeaderIconButton(symbol: "lock.shield", label: "Privacy receipt", action: onPrivacyReceipt)
+        HeaderIconButton(symbol: "lock.shield", label: String(localized: "Privacy receipt"), action: onPrivacyReceipt)
         if let onDelete { HeaderDeleteButton(action: onDelete, block: deleteBlock) }
     }
 
