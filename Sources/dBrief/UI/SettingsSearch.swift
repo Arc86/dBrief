@@ -42,6 +42,7 @@ enum SettingsSearch {
         .init("appearance", "Theme", "appearance theme light dark paper dark paper viewer follow system default mode", section: .appearance),
         .init("accentColor", "Accent color", "appearance accent color non neon blue violet green orange black white gradient custom", section: .accentColor),
         .init("uiTypography", "UI font and size", "appearance interface global app text typography font size point size default san francisco inter georgia open dyslexic opendyslexic dyslexia monospace", section: .typography),
+        .init("appLanguage", "App language", "language taal localization dutch nederlands english region translation", section: .appLanguage),
         .init("updates", "Software updates", "check now automatic update version", section: .softwareUpdate),
         .init("setup", "Setup guide", "welcome onboarding first run", section: .setupGuide),
         .init("shortcut", "Recording shortcut", "hotkey keyboard start stop", section: .recordingShortcut),

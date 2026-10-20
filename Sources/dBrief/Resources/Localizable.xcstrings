@@ -3869,6 +3869,16 @@
         }
       }
     },
+    "App language" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Taal van de app"
+          }
+        }
+      }
+    },
     "App, storage, recovery and recording-lifecycle events. Audio, transcripts, meeting titles, names, file paths and credentials are excluded." : {
       "localizations" : {
         "nl" : {
@@ -15923,6 +15933,16 @@
         }
       }
     },
+    "Open Language & Region…" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Open Taal en regio…"
+          }
+        }
+      }
+    },
     "Open Notion" : {
       "localizations" : {
         "nl" : {
@@ -23372,7 +23392,7 @@
       }
     },
     "Text" : {
-      "comment" : "Summary editor: / menu group\nSummary editor: plain text block",
+      "comment" : "Summary editor: / menu group and plain text block",
       "localizations" : {
         "nl" : {
           "stringUnit" : {
@@ -27901,6 +27921,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "dBrief informeert deelnemers niet en vraagt niet namens jou om toestemming."
+          }
+        }
+      }
+    },
+    "dBrief is in %@. To change it for dBrief only, open Language & Region, then add dBrief under Applications." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief is in het %@. Wil je alleen voor dBrief een andere taal, open dan Taal en regio en voeg dBrief toe onder Apps."
           }
         }
       }

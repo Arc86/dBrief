@@ -20,6 +20,13 @@ struct SettingsGeneralTab: View {
                 }
             }
 
+            SettingsCard("Language", section: .appLanguage) {
+                SettingsRow("Language", caption: "dBrief is in \(AppLanguage.current). To change it for dBrief only, open Language & Region, then add dBrief under Applications.") {
+                    Button("Open Language & Region…") { NSWorkspace.shared.open(AppLanguage.settingsURL) }
+                        .buttonStyle(.settingsSecondary)
+                }
+            }
+
             SettingsCard("Updates", section: .softwareUpdate) {
                 SettingsRow("Check for updates automatically", caption: lastCheckedCaption) {
                     Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
@@ -55,5 +62,21 @@ struct SettingsGeneralTab: View {
         updaterController.lastUpdateCheckDate.map {
             "Last checked \($0.formatted(date: .abbreviated, time: .shortened))."
         }
+    }
+}
+
+/// dBrief follows the macOS language; a per-app choice lives in System Settings
+/// (Language & Region → Applications), which the Language row opens.
+enum AppLanguage {
+    static let settingsURL = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension")!
+
+    /// The language the app is running in, named in that language ("Nederlands").
+    static var current: String {
+        displayName(for: Bundle.main.preferredLocalizations.first ?? "en", in: .current)
+    }
+
+    static func displayName(for code: String, in locale: Locale) -> String {
+        guard let name = locale.localizedString(forLanguageCode: code) else { return code }
+        return name.prefix(1).uppercased(with: locale) + name.dropFirst()
     }
 }

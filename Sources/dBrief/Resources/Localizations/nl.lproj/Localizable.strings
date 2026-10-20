@@ -520,6 +520,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Appstandaard: %@</string>
 	<key>App defaults</key>
 	<string>Appstandaarden</string>
+	<key>App language</key>
+	<string>Taal van de app</string>
 	<key>App, storage, recovery and recording-lifecycle events. Audio, transcripts, meeting titles, names, file paths and credentials are excluded.</key>
 	<string>Gebeurtenissen van de app, opslag, herstel en de levenscyclus van opnamen. Audio, transcripten, vergadertitels, namen, bestandspaden en inloggegevens worden uitgesloten.</string>
 	<key>Appearance</key>
@@ -2846,6 +2848,8 @@ Mix: amix normalize=0</string>
 	<string>Open</string>
 	<key>Open %@</key>
 	<string>Open %@</string>
+	<key>Open Language &amp; Region…</key>
+	<string>Open Taal en regio…</string>
 	<key>Open Notion</key>
 	<string>Open Notion</string>
 	<key>Open Recording</key>
@@ -5170,6 +5174,8 @@ Sentiment: %@</string>
 	<string>dBrief kon niet luisteren naar de TickTick-login op poort 47213. Stop de app die deze poort gebruikt en probeer het opnieuw.</string>
 	<key>dBrief does not notify participants or obtain consent on your behalf.</key>
 	<string>dBrief informeert deelnemers niet en vraagt niet namens jou om toestemming.</string>
+	<key>dBrief is in %@. To change it for dBrief only, open Language &amp; Region, then add dBrief under Applications.</key>
+	<string>dBrief is in het %@. Wil je alleen voor dBrief een andere taal, open dan Taal en regio en voeg dBrief toe onder Apps.</string>
 	<key>dBrief is saving a recording. Try again in a moment.</key>
 	<string>dBrief is een opname aan het bewaren. Probeer het zo opnieuw.</string>
 	<key>dBrief is still checking saved work. Try again in a moment.</key>

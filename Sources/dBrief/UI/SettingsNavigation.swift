@@ -165,7 +165,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Sendable {
 }
 
 enum SettingsSectionID: String, CaseIterable, Sendable {
-    case appBehavior, softwareUpdate, setupGuide
+    case appBehavior, appLanguage, softwareUpdate, setupGuide
     case appearance, accentColor, typography
     case recordingShortcut, audioInput, echoCancellation, recordingIndicators, audioQuality
     case callDetection, callPlatforms, calendar, meetingMatching, calendarCLIAdvanced
@@ -191,7 +191,7 @@ enum SettingsSectionID: String, CaseIterable, Sendable {
         case .vocabularyTerms: .vocabulary
         case .automaticImport: .watchedFolders
         case .permissions: .permissions
-        case .appBehavior, .softwareUpdate, .setupGuide: .general
+        case .appBehavior, .appLanguage, .softwareUpdate, .setupGuide: .general
         case .appearance, .accentColor, .typography: .appearance
         case .recordingShortcut, .audioInput, .echoCancellation, .recordingIndicators, .audioQuality: .recording
         case .callDetection, .callPlatforms, .calendar, .meetingMatching, .calendarCLIAdvanced: .meetings
