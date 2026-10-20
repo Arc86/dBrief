@@ -36,6 +36,21 @@ import Testing
         #expect(service.messages.isEmpty)
     }
 
+    @Test func clearingThenQuittingStillDeletesTheSidecar() async throws {
+        let service = TranscriptChatService(transcriptText: "T", speakerLabels: [], appSettings: AppSettings(), localPlugin: nil)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("cleared-\(UUID()).chat.json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = ChatStore()
+        try await store.save(ChatHistory(messages: [ChatMessage(role: .user, content: "Hi")]), to: url)
+        service.enablePersistence(store: store, url: url)
+        service.startLoadingPersisted()
+        try await waitUntilLoaded(service)
+
+        service.clearMessages()
+        await service.flushPendingSave()   // quit right after Clear Chat
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
     @Test func invalidationClearsTheLoadingFlag() {
         let service = TranscriptChatService(transcriptText: "T", speakerLabels: [], appSettings: AppSettings(), localPlugin: nil)
         service.enablePersistence(store: ChatStore(), url: FileManager.default.temporaryDirectory.appendingPathComponent("x-\(UUID()).chat.json"))

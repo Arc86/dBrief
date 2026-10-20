@@ -236,6 +236,9 @@ final class TranscriptChatService {
     /// True when `messages` has changed since the last successful write — lets
     /// `flushPendingSave()` skip a redundant write on quit when nothing is dirty.
     private var hasUnsavedChanges = false
+    /// Clear Chat asked for the sidecar to be deleted and that hasn't happened yet;
+    /// `flushPendingSave` (quit) finishes it instead of cancelling it.
+    private var sidecarDeletePending = false
     private var invalidated = false
     private let validity = RecordingDerivativeValidity()
     private var sendTask: Task<Void, Never>?
@@ -488,9 +491,11 @@ final class TranscriptChatService {
         saveTask?.cancel()
         hasUnsavedChanges = false
         if let chatStore, let persistenceURL {
+            sidecarDeletePending = true
             saveTask = Task {
                 guard !invalidated, !Task.isCancelled else { return }
                 await chatStore.delete(at: persistenceURL, validity: validity)
+                sidecarDeletePending = false
             }
         }
     }
@@ -537,6 +542,11 @@ final class TranscriptChatService {
     /// exchange isn't lost when the user quits within the debounce window.
     func flushPendingSave() async {
         saveTask?.cancel()
+        if sidecarDeletePending, messages.isEmpty, !invalidated, let chatStore, let persistenceURL {
+            await chatStore.delete(at: persistenceURL, validity: validity)
+            sidecarDeletePending = false
+            return
+        }
         guard !invalidated, !Task.isCancelled, hasUnsavedChanges, let chatStore, let persistenceURL, !messages.isEmpty else { return }
         let history = ChatHistory(messages: messages, engine: appSettings.effectiveAIEngine.rawValue)
         try? await chatStore.save(history, to: persistenceURL, validity: validity)

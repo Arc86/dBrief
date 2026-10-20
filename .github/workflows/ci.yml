@@ -54,6 +54,15 @@ jobs:
           uname -a
           test "$(uname -m)" = "arm64"
 
+      - name: Check summary editor bundle
+        working-directory: web/markdown-editor
+        run: |
+          npm ci
+          npm test
+          npm run build
+          git diff --exit-code -- ../../Sources/dBrief/Resources/MarkdownEditor
+          test -z "$(git status --porcelain -- ../../Sources/dBrief/Resources/MarkdownEditor)"
+
       - name: Run test suite
         run: |
           python3 scripts/test_beta_build.py

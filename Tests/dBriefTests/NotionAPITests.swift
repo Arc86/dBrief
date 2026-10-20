@@ -141,4 +141,28 @@ struct NotionAPITests {
         let colors = runs.map { ($0["annotations"] as? [String: Any])?["color"] as? String }
         #expect(colors == ["gray_background", nil, "gray_background"])
     }
+
+    @Test("Batches stay under Notion's request size, so a long CJK transcript can be delivered")
+    func batchesBySize() throws {
+        let line = String(repeating: "会议记录内容", count: 330) // ~2,000 UTF-16 units, ~6 KB of UTF-8
+        let transcript = Array(repeating: line, count: 150).joined(separator: "\n")
+        let blocks = NotionAPI.blocks(for: bundle(transcript: transcript), fields: [.transcript], reference: "abc12345")
+        #expect(blocks.count > NotionAPI.maxBlocksPerRequest)
+        var start = 0
+        var batches = 0
+        while start < blocks.count {
+            let end = NotionAPI.batchEnd(blocks, from: start)
+            #expect(end > start)
+            #expect(end - start <= NotionAPI.maxBlocksPerRequest)
+            let body = try JSONSerialization.data(withJSONObject: ["children": Array(blocks[start..<end])])
+            #expect(body.count < 500_000)
+            start = end
+            batches += 1
+        }
+        #expect(batches >= 3)
+        // Small blocks still go 100 at a time.
+        let small = NotionAPI.blocks(for: bundle(transcript: (1...300).map { "Line \($0)" }.joined(separator: "\n\n")),
+                                     fields: [.transcript], reference: "abc12345")
+        #expect(NotionAPI.batchEnd(small, from: 0) == min(small.count, NotionAPI.maxBlocksPerRequest))
+    }
 }

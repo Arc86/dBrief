@@ -132,7 +132,7 @@ struct MarkdownGenerator {
         if let summary = recording.summary {
             lines.append("## 📝 Summary")
             lines.append("")
-            lines.append(summary)
+            lines.append(MarkdownInsightsUpdater.sectionBody(summary))
             lines.append("")
         }
 

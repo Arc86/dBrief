@@ -3404,6 +3404,9 @@ final class RecordingManager {
         await refreshReprocessingAttempts()
         if let block = eligibility(for: audioURL, .delete) { throw RecordingBlockedError(block: block) }
         defer { RecordingLibraryChange.notify() }
+        // Stop chat work first: a running index build or debounced save would otherwise
+        // write `.chatindex.json` / `.chat.json` back after the files are gone.
+        invalidateReprocessingChat(audioURL)
         recoveryMaintenanceInProgress = true
         defer { recoveryMaintenanceInProgress = false }
         let lifecycle = RecoveryLifecycle(jobs: processingJobStore, deliveries: integrationDeliveryStore)

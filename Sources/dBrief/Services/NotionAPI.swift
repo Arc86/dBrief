@@ -50,6 +50,23 @@ enum NotionAPI {
     static let integrationsURL = URL(string: "https://www.notion.so/profile/integrations")!
     static let maxTextLength = 2_000
     static let maxBlocksPerRequest = 100
+    /// Notion rejects request bodies over 500 KB; keep each batch well under it
+    /// (2,000 CJK characters are ~6 KB of UTF-8, so 100 such blocks would not fit).
+    static let maxBatchBytes = 400_000
+
+    /// End index of the next batch starting at `start`: at most `maxBlocksPerRequest`
+    /// blocks and `maxBatchBytes` of JSON, and always at least one block.
+    static func batchEnd(_ blocks: [[String: Any]], from start: Int) -> Int {
+        var end = start
+        var bytes = 0
+        while end < blocks.count, end - start < maxBlocksPerRequest {
+            let size = (try? JSONSerialization.data(withJSONObject: blocks[end]))?.count ?? 0
+            if end > start, bytes + size > maxBatchBytes { break }
+            bytes += size
+            end += 1
+        }
+        return end
+    }
 
     static func reference(for batchID: UUID) -> String {
         String(batchID.uuidString.lowercased().prefix(8))
