@@ -211,7 +211,7 @@ enum NotionAPI {
         return text
     }
 
-    private static func duration(_ seconds: TimeInterval) -> String {
+    static func duration(_ seconds: TimeInterval) -> String {
         let minutes = max(1, Int((seconds / 60).rounded(.down)))
         return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
     }

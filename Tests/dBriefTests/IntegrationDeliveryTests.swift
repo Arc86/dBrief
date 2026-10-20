@@ -217,6 +217,18 @@ struct IntegrationDeliveryTests {
     }
 
     @Test @MainActor
+    func deliveryTitleIsReadableWithoutAnAITitle() {
+        let audio = URL(fileURLWithPath: "/tmp/2026-10-20_2114_Rene-van-der-Gijp-reageert.m4a")
+        let recording = Recording(fileURL: audio, finalizedAudioURL: audio)
+        recording.meetingTitleDraft = ""
+        #expect(RecordingSnapshot(recording: recording).displayTitle == "Rene van der Gijp reageert")
+        recording.meetingTitleDraft = "René van der Gijp reageert: 'Waanzinnig!'"
+        #expect(RecordingSnapshot(recording: recording).displayTitle == "René van der Gijp reageert: 'Waanzinnig!'")
+        recording.generatedTitle = "Gijp over de boycot"
+        #expect(RecordingSnapshot(recording: recording).displayTitle == "Gijp over de boycot")
+    }
+
+    @Test @MainActor
     func deliverySnapshotRecoversTranscriptAfterMarkdownOnlyRestart() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("delivery-snapshot-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -229,6 +241,7 @@ struct IntegrationDeliveryTests {
         #expect(recording.transcription == nil)
         let snapshot = RecordingSnapshot(recording: recording)
         #expect(snapshot.transcript == nil, "Snapshot construction performs no file I/O")
+        #expect(snapshot.displayTitle == "recording")
         var config = IntegrationSettings()
         config.webhook.enabled = true
         config.webhook.url = "https://synthetic.invalid"
