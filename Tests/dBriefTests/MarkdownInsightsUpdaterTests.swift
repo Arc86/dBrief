@@ -51,6 +51,30 @@ struct MarkdownInsightsUpdaterTests {
         #expect(result.contains("Hello world."))
     }
 
+    @Test("A summary with its own H2 heading and divider is replaced whole on every save")
+    func summaryWithHeadingAndDivider() {
+        let edited = "Intro.\n\n## Decisions\n\n- Ship it\n\n---\n\nClosing note."
+        let first = MarkdownInsightsUpdater.update(
+            markdown: sample, with: makeInsights(summary: edited, items: ["Old item"], tags: ["oldtag"]))
+        let second = MarkdownInsightsUpdater.update(
+            markdown: first, with: makeInsights(summary: "Rewritten.", items: ["Old item"], tags: ["oldtag"]))
+        // The heading is written one level down and the divider as `***` (same rule),
+        // so neither ends the summary section early.
+        #expect(first.contains("### Decisions"))
+        #expect(first.contains("\n***\n"))
+        #expect(second.contains("Rewritten."))
+        #expect(!second.contains("Decisions"))
+        #expect(!second.contains("Closing note."))
+        #expect(second.components(separatedBy: "## ✅ Action Items").count == 2)
+        #expect(second.contains("---\n## 💬 Transcript"))
+    }
+
+    @Test("Headings inside a fenced code block are left as written")
+    func fencedCodeKept() {
+        let body = MarkdownInsightsUpdater.sectionBody("```\n## not a heading\n---\n```\n## Real")
+        #expect(body == "```\n## not a heading\n---\n```\n### Real")
+    }
+
     @Test("replaces action items")
     func actionItemsReplaced() {
         let insights = makeInsights(summary: "Old summary text.", items: ["First", "Second"], tags: ["oldtag"])
