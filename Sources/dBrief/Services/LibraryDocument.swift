@@ -96,9 +96,7 @@ struct LibraryDocument {
         let tags = insights["tags"] as? [String] ?? []
         let actions = insights["actionItems"] as? [String] ?? []
         let completed = Set(insights["completedActionItems"] as? [String] ?? [])
-        unfinishedActions = actions.filter {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !completed.contains($0)
-        }.count
+        unfinishedActions = actions.filter { ActionItemText.cleaned($0) != nil && !completed.contains($0) }.count
         let provenance = try object("reprocessing.json")
         if let stamp = provenance?["completion"] ?? metadata["lastProcessingCompletion"],
            let bytes = try? JSONSerialization.data(withJSONObject: stamp),

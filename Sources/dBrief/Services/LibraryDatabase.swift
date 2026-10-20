@@ -69,7 +69,8 @@ final class LibraryDatabase {
         let version = try rows("PRAGMA user_version").first?.first
         // Version 3 revalidates queue/schedule sources that older caches could
         // have accepted before strict schema checks and cross-folder discovery.
-        guard version != "3" else { return false }
+        // Version 4 recounts unfinished actions without model placeholders.
+        guard version != "4" else { return false }
         try rows("DROP TABLE IF EXISTS documents")
         try rows("DROP TABLE IF EXISTS search")
         try rows("DROP TABLE IF EXISTS jobs")
@@ -87,7 +88,7 @@ final class LibraryDatabase {
         try rows("CREATE TABLE work(id TEXT PRIMARY KEY, payload TEXT NOT NULL, title TEXT NOT NULL, audioPath TEXT, failed INTEGER NOT NULL, created REAL NOT NULL)")
         try rows("CREATE INDEX work_failure_date ON work(failed, created)")
         try rows("CREATE VIRTUAL TABLE work_search USING fts5(id UNINDEXED, body, tokenize='unicode61 remove_diacritics 2', prefix='2 3 4')")
-        try rows("PRAGMA user_version=3")
+        try rows("PRAGMA user_version=4")
         return true
     }
 

@@ -4810,6 +4810,8 @@ Sentiment: %@</string>
 	<string>Oekraïens</string>
 	<key>Unable to create AVAssetExportSession.</key>
 	<string>Kan AVAssetExportSession niet aanmaken.</string>
+	<key>Unassigned</key>
+	<string>Niet toegewezen</string>
 	<key>Unavailable</key>
 	<string>Niet beschikbaar</string>
 	<key>Unavailable device (reconnect)</key>

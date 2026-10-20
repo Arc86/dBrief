@@ -31,9 +31,15 @@ struct RecordingInsights: Codable, Sendable, Equatable {
         Set(completedActionItems ?? []).intersection(actionItems)
     }
 
+    /// Action items to show and count: blanks and model placeholders such as
+    /// "No action items identified" left out. Raw strings stay the identity.
+    var shownActionItems: [String] {
+        actionItems.filter { ActionItemText.cleaned($0) != nil }
+    }
+
     var unfinishedActionItems: [String] {
         let completed = completedActions
-        return actionItems.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !completed.contains($0) }
+        return shownActionItems.filter { !completed.contains($0) }
     }
 
     init(

@@ -25960,6 +25960,17 @@
         }
       }
     },
+    "Unassigned" : {
+      "comment" : "Action items without an owner",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Niet toegewezen"
+          }
+        }
+      }
+    },
     "Unavailable" : {
       "localizations" : {
         "nl" : {

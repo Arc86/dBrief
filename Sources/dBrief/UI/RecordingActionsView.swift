@@ -41,7 +41,7 @@ struct RecordingActionsView: View {
         self.onSetActionCompleted = onSetActionCompleted
     }
 
-    private var actionItems: [String] { insights?.actionItems ?? [] }
+    private var actionItems: [String] { insights?.shownActionItems ?? [] }
 
     private var groups: [ActionItemGroup] {
         ActionItemParser.group(actionItems, knownOwners: owners)

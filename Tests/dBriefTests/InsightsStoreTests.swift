@@ -37,6 +37,15 @@ struct InsightsStoreTests {
         #expect(try Data(contentsOf: url) == original)
     }
 
+    @Test func placeholderActionItemsAreNeitherShownNorCounted() {
+        let insights = RecordingInsights(summary: "S", actionItems: ["No action items identified", "- None", "Alice: send deck"],
+            tags: [], sentiment: "", markdownPath: nil)
+        #expect(insights.shownActionItems == ["Alice: send deck"])
+        #expect(insights.unfinishedActionItems == ["Alice: send deck"])
+        let empty = RecordingInsights(summary: "S", actionItems: ["- - No action items identified"], tags: [], sentiment: "", markdownPath: nil)
+        #expect(empty.shownActionItems.isEmpty)
+    }
+
     @Test func completionSurvivesRelaunchAndCanBeReopenedWithoutChangingAnalysis() async throws {
         let url = tempURL()
         defer { try? FileManager.default.removeItem(at: url) }
