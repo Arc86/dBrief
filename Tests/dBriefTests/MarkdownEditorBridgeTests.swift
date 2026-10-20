@@ -130,6 +130,19 @@ struct MarkdownEditorThemeTests {
 
 @Suite("Markdown editor script calls")
 struct MarkdownEditorScriptTests {
+    @Test func stringsAreInjectedAsOneJSONObject() throws {
+        var strings = MarkdownEditorStrings()
+        strings.placeholder = "Quote \" and </script>"
+        let script = strings.injectionScript
+        #expect(script.hasPrefix("window.dbriefStrings = {"))
+        #expect(script.hasSuffix("};"))
+        let json = String(script.dropFirst("window.dbriefStrings = ".count).dropLast())
+        let decoded = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: String]
+        #expect(decoded?["placeholder"] == "Quote \" and </script>")
+        #expect(decoded?["heading1"] == "Heading 1")
+        #expect(decoded?.count == 24)
+    }
+
     /// Pulls the JSON argument back out of `window.dbrief.fn(<json>);`.
     private func argument<T: Decodable>(_ script: String, function: String, as type: T.Type) throws -> T {
         let prefix = "window.dbrief.\(function)("

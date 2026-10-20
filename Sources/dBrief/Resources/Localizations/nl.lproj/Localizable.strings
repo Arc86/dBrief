@@ -760,10 +760,18 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Zwart</string>
 	<key>Blank is automatic (%@ tokens). Covers analysis and chat, including reasoning.</key>
 	<string>Leeg is automatisch (%@ tokens). Geldt voor analyse en chat, inclusief redeneren.</string>
+	<key>Block moved down</key>
+	<string>Blok omlaag verplaatst</string>
+	<key>Block moved up</key>
+	<string>Blok omhoog verplaatst</string>
 	<key>Blocked by a device management profile or Screen Time.</key>
 	<string>Geblokkeerd door een apparaatbeheerprofiel of Schermtijd.</string>
+	<key>Blocks</key>
+	<string>Blokken</string>
 	<key>Blue</key>
 	<string>Blauw</string>
+	<key>Bold</key>
+	<string>Vet</string>
 	<key>Brief ready</key>
 	<string>Briefing klaar</string>
 	<key>Brief recap</key>
@@ -778,6 +786,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Build</string>
 	<key>Built in</key>
 	<string>Ingebouwd</string>
+	<key>Bullet List</key>
+	<string>Opsommingslijst</string>
 	<key>CAF/LPCM per track (system + mic separate)</key>
 	<string>CAF/LPCM per spoor (systeem en microfoon apart)</string>
 	<key>CLI command</key>
@@ -1444,6 +1454,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Sluit de vraag na</string>
 	<key>Display options</key>
 	<string>Weergaveopties</string>
+	<key>Divider</key>
+	<string>Scheidingslijn</string>
 	<key>Do nothing</key>
 	<string>Doe niets</string>
 	<key>Documentation</key>
@@ -1912,6 +1924,12 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Header</string>
 	<key>Headers</key>
 	<string>Headers</string>
+	<key>Heading 1</key>
+	<string>Kop 1</string>
+	<key>Heading 2</key>
+	<string>Kop 2</string>
+	<key>Heading 3</key>
+	<string>Kop 3</string>
 	<key>Hear the difference</key>
 	<string>Hoor het verschil</string>
 	<key>Hidden</key>
@@ -2004,6 +2022,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Indigo</string>
 	<key>Inherited</key>
 	<string>Overgenomen</string>
+	<key>Inline code</key>
+	<string>Code in tekst</string>
 	<key>Input device</key>
 	<string>Invoerapparaat</string>
 	<key>Input level</key>
@@ -2058,6 +2078,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Het wordt opnieuw gedownload wanneer het weer nodig is, wat even kan duren.</string>
 	<key>Italian</key>
 	<string>Italiaans</string>
+	<key>Italic</key>
+	<string>Cursief</string>
 	<key>Its saved API key is deleted too. Profiles that use it switch to the default provider.</key>
 	<string>De bewaarde API-sleutel wordt ook verwijderd. Profielen die deze aanbieder gebruiken, schakelen over naar de standaardaanbieder.</string>
 	<key>Japanese</key>
@@ -2146,6 +2168,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Lichte transcriptie voor snelle, dagelijkse opnamen.</string>
 	<key>Line spacing</key>
 	<string>Regelafstand</string>
+	<key>Link</key>
+	<string>Link</string>
 	<key>Link Calendar Meeting</key>
 	<string>Koppel agendavergadering</string>
 	<key>Link Calendar Meeting…</key>
@@ -2866,6 +2890,8 @@ Mix: amix normalize=0</string>
 	<string>Of installeer handmatig: brew install yt-dlp</string>
 	<key>Orange</key>
 	<string>Oranje</string>
+	<key>Ordered List</key>
+	<string>Genummerde lijst</string>
 	<key>Origin not recorded</key>
 	<string>Herkomst niet vastgelegd</string>
 	<key>Other Font…</key>
@@ -2932,6 +2958,8 @@ Mix: amix normalize=0</string>
 	<string>Gedeeltelijk bewijs</string>
 	<key>Participant</key>
 	<string>Deelnemer</string>
+	<key>Paste link...</key>
+	<string>Plak een link...</string>
 	<key>Paste your Notion integration secret first.</key>
 	<string>Plak eerst je Notion-integratiegeheim.</string>
 	<key>Paste your Todoist API token first.</key>
@@ -3248,6 +3276,8 @@ Mix: amix normalize=0</string>
 	<string>Snelst op Apple Silicon. Sla over voor vergaderingen in andere talen.</string>
 	<key>Quit dBrief</key>
 	<string>Stop dBrief</string>
+	<key>Quote</key>
+	<string>Citaat</string>
 	<key>Qwen3 TTS 0.6B (lighter)</key>
 	<string>Qwen3 TTS 0.6B (lichter)</string>
 	<key>Qwen3 TTS 1.7B (most natural)</key>
@@ -4158,6 +4188,8 @@ Mix: amix normalize=0</string>
 	<string>Opslag</string>
 	<key>Streaming engines show words as they arrive. Other engines show the transcript when transcription finishes.</key>
 	<string>Streaming-engines tonen woorden zodra ze binnenkomen. Andere engines tonen het transcript als de transcriptie klaar is.</string>
+	<key>Strikethrough</key>
+	<string>Doorgehaald</string>
 	<key>Strong</key>
 	<string>Sterk</string>
 	<key>Strong voice match</key>
@@ -4232,6 +4264,8 @@ Mix: amix normalize=0</string>
 	<string>Systeemtaal</string>
 	<key>System-supported languages</key>
 	<string>Door het systeem ondersteunde talen</string>
+	<key>Table</key>
+	<string>Tabel</string>
 	<key>Tags</key>
 	<string>Tags</string>
 	<key>Tags &amp; Sentiment</key>
@@ -4246,6 +4280,8 @@ Mix: amix normalize=0</string>
 	<string>Tagstaak</string>
 	<key>Tags · %@</key>
 	<string>Tags · %@</string>
+	<key>Task List</key>
+	<string>Takenlijst</string>
 	<key>Task defaults</key>
 	<string>Standaardtaken</string>
 	<key>Teal</key>
@@ -5058,6 +5094,8 @@ Sentiment: %@</string>
 	<string>Schrijf een samenvatting die natuurlijk klinkt als je hem voorleest.</string>
 	<key>Write results in</key>
 	<string>Schrijf resultaten in</string>
+	<key>Write the summary, or type / for blocks</key>
+	<string>Schrijf de samenvatting, of typ / voor blokken</string>
 	<key>Writing Markdown</key>
 	<string>Markdown schrijven</string>
 	<key>Writing the answer from what was found…</key>

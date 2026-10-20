@@ -10,11 +10,14 @@ import "@milkdown/crepe/theme/common/toolbar.css";
 import "./theme.css";
 import { type BridgeMessage, type EditorAPI, mountEditor, shortcutFor } from "./editor";
 import { measureHeight } from "./height";
+import { resolveStrings } from "./strings";
 import { animateReorder, displacements, snapshotBlocks } from "./reorder";
 
 declare global {
   interface Window {
     dbrief?: EditorAPI;
+    /** Localized UI text, injected by the app before this script runs. */
+    dbriefStrings?: unknown;
     webkit?: { messageHandlers: { dbrief: { postMessage(message: unknown): void } } };
   }
 }
@@ -77,7 +80,7 @@ document.addEventListener(
 );
 
 // `ready` only after window.dbrief exists, so Swift's first calls always land.
-mountEditor(root, post).then((api) => {
+mountEditor(root, post, resolveStrings(window.dbriefStrings)).then((api) => {
   window.dbrief = api;
   post({ type: "ready" });
 });

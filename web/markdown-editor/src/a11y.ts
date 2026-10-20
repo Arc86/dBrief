@@ -1,10 +1,10 @@
 import { type EditorState, TextSelection, type Transaction } from "@milkdown/kit/prose/state";
 
 /** Names the editable area for VoiceOver; ProseMirror leaves it unlabelled. */
-export function labelEditor(editable: HTMLElement): void {
+export function labelEditor(editable: HTMLElement, label = "Summary"): void {
   editable.setAttribute("role", "textbox");
   editable.setAttribute("aria-multiline", "true");
-  editable.setAttribute("aria-label", "Summary");
+  editable.setAttribute("aria-label", label);
 }
 
 /**
@@ -54,7 +54,7 @@ export function moveDirectionFor(event: KeyboardEvent): -1 | 1 | null {
  * entry an option, and the highlighted entry is selected and set as the editor's
  * active descendant. Returns the highlighted entry's label, or null when closed.
  */
-export function syncSlashMenu(menu: Element, editable: HTMLElement): string | null {
+export function syncSlashMenu(menu: Element, editable: HTMLElement, label = "Blocks"): string | null {
   const open = menu.getAttribute("data-show") === "true";
   const list = menu.querySelector(".menu-groups");
   if (!open || !list) {
@@ -63,7 +63,7 @@ export function syncSlashMenu(menu: Element, editable: HTMLElement): string | nu
     return null;
   }
   list.setAttribute("role", "listbox");
-  list.setAttribute("aria-label", "Blocks");
+  list.setAttribute("aria-label", label);
   if (!list.id) list.id = "dbrief-block-menu";
   let highlighted: string | null = null;
   for (const item of Array.from(list.querySelectorAll<HTMLElement>("li[data-index]"))) {

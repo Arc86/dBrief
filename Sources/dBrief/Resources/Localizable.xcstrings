@@ -5088,10 +5088,24 @@
       }
     },
     "Block moved down" : {
-
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Blok omlaag verplaatst"
+          }
+        }
+      }
     },
     "Block moved up" : {
-
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Blok omhoog verplaatst"
+          }
+        }
+      }
     },
     "Blocked by a device management profile or Screen Time." : {
       "localizations" : {
@@ -5104,7 +5118,15 @@
       }
     },
     "Blocks" : {
-      "comment" : "Summary editor: VoiceOver name of the / menu"
+      "comment" : "Summary editor: VoiceOver name of the / menu",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Blokken"
+          }
+        }
+      }
     },
     "Blue" : {
       "localizations" : {
@@ -5117,7 +5139,15 @@
       }
     },
     "Bold" : {
-      "comment" : "Summary editor: toolbar"
+      "comment" : "Summary editor: toolbar",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vet"
+          }
+        }
+      }
     },
     "Brief ready" : {
       "localizations" : {
@@ -5190,7 +5220,14 @@
       }
     },
     "Bullet List" : {
-
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opsommingslijst"
+          }
+        }
+      }
     },
     "CAF/LPCM per track (system + mic separate)" : {
       "localizations" : {
@@ -8791,7 +8828,15 @@
       }
     },
     "Divider" : {
-      "comment" : "Summary editor: horizontal rule block"
+      "comment" : "Summary editor: horizontal rule block",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Scheidingslijn"
+          }
+        }
+      }
     },
     "Do nothing" : {
       "localizations" : {
@@ -11140,13 +11185,34 @@
       }
     },
     "Heading 1" : {
-
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kop 1"
+          }
+        }
+      }
     },
     "Heading 2" : {
-
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kop 2"
+          }
+        }
+      }
     },
     "Heading 3" : {
-
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kop 3"
+          }
+        }
+      }
     },
     "Hear the difference" : {
       "localizations" : {
@@ -11649,7 +11715,15 @@
       }
     },
     "Inline code" : {
-      "comment" : "Summary editor: toolbar"
+      "comment" : "Summary editor: toolbar",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Code in tekst"
+          }
+        }
+      }
     },
     "Input device" : {
       "localizations" : {
@@ -11922,7 +11996,15 @@
       }
     },
     "Italic" : {
-      "comment" : "Summary editor: toolbar"
+      "comment" : "Summary editor: toolbar",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cursief"
+          }
+        }
+      }
     },
     "Its saved API key is deleted too. Profiles that use it switch to the default provider." : {
       "localizations" : {
@@ -12371,7 +12453,15 @@
       }
     },
     "Link" : {
-      "comment" : "Summary editor: toolbar"
+      "comment" : "Summary editor: toolbar",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Link"
+          }
+        }
+      }
     },
     "Link Calendar Meeting" : {
       "localizations" : {
@@ -16054,7 +16144,14 @@
       }
     },
     "Ordered List" : {
-
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Genummerde lijst"
+          }
+        }
+      }
     },
     "Origin not recorded" : {
       "localizations" : {
@@ -16393,7 +16490,15 @@
       }
     },
     "Paste link..." : {
-      "comment" : "Summary editor: link field placeholder"
+      "comment" : "Summary editor: link field placeholder",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plak een link..."
+          }
+        }
+      }
     },
     "Paste your Notion integration secret first." : {
       "localizations" : {
@@ -18078,7 +18183,15 @@
       }
     },
     "Quote" : {
-      "comment" : "Summary editor: quote block"
+      "comment" : "Summary editor: quote block",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Citaat"
+          }
+        }
+      }
     },
     "Qwen3 TTS 0.6B (lighter)" : {
       "localizations" : {
@@ -22661,7 +22774,15 @@
       }
     },
     "Strikethrough" : {
-      "comment" : "Summary editor: toolbar"
+      "comment" : "Summary editor: toolbar",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Doorgehaald"
+          }
+        }
+      }
     },
     "Strong" : {
       "localizations" : {
@@ -23040,7 +23161,15 @@
       }
     },
     "Table" : {
-      "comment" : "Summary editor: table block"
+      "comment" : "Summary editor: table block",
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tabel"
+          }
+        }
+      }
     },
     "Tags" : {
       "localizations" : {
@@ -23113,7 +23242,14 @@
       }
     },
     "Task List" : {
-
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Takenlijst"
+          }
+        }
+      }
     },
     "Task defaults" : {
       "localizations" : {
@@ -27269,7 +27405,14 @@
       }
     },
     "Write the summary, or type / for blocks" : {
-
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Schrijf de samenvatting, of typ / voor blokken"
+          }
+        }
+      }
     },
     "Writing Markdown" : {
       "localizations" : {
