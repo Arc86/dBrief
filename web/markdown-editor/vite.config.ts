@@ -1,10 +1,12 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { thirdPartyNotices } from "./third-party-notices";
 
 // Builds one classic (IIFE) script + one stylesheet straight into the app's
 // Resources so `make app` never needs Node. public/index.html is copied as-is.
 export default defineConfig({
   base: "./",
+  plugins: [thirdPartyNotices()],
   test: { environment: "jsdom" },
   build: {
     outDir: fileURLToPath(new URL("../../Sources/dBrief/Resources/MarkdownEditor", import.meta.url)),
