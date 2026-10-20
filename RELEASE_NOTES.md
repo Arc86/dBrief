@@ -1,3 +1,102 @@
+## dBrief 2.0.0
+
+**dBrief 2.0: from meeting to notes, redesigned.** Every part of dBrief has been rebuilt around what you do once a meeting ends: read what was said, check what was decided, and send the action items where they belong. Recordings now open on their summary with Ask dBrief AI beside it, and the Focus Reader shows your notes full screen. Also new in 2.0: dBrief in Dutch, much better VoiceOver and keyboard support, Todoist, Notion and TickTick, and AI that reads every minute of a long meeting.
+
+### A redesigned menu bar panel
+
+- **A clearer panel.** A status header, larger recording controls, your five most recent recordings with a "Show all in library" link, and a queue section that only appears when something is queued, paused or failed.
+- **One Import… menu** for an audio file or a YouTube/video link. While the panel is open, ⌘R starts recording and ⌘L opens the library.
+- **Right-click the menu bar icon** to record, pause, stop, open the library, transcribe a file, open Settings or quit. **Drop an audio file on the icon**, or use Finder's **Open With**, to import it.
+- **Redesigned call prompts, mini player and review form** to match.
+
+### Recording Library and viewer
+
+- **Summary first.** A recording opens on its Summary, Action Items and Meeting Insights, with the full transcript one click away. Switching recordings and tabs is much faster.
+- **A speaker timeline instead of a waveform.** The player bar shows who spoke when, coloured by speaker. Click or drag it to jump.
+- **Easier to read transcripts.** Paragraphs break at the end of a sentence instead of mid-thought, timecodes show hours for long meetings, and dates follow your Mac's 12/24-hour setting.
+- **Edit the summary in place.** Click **Edit** to change the summary right in the viewer, with drag handles to move blocks, a `/` menu for headings, lists and to-dos, and a formatting toolbar when you select text. Unsaved edits survive switching recordings.
+- **Keyboard friendly.** ↑/↓ move through recordings, Space plays and pauses, ⌘1–⌘4 switch tabs, and a new **Recording** menu has Play, Copy, Ask dBrief AI, Reprocess, Show in Finder and Delete with shortcuts.
+- **One set of actions everywhere.** The right-click menu, Copy Notes and the delete confirmation are the same in the library and the menu bar panel.
+
+### Ask dBrief AI
+
+- **A side panel next to your notes**, so the transcript stays in view while you ask questions. Drag it to the width you like.
+- **Clickable timestamps.** Citations like [00:12:34] jump to that moment in the transcript and playback.
+- **Put answers to work.** Add an answer to the Summary, turn its bullets into action items, or copy, save or add the whole conversation to the recording's note.
+- **Saved prompts and voice questions.** Right-click a question to save it as a prompt (managed in Settings → AI analysis), and ask by voice with macOS Dictation.
+
+### Focus Reader
+
+- **Read your notes full screen.** View ▸ Focus Reader (⇧⌘F) opens the summary, action items and transcript in one calm reading column. Esc returns you to the viewer exactly as you left it.
+- **Make it yours.** Choose its own font, text size (up to 40 pt, or pinch to zoom), line spacing and column width, without changing the viewer.
+
+### dBrief in Dutch
+
+- **The whole app is available in Dutch:** menus, Settings, the viewer, notifications and the summary editor. dBrief follows your Mac's language. To use Dutch for dBrief only, click **Open Language & Region…** in Settings → General, then under **Applications** click **+**, choose dBrief and pick Nederlands.
+- Meeting notes, summaries and exports keep their own language setting (Settings → AI analysis → Results language).
+
+### VoiceOver and keyboard
+
+- **VoiceOver speaks what happens:** recording starting, pausing and stopping, processing results, search matches, saves, copies and chat answers, speaker-review progress and errors.
+- **Call prompts and the floating recording controls** can be reached from the keyboard, answer Esc and stay on screen while VoiceOver is running.
+- **New shortcuts:** ⌥⌘P pauses or resumes and ⌥⌘. stops recording, from the panel, the floating controls and the Recording menu. Return processes on the review screen.
+- **Speaker names from the keyboard:** rename, move and "This is me" are VoiceOver actions on each transcript turn and items in the Recording menu. In the voice library, Shift-arrows extend the selection, Return renames and ⇧⌘M merges.
+- **The summary has real headings** for the VoiceOver rotor, and the summary editor is a labelled text box with a spoken `/` menu; ⌥⇧↑/↓ moves a block.
+- Text fields show a clear focus border, and "Show scroll bars: Always" is respected.
+
+### Fonts and appearance
+
+- **Many more reading fonts**, including easy-to-read ones: Lexend, OpenDyslexic, Inter, Lato, Open Sans, Roboto, EB Garamond, Verdana and more. **Other Font…** lets you use any font installed on your Mac, and reading text can follow your interface font.
+- **A new Appearance page** with Light, Dark, Paper and Dark Paper themes (or follow macOS), an accent colour, and the font and size used across dBrief. **Non-neon** swaps the brand gradient for your accent colour.
+
+### Redesigned Settings
+
+- **Pages grouped by what they do:** dBrief, Capture, Understand and Deliver, with faster search (⌘F) that finds every setting.
+- **A friendlier model picker.** **Quick pick** suggests the fastest, recommended and most accurate transcription model for your language, memory and macOS version; **All models** lists everything with speed and accuracy ratings.
+- **A full-page voice library** on the new **Speakers** page: sort, multi-select, edit companies inline, and merge or forget several people at once, with a hint when two voices are probably the same person.
+- Destructive actions (clearing a chat, removing a provider or downloaded model, forgetting a voiceprint) now always ask first.
+
+### New integrations
+
+- **Todoist.** Paste your API token and each action item becomes a Todoist task, in your Inbox or a project you choose.
+- **Apple Notes notes look like notes.** Headings, bold text and lists come through as formatting instead of Markdown symbols, the transcript moves to the end, and placeholder action items are left out.
+- **Readable titles everywhere.** Notes, tasks and pages are named after the meeting title instead of the file name when there's no AI title.
+- **Notion.** Send each meeting to a Notion page or database: summary, action items as to-dos, tags and sentiment, with the transcript optional. Formatting carries over as real Notion headings, lists and bold text.
+- **TickTick.** Sign in with TickTick in your browser and action items become tasks in the list you choose.
+- **Per-profile destinations.** A meeting profile can send to its own Todoist project, TickTick list or Notion page.
+- **Retries never duplicate.** Retrying a delivery only adds what's missing. Placeholder items like "No action items identified" are no longer sent as tasks.
+
+### Long recordings
+
+- **AI analysis reads the whole meeting.** On-device analysis with Gemma and Apple Intelligence used to look at only part of a long transcript. It now works through the recording in parts and combines them, so decisions and action items from the middle are no longer missed. Long recordings show "Part n of m" while they're analyzed.
+- **Chat over long recordings.** Ask dBrief AI now answers from an overview of the whole meeting plus the passages most relevant to your question, on both Gemma and Apple Intelligence. For questions like "list every action item", **Check the whole recording** goes through the full transcript (this takes a few minutes).
+
+### More improvements
+
+- **OpenRouter** is available as a provider for transcription and AI analysis.
+- **Reprocess with any engine.** When re-running a recording, pick any AI engine or configured endpoint, and any transcription service, for that run only.
+- **Faster speaker review.** One field searches attendees and your voice library or adds a new name, ranked by how closely each voice matches. A quote from each speaker sits next to the play button, and ↑/↓ + Return assign names without the mouse.
+- **Clearer problems and fixes.** Errors and warnings no longer replace each other: they stack in the menu bar panel and show on the recording they belong to, with a button to fix them. You get a notification when processing or reprocessing fails, and clicking it opens the recording. A recording that finishes with issues offers Re-run AI Analysis… or Integrations….
+- **Custom vocabulary tells you when it's skipped**, instead of silently doing nothing when it couldn't be applied.
+- **Apple Reminders permission** now appears under Permissions, and the Reminders integration says when it needs access.
+
+### Fixes
+
+- **Apple Notes export in the downloaded app.** dBrief now asks once for permission to control Notes, which the signed download needs to create notes.
+
+- **A recording under review is never lost.** Starting a new recording (by hotkey or call detection) while the review form is open now queues that recording with your choices instead of dropping it.
+- **Discarding an imported file keeps your original.** Previously it could delete the file you imported from disk.
+- **Parakeet transcribes long M4A recordings again.** Some recordings over 20 minutes failed to transcribe with Parakeet.
+- **Whisper and other model downloads no longer fail** when an old or expired Hugging Face login is on your Mac.
+- **Recording titles stay readable** instead of showing the file name with hyphens.
+- **Resuming a failed job now sends its integrations**, and all remaining deliveries can be retried together.
+- **Settings do what they say.** A profile's language now reaches local Whisper, and auto-delete also cleans every profile's own folders.
+- Fixed a crash when saving or cancelling a provider in Settings, and a crash when signing in to Outlook.
+- The library no longer shows a misleading "search index" error when the real problem is a recordings folder it can't read.
+- Scrolling up in Ask dBrief AI with a mouse wheel no longer jumps back to the bottom while an answer is streaming.
+
+---
+
 ## dBrief 1.4.7
 
 ### Local transcription
