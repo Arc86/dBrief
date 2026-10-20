@@ -3,6 +3,7 @@ import SwiftUI
 struct PromptImprovementPanel: View {
     @Bindable var session: PromptEditorSession
     @State private var showRequest = true
+    @FocusState private var requestFocused: Bool
     @Environment(\.viewerPalette) private var palette
     var body: some View {
         ScrollView {
@@ -24,8 +25,10 @@ struct PromptImprovementPanel: View {
                             .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .strokeBorder(palette.divider.color, lineWidth: 1)
+                                    .strokeBorder(requestFocused ? palette.accentText.color : palette.divider.color,
+                                                  lineWidth: requestFocused ? 2 : 1)
                             }
+                            .focused($requestFocused)
                             .accessibilityLabel("What would you like to improve?")
                         ViewerWrapLayout(spacing: 6, lineSpacing: 6) { shortcuts }.buttonStyle(.settingsSecondary)
                         Text("Uses this prompt and your request. No recording is sent.")
@@ -42,10 +45,15 @@ struct PromptImprovementPanel: View {
                             .disabled(session.configuration == nil || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                if let error = session.improvementError { Text(error).foregroundStyle(palette.secondary.color).textSelection(.enabled) }
+                if let error = session.improvementError {
+                    Text(error).foregroundStyle(palette.secondary.color).textSelection(.enabled)
+                        .onAppear { AccessibilityAnnouncer.shared.announce(error, priority: .high) }
+                }
                 if let suggestion = session.suggestion {
                     palette.divider.color.frame(height: 1)
                     Text("Suggested prompt").uiFont(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                        .onAppear { AccessibilityAnnouncer.shared.announce("Suggestion ready") }
                     ForEach(Array(suggestion.response.changes.enumerated()), id: \.offset) { _, change in
                         Text("• \(change)").uiFont(.callout).foregroundStyle(palette.secondary.color)
                     }

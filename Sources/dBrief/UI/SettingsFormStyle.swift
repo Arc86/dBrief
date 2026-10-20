@@ -31,16 +31,21 @@ private struct SettingsTextFieldModifier: ViewModifier {
 /// stays stronger than `divider`: the fill matches the card it sits on.
 private struct SettingsFieldChromeModifier: ViewModifier {
     @Environment(\.viewerPalette) private var palette
+    @FocusState private var focused: Bool
 
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
             .background(palette.surface.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            // A plain field draws no focus ring, so the border shows where typing goes.
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(palette.heading.color.opacity(0.15), lineWidth: 1)
+                    .strokeBorder(focused ? palette.accentText.color : palette.heading.color.opacity(0.15),
+                                  lineWidth: focused ? 2 : 1)
+                    .allowsHitTesting(false)
             }
+            .focused($focused)
     }
 }
 

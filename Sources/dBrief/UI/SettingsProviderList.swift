@@ -267,9 +267,11 @@ struct SettingsProviderList: View {
                     editing?.modelName = first
                 }
                 testResult = .success
+                AccessibilityAnnouncer.shared.announce(models.isEmpty ? "Connected" : "Connected, \(models.count) models found")
             } catch {
                 availableModels = []
                 testResult = .failure(error.localizedDescription)
+                AccessibilityAnnouncer.shared.announce("Connection failed. \(error.localizedDescription)", priority: .high)
             }
             isLoadingModels = false
         }

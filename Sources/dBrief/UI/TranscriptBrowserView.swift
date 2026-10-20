@@ -121,6 +121,8 @@ struct TranscriptBrowserView: View {
 
     private var selectionLifecycle: some View {
         navigationShell
+        .announcing(library.error, priority: .high)
+        .announcing(searchResultSummary)
         .onAppear {
             library.updateActiveWork(ids: activeWorkIDs, audioURLs: activeAudioURLs)
             reload()
@@ -300,6 +302,8 @@ struct TranscriptBrowserView: View {
             onRebuildSearchIndex: { library.refresh(rebuild: true) },
             onSettings: { openWindow(id: "settings") },
             selectedRowID: selectedWork.map { AnyHashable($0.id) } ?? selection.map(rowID(for:)),
+            selectionKey: selectedWork.map { AnyHashable($0.id) } ?? selection.map { AnyHashable($0) },
+            selectedTitle: selectedSidebarTitle,
             onMove: moveSelection(by:)
         ) { statusMenu in
             if liveRecording != nil || processingRecording != nil {
@@ -463,7 +467,25 @@ struct TranscriptBrowserView: View {
         return urls
     }
 
+    /// "3 recordings found" while searching, for VoiceOver.
+    private var searchResultSummary: String? {
+        guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty, !library.showsInitialLoading else { return nil }
+        let count = filteredItems.count + library.workMatches.count
+        return count == 0 ? "No recordings found" : "\(count) \(count == 1 ? "recording" : "recordings") found"
+    }
+
+    /// The selected row's title and date, for VoiceOver.
+    private var selectedSidebarTitle: String? {
+        if let selectedWork { return "\(selectedWork.title), \(selectedWork.date.formatted(date: .abbreviated, time: .shortened))" }
+        guard let selection else { return nil }
+        if selection == liveRecording?.fileURL { return "Recording in progress" }
+        if selection == processingRecording?.fileURL { return "Recording being processed" }
+        guard let item = items.first(where: { $0.url == selection }) else { return nil }
+        return "\(item.title), \(item.date.formatted(date: .abbreviated, time: .shortened))"
+    }
+
     private func moveSelection(by offset: Int) {
+        defer { if let title = selectedSidebarTitle { appState.announcer.announce(title) } }
         switch library.selectedView {
         case .failedJobs, .queuedInterrupted:
             let ids = visibleWork.map(\.id)

@@ -52,6 +52,21 @@ struct TranscriptChatView: View {
             inputBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The question field keeps focus, so progress and answers are spoken.
+        .onChange(of: chatService.isStreaming) { wasStreaming, streaming in
+            if streaming {
+                AccessibilityAnnouncer.shared.announce("Thinking")
+            } else if wasStreaming, let answer = chatService.messages.last, answer.role == .assistant {
+                let spoken = ChatAnnouncement.finished(answer.content)
+                AccessibilityAnnouncer.shared.announce(spoken.text, priority: spoken.priority)
+            }
+        }
+        .onChange(of: chatService.streamingNotice) { _, notice in
+            if let notice { AccessibilityAnnouncer.shared.announce(notice) }
+        }
+        .onChange(of: chatService.scanStatus ?? chatService.indexingStatus) { _, status in
+            if let status { AccessibilityAnnouncer.shared.announce(status) }
+        }
         .environment(\.chatAnswerDestinations, answerDestinations)
         .environment(\.openURL, OpenURLAction { url in
             guard let seconds = ChatTimestampLink.seconds(from: url) else { return .systemAction }
@@ -710,7 +725,10 @@ private struct MessageActions: View {
                            label: copyToken == nil ? String(localized: "Copy answer") : String(localized: "Answer copied"),
                            action: .copy) {
                     Task {
-                        if await chatService.copyAnswer(message) { copyToken = UUID() }
+                        if await chatService.copyAnswer(message) {
+                            copyToken = UUID()
+                            AccessibilityAnnouncer.shared.announce("Answer copied")
+                        }
                     }
                 }
 
@@ -745,6 +763,7 @@ private struct MessageActions: View {
 
             if let addStatus {
                 Label(addStatus, systemImage: "checkmark")
+                    .onAppear { AccessibilityAnnouncer.shared.announce(addStatus) }
                     .uiFont(.caption)
                     .foregroundStyle(palette.secondary.color)
                     .padding(.leading, 6)
@@ -762,6 +781,7 @@ private struct MessageActions: View {
                 speechProgress(String(localized: "Preparing audio…"))
             case .failed(let message):
                 Text("Could not read aloud: \(message)")
+                    .onAppear { AccessibilityAnnouncer.shared.announce("Could not read aloud: \(message)", priority: .high) }
                     .uiFont(.caption)
                     .foregroundStyle(palette.secondary.color)
                     .textSelection(.enabled)

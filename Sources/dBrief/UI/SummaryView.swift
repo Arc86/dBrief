@@ -171,7 +171,7 @@ struct SummaryView: View {
             .uiFont(.system(size: 12))
             .buttonStyle(ViewerCommandButtonStyle())
 
-            Text("Type / to add a block · drag a block's handle to move it · ⌘S saves · Esc cancels")
+            Text("Type / to add a block · ⌥⇧↑↓ or drag a block's handle to move it · ⌘S saves · Esc cancels")
                 .uiFont(.system(size: 11))
                 .foregroundStyle(palette.secondary.color)
 

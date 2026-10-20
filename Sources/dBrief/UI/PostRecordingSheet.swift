@@ -507,6 +507,8 @@ struct PostRecordingSheet: View {
             }
             .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 36, fontSize: 14))
             .disabled(processDisabled)
+            // Return processes, except while it adds or renames a participant.
+            .keyboardShortcut(returnAddsParticipant ? nil : .defaultAction)
             .help(appState.processingJob == nil ? "Process this recording now"
                   : "Processes this recording as soon as the current one finishes")
 
@@ -647,6 +649,11 @@ struct PostRecordingSheet: View {
         .accessibilityLabel("Profile for this recording")
         .accessibilityValue(reviewProfile.name)
         .help(appState.processingJob == nil ? "Choose a profile for this recording" : "Profile changes wait for the current job to finish")
+    }
+
+    private var returnAddsParticipant: Bool {
+        editingParticipant != nil
+            || (participantFieldFocused && !participantInput.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     private var processDisabled: Bool {

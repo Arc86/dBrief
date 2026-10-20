@@ -21,6 +21,8 @@ struct SettingsVoiceLibraryTab: View {
     @State private var sortColumn: VoiceLibraryRow.Column = .lastHeard
     @State private var sortAscending = false
     @State private var anchorId: String?
+    /// The row the keyboard last moved to; kept in view as the selection changes.
+    @State private var cursorId: String?
     // Starts wide so the first frame shows every column; the measured width follows.
     @State private var tableWidth: CGFloat = .greatestFiniteMagnitude
     @State private var editingCompany = false
@@ -220,33 +222,38 @@ struct SettingsVoiceLibraryTab: View {
         return VStack(spacing: 0) {
             columnHeader(columns)
             palette.divider.color.frame(height: 1)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
-                    if groupByCompany {
-                        ForEach(groups(of: rows, peopleById: peopleById), id: \.group.id) { entry in
-                            Text("\(entry.group.label) · \(entry.rows.count)")
-                                .uiFont(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(palette.secondary.color)
-                                .padding(.horizontal, 10)
-                                .padding(.top, 12)
-                                .padding(.bottom, 4)
-                                .accessibilityAddTraits(.isHeader)
-                            ForEach(entry.rows) { row in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        if groupByCompany {
+                            ForEach(groups(of: rows, peopleById: peopleById), id: \.group.id) { entry in
+                                Text("\(entry.group.label) · \(entry.rows.count)")
+                                    .uiFont(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(palette.secondary.color)
+                                    .padding(.horizontal, 10)
+                                    .padding(.top, 12)
+                                    .padding(.bottom, 4)
+                                    .accessibilityAddTraits(.isHeader)
+                                ForEach(entry.rows) { row in
+                                    rowView(row, person: peopleById[row.id], columns: columns, order: order, selected: selected)
+                                }
+                            }
+                        } else {
+                            ForEach(rows) { row in
                                 rowView(row, person: peopleById[row.id], columns: columns, order: order, selected: selected)
                             }
                         }
-                    } else {
-                        ForEach(rows) { row in
-                            rowView(row, person: peopleById[row.id], columns: columns, order: order, selected: selected)
-                        }
                     }
+                    .padding(6)
+                    .overlayScrollers()
                 }
-                .padding(6)
-                .overlayScrollers()
-            }
-            .scrollBounceBehavior(.basedOnSize)
-            .overlay {
-                if rows.isEmpty { noSearchResultsView }
+                .scrollBounceBehavior(.basedOnSize)
+                .overlay {
+                    if rows.isEmpty { noSearchResultsView }
+                }
+                .onChange(of: cursorId) { _, id in
+                    if let id { proxy.scrollTo(id) }
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -262,8 +269,27 @@ struct SettingsVoiceLibraryTab: View {
         .focusable()
         .focusEffectDisabled()
         .focused($tableFocused)
-        .onKeyPress(.upArrow) { moveSelection(by: -1, order: order) }
-        .onKeyPress(.downArrow) { moveSelection(by: 1, order: order) }
+        .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+            moveSelection(by: press.key == .upArrow ? -1 : 1, order: order,
+                          extending: press.modifiers.contains(.shift))
+        }
+        // Return renames, like Finder; ⇧⌘M merges.
+        .onKeyPress(.return) {
+            guard !editingCompany, selected.count == 1, let person = selected.first else { return .ignored }
+            actions.rename(person)
+            return .handled
+        }
+        .onKeyPress(characters: ["m", "M"]) { press in
+            guard press.modifiers.contains(.command), press.modifiers.contains(.shift) else { return .ignored }
+            if selected.count == 1, let person = selected.first, library.people.count > 1 {
+                actions.mergeInto(person)
+            } else if selected.count > 1 {
+                requestMerge(selected)
+            } else {
+                return .ignored
+            }
+            return .handled
+        }
         .onKeyPress(keys: [.delete, .deleteForward]) { _ in
             guard !selection.isEmpty else { return .ignored }
             requestForget(selectedPeople)
@@ -326,7 +352,7 @@ struct SettingsVoiceLibraryTab: View {
             isSelected: isSelected,
             columns: columns,
             onClick: { click(row, order: order) },
-            onSelect: { selection = [row.id]; anchorId = row.id },
+            onSelect: { selection = [row.id]; anchorId = row.id; cursorId = row.id },
             onRename: { if let person { actions.rename(person) } },
             onSetCompany: person.map { person in { setCompany(person, $0) } },
             onCompanyFocus: { editingCompany = $0 }
@@ -347,12 +373,22 @@ struct SettingsVoiceLibraryTab: View {
                                                command: flags.contains(.command), shift: flags.contains(.shift))
         selection = next.selection
         anchorId = next.anchor
+        cursorId = row.id
     }
 
-    private func moveSelection(by step: Int, order: [String]) -> KeyPress.Result {
+    private func moveSelection(by step: Int, order: [String], extending: Bool) -> KeyPress.Result {
+        if extending {
+            guard let next = VoiceLibrarySelection.extend(by: step, order: order, current: selection,
+                                                          anchor: anchorId, cursor: cursorId) else { return .ignored }
+            selection = next.selection
+            anchorId = next.anchor
+            cursorId = next.cursor
+            return .handled
+        }
         guard let id = VoiceLibrarySelection.move(by: step, order: order, current: selection) else { return .ignored }
         selection = [id]
         anchorId = id
+        cursorId = id
         return .handled
     }
 
@@ -362,11 +398,13 @@ struct SettingsVoiceLibraryTab: View {
             Button("Rename\u{2026}") { actions.rename(person) }
             if library.people.count > 1 {
                 Button("Merge into\u{2026}") { actions.mergeInto(person) }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
             }
             Divider()
             Button("Forget voice", role: .destructive) { requestForget([person]) }
         } else if people.count > 1 {
             Button("Merge \(people.count) people\u{2026}") { requestMerge(people) }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
             Divider()
             Button("Forget \(people.count) voices", role: .destructive) { requestForget(people) }
         }

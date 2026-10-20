@@ -53,7 +53,7 @@ struct SettingsProfilesTab: View {
         .alert("Restore shared defaults?", isPresented: $isConfirmingSharedReset) {
             Button("Restore defaults", role: .destructive) {
                 appSettings.resetDefaultProfileToBuiltInDefaults()
-                statusMessage = String(localized: "Shared settings and the Default profile restored.")
+                showStatus(String(localized: "Shared settings and the Default profile restored."))
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -972,10 +972,16 @@ struct SettingsProfilesTab: View {
             if !result.warnings.isEmpty {
                 message += " \(result.warnings.joined(separator: " "))"
             }
-            statusMessage = message
+            showStatus(message)
         } catch {
-            statusMessage = error.localizedDescription
+            showStatus(error.localizedDescription)
         }
+    }
+
+    /// Shows an import/export result and speaks it, since it appears away from focus.
+    private func showStatus(_ text: String) {
+        statusMessage = text
+        AccessibilityAnnouncer.shared.announce(text)
     }
 
     private func exportProfiles(selectedOnly: Bool) {
@@ -988,9 +994,9 @@ struct SettingsProfilesTab: View {
             let ids = selectedOnly ? selectedProfile.map { [$0.id] } : nil
             let data = try appSettings.exportProfiles(ids: ids)
             try data.write(to: url)
-            statusMessage = String(localized: "Profiles exported to \(url.lastPathComponent).")
+            showStatus(String(localized: "Profiles exported to \(url.lastPathComponent)."))
         } catch {
-            statusMessage = error.localizedDescription
+            showStatus(error.localizedDescription)
         }
     }
 }

@@ -104,12 +104,19 @@ struct PromptPreviewPanel: View {
             }
         }
         Text("The original recording stays unchanged.").uiFont(.caption).foregroundStyle(palette.secondary.color)
-        if let error = preview.errorMessage { Text(error).uiFont(.callout).foregroundStyle(palette.secondary.color).textSelection(.enabled) }
+        if let error = preview.errorMessage {
+            Text(error).uiFont(.callout).foregroundStyle(palette.secondary.color).textSelection(.enabled)
+                .onAppear { AccessibilityAnnouncer.shared.announce(error, priority: .high) }
+        }
         palette.divider.color.frame(height: 1)
         if let result = preview.result {
             if preview.resultRequest != request {
                 Label("Outdated preview — run another test", systemImage: "arrow.clockwise").foregroundStyle(palette.secondary.color)
-            } else { Text("Preview result").uiFont(.headline) }
+            } else {
+                Text("Preview result").uiFont(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                    .onAppear { AccessibilityAnnouncer.shared.announce("Preview ready") }
+            }
             Text(result.text).uiFont(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
         } else {
             VStack(spacing: 10) {

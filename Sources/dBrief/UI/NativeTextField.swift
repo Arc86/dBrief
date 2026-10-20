@@ -174,7 +174,8 @@ private struct NativeTextFieldRepresentable: NSViewRepresentable {
         field.isBordered = false
         field.isBezeled = bezeled
         field.drawsBackground = bezeled
-        field.focusRingType = bezeled ? .exterior : .none
+        // Plain fields keep the ring too: it's the only sign of where typing goes.
+        field.focusRingType = .exterior
     }
 
     func makeCoordinator() -> Coordinator {

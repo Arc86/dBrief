@@ -53,6 +53,10 @@ struct OnboardingView: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.2), value: step)
+        // The step's content replaces the button that was pressed, so say where we are.
+        .onChange(of: step) { _, step in
+            AccessibilityAnnouncer.shared.announce(OnboardingStep.announcement(step: step, visibleSteps: visibleSteps))
+        }
         .task {
             refreshPermissionStatuses()
         }
@@ -132,6 +136,7 @@ struct OnboardingView: View {
             }
             .buttonStyle(.typographyProminent)
             .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
         }
     }
 
@@ -195,6 +200,7 @@ struct OnboardingView: View {
                 }
                 .buttonStyle(.typographyProminent)
                 .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
                 .disabled(!canContinueWithAudioPermissions)
             }
         }
@@ -425,6 +431,7 @@ struct OnboardingView: View {
             }
             .buttonStyle(.typographyProminent)
             .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
             .disabled(checkingModels)
 
             if checkingModels {
@@ -466,4 +473,22 @@ struct OnboardingView: View {
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+}
+
+enum OnboardingStep {
+    static func title(_ step: Int) -> String {
+        switch step {
+        case 0: "Welcome to dBrief"
+        case 1: "Permissions"
+        case 2: "Transcription & AI"
+        case 3: "Prepare your models"
+        default: "Before you record"
+        }
+    }
+
+    /// "Step 2 of 4: Permissions".
+    static func announcement(step: Int, visibleSteps: [Int]) -> String {
+        let position = (visibleSteps.firstIndex(of: step) ?? 0) + 1
+        return "Step \(position) of \(visibleSteps.count): \(title(step))"
+    }
 }

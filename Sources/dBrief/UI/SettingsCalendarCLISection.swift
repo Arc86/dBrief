@@ -270,6 +270,19 @@ struct SettingsCalendarCLISection: View {
         customFreshnessMinutes = appSettings.calendarCLIConfig.listFreshnessSeconds / 60
     }
 
+    /// The outcome of a test or refresh, spoken: the status line appears out of focus.
+    private static func spoken(_ state: ConnectionTestState, refresh: Bool) -> String? {
+        switch state {
+        case .idle, .running: nil
+        case .reachable(let events, let partial):
+            partial ? (refresh ? "Refresh incomplete" : "Connected, partial data")
+                : refresh ? "Calendar refreshed" : "Connected\(events > 0 ? ", \(events) events" : "")"
+        case .blocked: refresh ? "Refresh blocked" : "Access blocked"
+        case .unconfigured: "Set your mailbox first"
+        case .failed: refresh ? "Refresh failed" : "Calendar test failed"
+        }
+    }
+
     private func runConnectionTest() {
         testState = .running
         Task { @MainActor in
@@ -280,6 +293,7 @@ struct SettingsCalendarCLISection: View {
             case .blocked: testState = .blocked
             case .failed: testState = .failed
             }
+            if let text = Self.spoken(testState, refresh: false) { AccessibilityAnnouncer.shared.announce(text) }
             refreshStatus()
         }
     }
@@ -294,6 +308,7 @@ struct SettingsCalendarCLISection: View {
             case .blocked: refreshState = .blocked
             case .failed: refreshState = .failed
             }
+            if let text = Self.spoken(refreshState, refresh: true) { AccessibilityAnnouncer.shared.announce(text) }
             refreshStatus()
         }
     }

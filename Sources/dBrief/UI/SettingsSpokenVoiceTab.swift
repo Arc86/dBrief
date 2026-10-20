@@ -59,6 +59,7 @@ struct SettingsSpokenVoiceTab: View {
                     }
                 }
                 SettingsRow("Preview") { voicePreviewControl }
+                    .announcing(voicePreview.state.spokenStatus)
                 if case let .failed(message) = voicePreview.state {
                     SettingsStackedRow { SettingsErrorDetails(summary: String(localized: "Voice preview failed"), error: message) }
                 }
@@ -150,6 +151,19 @@ struct SettingsSpokenVoiceTab: View {
                 ProgressView().controlSize(.small)
                 Text("Synthesizing…").uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)
             }
+        }
+    }
+}
+
+private extension VoicePreviewPlayer.State {
+    /// One spoken line per step of the sample; download progress isn't read out.
+    var spokenStatus: String? {
+        switch self {
+        case .idle: nil
+        case .preparingVoice: "Preparing voice"
+        case .synthesizing: "Synthesizing sample"
+        case .playing: "Playing sample"
+        case .failed(let message): "Voice preview failed. \(message)"
         }
     }
 }

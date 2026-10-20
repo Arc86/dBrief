@@ -122,6 +122,8 @@ struct TranscriptDetailView: View, Equatable {
 
     // Speaker reassignment
     @State private var customRenameTurn: SpeakerTurn?
+    /// Scrolls the transcript to a turn, e.g. one renamed from the Recording menu.
+    @State private var scrollToTurnRequest: UUID?
 
     // Diarization (after-the-fact speaker detection)
     @State private var reprocessingOperation: ReprocessingOperation?
@@ -328,6 +330,9 @@ struct TranscriptDetailView: View, Equatable {
         // what actually removes the duplicate.
         .navigationTitle("")
         .focusedSceneValue(\.recordingViewer, viewerActions)
+        .modifier(ViewerAnnouncements(saveError: analysisSaveError, copied: copied, isGenerating: isGenerating,
+                                      hasInsights: insights != nil, offerReanalysis: offerReanalysis,
+                                      announcer: context.appState.announcer))
         .task(id: context.recordingManager.reprocessingRecoveryReady) {
             await loadTranscript()
         }
@@ -483,8 +488,32 @@ struct TranscriptDetailView: View, Equatable {
             changeTextSize: { step in context.appSettings.viewerAppearance.fontSize += step },
             reviewIntegrations: audioURL != nil && context.appState.processingJob == nil
                 && !context.recordingManager.reviewingIntegrationDeliveries
-                ? { if let audioURL { Task { await context.recordingManager.reviewIntegrationDeliveries(for: audioURL) } } } : nil
+                ? { if let audioURL { Task { await context.recordingManager.reviewIntegrationDeliveries(for: audioURL) } } } : nil,
+            currentSpeakerName: currentSpeakerTurn.flatMap(\.speakerId).map(displayName(for:)),
+            currentSpeakerIsMe: currentSpeakerTurn?.speakerId == meSpeakerId,
+            renameCurrentSpeaker: canEditSpeakers ? currentSpeakerTurn.map { turn in { renameFromKeyboard(turn) } } : nil,
+            toggleCurrentSpeakerIsMe: canEditSpeakers ? currentSpeakerTurn.map { turn in {
+                setMeSpeaker(turn.speakerId == meSpeakerId ? nil : turn.speakerId)
+            } } : nil
         )
+    }
+
+    /// The turn the Recording menu's speaker commands act on: the playing one, else the first.
+    private var currentSpeakerTurn: SpeakerTurn? {
+        displayedTurns.first { $0.id == activeTurnID && $0.speakerId != nil }
+            ?? displayedTurns.first { $0.speakerId != nil }
+    }
+
+    private var canEditSpeakers: Bool { richTranscript != nil && !isReprocessing }
+
+    /// Opens the custom-name field for a turn from the keyboard or VoiceOver: shows the
+    /// transcript with speaker names and brings the turn into view, since the field
+    /// hangs off the turn's speaker label.
+    private func renameFromKeyboard(_ turn: SpeakerTurn) {
+        mode = .transcript
+        if !showSpeakerNames { showSpeakerNames = true }
+        scrollToTurnRequest = turn.id
+        customRenameTurn = turn
     }
 
     /// Snapshots the notes and transcript into the Focus Reader window, which
@@ -651,7 +680,7 @@ struct TranscriptDetailView: View, Equatable {
             ForEach(ViewerPresentationPolicy.mountedModes(visited: visitedModes, current: mode), id: \.self) { tab in
                 let isCurrent = tab == mode
                 documentContent(for: tab)
-                    .modifier(ViewerMountedTab(isCurrent: isCurrent))
+                    .modifier(ViewerMountedTab(isCurrent: isCurrent, disablesWhenHidden: tab != .transcript))
             }
         }
         .onChange(of: mode, initial: true) { previous, current in
@@ -790,6 +819,9 @@ struct TranscriptDetailView: View, Equatable {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+                        // The speaker menu's actions without finding the inline label.
+                        .accessibilityElement(children: .contain)
+                        .accessibilityActions { speakerAccessibilityActions(turn: turn) }
                         .id(turn.id)
                 }
             }
@@ -804,6 +836,11 @@ struct TranscriptDetailView: View, Equatable {
                                        isVisible: mode == .transcript,
                                        proxy: proxy, follow: transcriptScrollFollow,
                                        activeTurnID: $activeTurnID, isPlaying: $isPlaybackRunning))
+            .onChange(of: scrollToTurnRequest) { _, id in
+                guard let id else { return }
+                proxy.scrollTo(id, anchor: .center)
+                scrollToTurnRequest = nil
+            }
             .onChange(of: searchScrollTick) { _, _ in
                 guard searchResult.matches.indices.contains(currentMatchIndex) else { return }
                 let turnId = searchResult.matches[currentMatchIndex].turnId
@@ -897,12 +934,7 @@ struct TranscriptDetailView: View, Equatable {
     /// scanning the transcript once per row.
     @ViewBuilder
     private func speakerMenuContent(turn: SpeakerTurn, isMe: Bool) -> some View {
-        let menu = speakerMenuCache.data(for: turn.speakerId, inputs: .init(
-            revision: transcriptRevision,
-            transcript: richTranscript ?? RichTranscript(segments: []),
-            participants: recording.participants,
-            attendees: (recording.calendarEvent?.attendeeNames ?? []) + recording.calendarCandidates.flatMap(\.attendeeNames),
-            knownPeople: knownPeopleNames))
+        let menu = speakerMenuData(for: turn)
         // Rename targets, grouped by source. Picking a meeting/library name that already
         // belongs to another speaker swaps them (handled in `SpeakerReassignment.rename`).
         let meetingNames = menu.meetingNames
@@ -971,6 +1003,39 @@ struct TranscriptDetailView: View, Equatable {
             Button("Clear “This is me”") { setMeSpeaker(nil) }
         } else {
             Button("This is me") { setMeSpeaker(turn.speakerId) }
+        }
+    }
+
+    private func speakerMenuData(for turn: SpeakerTurn) -> SpeakerMenuData {
+        speakerMenuCache.data(for: turn.speakerId, inputs: .init(
+            revision: transcriptRevision,
+            transcript: richTranscript ?? RichTranscript(segments: []),
+            participants: recording.participants,
+            attendees: (recording.calendarEvent?.attendeeNames ?? []) + recording.calendarCandidates.flatMap(\.attendeeNames),
+            knownPeople: knownPeopleNames))
+    }
+
+    /// The speaker menu as flat VoiceOver actions on the turn row. Library names stay in
+    /// the menu: there can be many.
+    @ViewBuilder
+    private func speakerAccessibilityActions(turn: SpeakerTurn) -> some View {
+        if let id = turn.speakerId, canEditSpeakers {
+            let name = displayName(for: id)
+            let menu = speakerMenuData(for: turn)
+            Button("Rename “\(name)”…") { renameFromKeyboard(turn) }
+            ForEach(menu.meetingNames, id: \.self) { candidate in
+                Button("Rename “\(name)” to \(candidate)") { renameSpeaker(turn: turn, to: candidate) }
+            }
+            ForEach(menu.others) { other in
+                Button("Move this turn to \(other.displayName)") {
+                    reassignTurn(turn: turn, toSpeakerId: other.id, scope: .theseSegments)
+                }
+            }
+            if id == meSpeakerId {
+                Button("Clear “This is me”") { setMeSpeaker(nil) }
+            } else {
+                Button("This is me") { setMeSpeaker(id) }
+            }
         }
     }
 
@@ -1683,13 +1748,22 @@ struct TranscriptDetailView: View, Equatable {
             // Surface results: jump to the transcript view if elsewhere.
             if isSearching, mode != .transcript { mode = .transcript }
             searchScrollTick &+= 1
+            if isSearching { announceSearchPosition() }
         }
+    }
+
+    /// The count and the current match, spoken: highlights alone are invisible to VoiceOver.
+    private func announceSearchPosition() {
+        let texts = Dictionary(displayedTurns.map { ($0.id, $0.text) }, uniquingKeysWith: { first, _ in first })
+        context.appState.announcer.announce(
+            TranscriptSearch.announcement(for: searchResult, current: currentMatchIndex) { texts[$0] })
     }
 
     private func gotoNextMatch() {
         guard !searchResult.matches.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex + 1) % searchResult.matches.count
         searchScrollTick &+= 1
+        announceSearchPosition()
     }
 
     private func gotoPrevMatch() {
@@ -1697,6 +1771,7 @@ struct TranscriptDetailView: View, Equatable {
         let n = searchResult.matches.count
         currentMatchIndex = (currentMatchIndex - 1 + n) % n
         searchScrollTick &+= 1
+        announceSearchPosition()
     }
 
     /// Zero-size buttons that register Find keyboard shortcuts without adding any
@@ -1829,6 +1904,7 @@ struct TranscriptDetailView: View, Equatable {
                     }
                 }
             }
+            context.appState.announcer.announce("Analysis saved")
             return true
         } catch {
             analysisSaveError = String(localized: "Analysis could not be saved. Your draft is kept. \(error.localizedDescription)")
@@ -2010,14 +2086,17 @@ private struct PresenceDotAnimation: View {
     }
 }
 
-/// A document tab that stays mounted while hidden. No `.disabled`: it writes
+/// A document tab that stays mounted while hidden. A hidden tab is disabled so Tab
+/// can't land on its invisible buttons, except the transcript: `.disabled` writes
 /// `isEnabled` into the environment, which bypasses the Equatable transcript rows
 /// and re-renders every one of them on each tab switch.
 struct ViewerMountedTab: ViewModifier {
     let isCurrent: Bool
+    var disablesWhenHidden = true
 
     func body(content: Content) -> some View {
         content
+            .disabled(disablesWhenHidden && !isCurrent)
             .opacity(isCurrent ? 1 : 0)
             .allowsHitTesting(isCurrent)
             .accessibilityHidden(!isCurrent)

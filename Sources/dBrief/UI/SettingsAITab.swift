@@ -254,7 +254,7 @@ struct SettingsAITab: View {
         }
         SettingsRow("Test the command") {
             HStack(spacing: 8) {
-                if isTestingCLI { ProgressView().controlSize(.small) }
+                if isTestingCLI { ProgressView().controlSize(.small).accessibilityLabel("Testing command") }
                 Button("Test command") { testCLICommand() }
                     .buttonStyle(.settingsSecondary)
                     .disabled(isTestingCLI || appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -289,8 +289,10 @@ struct SettingsAITab: View {
             do {
                 let output = try await LocalCLIService().runTest(config: config)
                 cliTestSuccess = String(output.prefix(500))
+                AccessibilityAnnouncer.shared.announce("Command ran")
             } catch {
                 cliTestError = error.localizedDescription
+                AccessibilityAnnouncer.shared.announce("Command test failed. \(error.localizedDescription)", priority: .high)
             }
             isTestingCLI = false
         }

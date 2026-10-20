@@ -92,4 +92,17 @@ enum VoiceLibrarySelection {
         let target = step < 0 ? first + step : last + step
         return order[min(max(target, 0), order.count - 1)]
     }
+
+    /// Shift-arrow: moves the cursor one row and selects everything from the anchor to
+    /// it, as in Finder. Without an anchor, the cursor starts on the first selected row.
+    static func extend(by step: Int, order: [String], current: Set<String>, anchor: String?,
+                       cursor: String?) -> (selection: Set<String>, anchor: String, cursor: String)? {
+        guard !order.isEmpty else { return nil }
+        let start = cursor.flatMap(order.firstIndex(of:))
+            ?? order.indices.first { current.contains(order[$0]) }
+        guard let start else { return ([order[0]], order[0], order[0]) }
+        let anchorIndex = anchor.flatMap(order.firstIndex(of:)) ?? start
+        let target = min(max(start + step, 0), order.count - 1)
+        return (Set(order[min(anchorIndex, target)...max(anchorIndex, target)]), order[anchorIndex], order[target])
+    }
 }

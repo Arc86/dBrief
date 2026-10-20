@@ -6,7 +6,9 @@ import { listItem } from "@milkdown/crepe/feature/list-item";
 import { placeholder } from "@milkdown/crepe/feature/placeholder";
 import { table } from "@milkdown/crepe/feature/table";
 import { toolbar } from "@milkdown/crepe/feature/toolbar";
+import { editorViewCtx } from "@milkdown/kit/core";
 import { replaceAll } from "@milkdown/kit/utils";
+import { createLiveRegion, labelEditor, moveBlock, moveDirectionFor, syncSlashMenu } from "./a11y";
 
 export type BridgeMessage =
   | { type: "ready" }
@@ -45,6 +47,37 @@ export async function mountEditor(root: HTMLElement, post: (message: BridgeMessa
     listener.markdownUpdated((_ctx, markdown) => post({ type: "changed", markdown }));
   });
   await builder.create();
+
+  const editable = root.querySelector<HTMLElement>(".ProseMirror");
+  if (editable) labelEditor(editable);
+  const say = createLiveRegion(document);
+
+  // ⌥⇧↑ / ⌥⇧↓ move the block with the cursor, so reordering needs no drag.
+  root.addEventListener(
+    "keydown",
+    (event) => {
+      const direction = moveDirectionFor(event);
+      if (direction === null) return;
+      const view = builder.editor.ctx.get(editorViewCtx);
+      if (!view.editable) return;
+      event.preventDefault();
+      const tr = moveBlock(view.state, direction);
+      if (!tr) return;
+      view.dispatch(tr);
+      say(direction === -1 ? "Block moved up" : "Block moved down");
+    },
+    true,
+  );
+
+  // The slash menu reads as a list of blocks; the highlighted one is spoken.
+  let spokenBlock: string | null = null;
+  new MutationObserver(() => {
+    const menu = document.querySelector(".milkdown-slash-menu");
+    if (!menu || !editable) return;
+    const highlighted = syncSlashMenu(menu, editable);
+    if (highlighted && highlighted !== spokenBlock) say(highlighted);
+    spokenBlock = highlighted;
+  }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-show", "class"] });
 
   return {
     setMarkdown(markdown) {

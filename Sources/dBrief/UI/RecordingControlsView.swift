@@ -45,17 +45,23 @@ struct RecordingControlsView: View {
                             Label("Pause", systemImage: "pause")
                         }
                         .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
+                        .keyboardShortcut(CaptureShortcut.pauseResume)
+                        .help("Pause recording (⌥⌘P)")
                     } else {
                         Button { recordingManager.requestResume() } label: {
                             Label("Resume", systemImage: "play")
                         }
                         .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
+                        .keyboardShortcut(CaptureShortcut.pauseResume)
+                        .help("Resume recording (⌥⌘P)")
                     }
 
                     Button { Task { await recordingManager.stopRecording() } } label: {
                         Label("Stop", systemImage: "stop")
                     }
                     .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 32))
+                    .keyboardShortcut(CaptureShortcut.stop)
+                    .help("Stop recording (⌥⌘.)")
                 }
                 .environment(\.controlActiveState, .active)
 

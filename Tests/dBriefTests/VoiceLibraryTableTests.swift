@@ -154,4 +154,20 @@ struct VoiceLibraryTableInteractionTests {
         #expect(VoiceLibrarySelection.move(by: -1, order: order, current: ["b", "d"]) == "a")
         #expect(VoiceLibrarySelection.move(by: 1, order: [], current: []) == nil)
     }
+
+    @Test("Shift-arrows grow and shrink the range from the anchor, as in Finder")
+    func shiftArrows() {
+        let down = VoiceLibrarySelection.extend(by: 1, order: order, current: ["b"], anchor: "b", cursor: "b")
+        #expect(down?.selection == ["b", "c"])
+        #expect(down?.cursor == "c")
+        let further = VoiceLibrarySelection.extend(by: 1, order: order, current: ["b", "c"], anchor: "b", cursor: "c")
+        #expect(further?.selection == ["b", "c", "d"])
+        let back = VoiceLibrarySelection.extend(by: -1, order: order, current: ["b", "c", "d"], anchor: "b", cursor: "d")
+        #expect(back?.selection == ["b", "c"])
+        let above = VoiceLibrarySelection.extend(by: -1, order: order, current: ["b"], anchor: "b", cursor: "b")
+        #expect(above?.selection == ["a", "b"])
+        // No anchor or cursor yet: starts from the first selected row.
+        #expect(VoiceLibrarySelection.extend(by: 1, order: order, current: ["c"], anchor: nil, cursor: nil)?.selection == ["c", "d"])
+        #expect(VoiceLibrarySelection.extend(by: 1, order: [], current: [], anchor: nil, cursor: nil) == nil)
+    }
 }

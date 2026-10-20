@@ -23,7 +23,10 @@ struct ResultsView: View {
         // The results reflect the processed recording, which may differ from the capture
         // slot (`currentRecording`) if a new recording started meanwhile.
         guard let recording = appState.processingRecording else { return AnyView(EmptyView()) }
-        return AnyView(content(recording: recording))
+        return AnyView(content(recording: recording)
+            .onChange(of: copied) { _, copied in
+                if copied { appState.announcer.announce("Notes copied") }
+            })
     }
 
     private func content(recording: Recording) -> some View {
