@@ -26,9 +26,9 @@ struct CallEndedPopup: View {
                     await recordingManager.stopRecording()
                 }
             } label: {
-                Label("Stop", systemImage: "stop")
+                Label("Stop", systemImage: "stop.fill")
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 30, fillsWidth: false))
+            .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 13, fillsWidth: false))
             .keyboardShortcut(.defaultAction)
         }
     }

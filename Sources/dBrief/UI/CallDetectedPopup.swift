@@ -27,9 +27,10 @@ struct CallDetectedPopup: View {
                     )
                 }
             } label: {
-                Label("Record call", systemImage: "mic")
+                Label("Record call", systemImage: "mic.fill")
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .accentOutline, height: 30, fillsWidth: false))
+            // The panel's Record button style: the one filled, accent-coloured action.
+            .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 13, fillsWidth: false))
             .keyboardShortcut(.defaultAction)
         }
     }
