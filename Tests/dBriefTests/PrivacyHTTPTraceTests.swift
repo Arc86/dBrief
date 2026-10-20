@@ -167,9 +167,10 @@ private final class ReceiptRedirectServer: @unchecked Sendable {
         self.url = URL(string: "http://127.0.0.1:\(port)/start?initial_prompt=private-redirect-text")!
     }
 
+    /// Doesn't wait for the exit: `waitUntilExit()` from a test task could miss the
+    /// termination event and block forever after Python had already exited.
     func stop() {
         if process.isRunning { process.terminate() }
-        process.waitUntilExit()
     }
 
     private static let script = #"""
