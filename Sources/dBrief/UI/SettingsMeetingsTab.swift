@@ -67,7 +67,9 @@ struct SettingsMeetingsTab: View {
                     }
                     SettingsStackedRow {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 8)], spacing: 8) {
-                            ForEach(CallDetectionService.knownCallApps, id: \.bundleId) { app in
+                            ForEach(CallDetectionService.watchableApps(isInstalled: CallAppIcons.isInstalled,
+                                                                       disabled: appSettings.disabledCallApps),
+                                    id: \.bundleId) { app in
                                 appTile(app)
                             }
                         }
@@ -94,12 +96,19 @@ struct SettingsMeetingsTab: View {
             appIcon(app)
                 .frame(width: 22, height: 22)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            Text(app.name)
-                .uiFont(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(palette.heading.color)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(app.name)
+                    .uiFont(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(palette.heading.color)
+                if let caption = app.caption {
+                    Text(caption)
+                        .uiFont(.system(size: 10.5))
+                        .foregroundStyle(palette.secondary.color)
+                }
+            }
+            .lineLimit(1)
             Spacer(minLength: 4)
-            Toggle(app.name, isOn: isEnabled).labelsHidden()
+            Toggle(app.caption.map { "\(app.name), \($0)" } ?? app.name, isOn: isEnabled).labelsHidden()
         }
         .padding(.horizontal, 10)
         .frame(height: 38)
@@ -123,10 +132,20 @@ struct SettingsMeetingsTab: View {
     }
 }
 
-/// Bundled call-app icons, read from disk once instead of on every body pass.
+/// Call-app icons, read from disk once instead of on every body pass: bundled ones for the
+/// call apps, the installed app's own icon for browsers.
 @MainActor private enum CallAppIcons {
     static let images: [String: NSImage] = Dictionary(uniqueKeysWithValues:
-        CallDetectionService.knownCallApps.compactMap { app in load(app).map { (app.bundleId, $0) } })
+        CallDetectionService.knownCallApps.compactMap { app in load(app).map { (app.bundleId, $0) } }
+        + browserURLs.map { ($0.key, NSWorkspace.shared.icon(forFile: $0.value.path)) })
+
+    /// Installed browsers that can host a web call, by bundle id.
+    private static let browserURLs: [String: URL] = Dictionary(uniqueKeysWithValues:
+        CallDetectionService.knownBrowsers.compactMap { browser in
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.bundleId).map { (browser.bundleId, $0) }
+        })
+
+    static func isInstalled(_ bundleId: String) -> Bool { browserURLs[bundleId] != nil }
 
     private static func load(_ app: CallDetectionService.CallApp) -> NSImage? {
         let baseNames = switch app.bundleId {

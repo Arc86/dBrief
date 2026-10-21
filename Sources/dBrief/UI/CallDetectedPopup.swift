@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CallDetectedPopup: View {
     @Environment(AppState.self) private var appState
+    @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
 
     var body: some View {
@@ -12,6 +13,12 @@ struct CallDetectedPopup: View {
             dismissLabel: String(localized: "Dismiss"),
             onDismiss: { appState.showCallDetectedPopup = false }
         ) {
+            if let target = CallDetectionService.muteTarget(forBundleId: appState.detectedCallAppBundleId) {
+                Button(String(localized: "Don't ask for \(target.name)")) { mute(target) }
+                    .buttonStyle(CallMuteButtonStyle())
+                    .help("Stop call prompts for this app. Turn it back on in Settings → Meetings.")
+            }
+        } actions: {
             Button("Not now") {
                 appState.showCallDetectedPopup = false
             }
@@ -33,6 +40,33 @@ struct CallDetectedPopup: View {
             .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 13, fillsWidth: false))
             .keyboardShortcut(.defaultAction)
         }
+    }
+
+    private func mute(_ target: CallDetectionService.MuteTarget) {
+        appSettings.disabledCallApps.insert(target.bundleId)
+        appState.showCallDetectedPopup = false
+        appState.announcer.announce(
+            String(localized: "dBrief won't ask for \(target.name) calls. Turn it back on in Settings → Meetings."),
+            priority: .normal
+        )
+    }
+}
+
+/// The prompt's quiet leading action: secondary text that underlines on hover, so the
+/// two buttons on the right stay the obvious choices.
+private struct CallMuteButtonStyle: ButtonStyle {
+    @Environment(\.viewerPalette) private var palette
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .uiFont(.system(size: 11))
+            .underline(isHovering)
+            .foregroundStyle(palette.secondary.color.opacity(configuration.isPressed ? 0.6 : 1))
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .contentShape(Rectangle())
+            .onHover { isHovering = $0 }
     }
 }
 
@@ -60,11 +94,13 @@ struct CallPromptText: Equatable {
 
 /// The floating call prompt card: brand-gradient hairline border (flat accent with
 /// Reduce neon), logo bars, title, message, close button and trailing actions.
-struct CallAlertCard<Actions: View>: View {
+struct CallAlertCard<Leading: View, Actions: View>: View {
     let title: String
     let message: String
     let dismissLabel: String
     let onDismiss: () -> Void
+    /// Shown at the start of the actions row (e.g. "Don't ask for Zoom").
+    @ViewBuilder var leading: Leading
     @ViewBuilder var actions: Actions
     @Environment(\.viewerPalette) private var palette
 
@@ -96,8 +132,9 @@ struct CallAlertCard<Actions: View>: View {
                 .accessibilityLabel(dismissLabel)
             }
             HStack(spacing: 8) {
+                leading
                 Spacer(minLength: 0)
-                actions
+                actions.fixedSize()
             }
         }
         .padding(.horizontal, 16)
@@ -114,5 +151,13 @@ struct CallAlertCard<Actions: View>: View {
             .allowsHitTesting(false)
         }
         .clipShape(shape)
+    }
+}
+
+extension CallAlertCard where Leading == EmptyView {
+    init(title: String, message: String, dismissLabel: String, onDismiss: @escaping () -> Void,
+         @ViewBuilder actions: () -> Actions) {
+        self.init(title: title, message: message, dismissLabel: dismissLabel, onDismiss: onDismiss,
+                  leading: { EmptyView() }, actions: actions)
     }
 }

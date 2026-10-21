@@ -1462,6 +1462,8 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Doe niets</string>
 	<key>Documentation</key>
 	<string>Documentatie</string>
+	<key>Don't ask for %@</key>
+	<string>Niet meer vragen voor %@</string>
 	<key>Done</key>
 	<string>Gereed</string>
 	<key>Done with a warning</key>
@@ -4148,6 +4150,8 @@ Mix: amix normalize=0</string>
 	<string>Stop opname</string>
 	<key>Stop automatically</key>
 	<string>Stop automatisch</string>
+	<key>Stop call prompts for this app. Turn it back on in Settings → Meetings.</key>
+	<string>Geen gespreksmeldingen meer voor deze app. Zet ze weer aan in Instellingen → Vergaderingen.</string>
 	<key>Stop generating</key>
 	<string>Stop genereren</string>
 	<key>Stop generating (Esc)</key>
@@ -5030,6 +5034,8 @@ Sentiment: %@</string>
 	<string>Bewaakte map: kon %@ niet lezen. %@</string>
 	<key>Weak</key>
 	<string>Zwak</string>
+	<key>Web calls</key>
+	<string>Webgesprekken</string>
 	<key>Webhook</key>
 	<string>Webhook</string>
 	<key>Webhook fields: %@</key>
@@ -5186,6 +5192,8 @@ Sentiment: %@</string>
 	<string>dBrief blijft %@ herkennen aan de andere stemafdrukken.</string>
 	<key>dBrief needs calendar access to match meetings.</key>
 	<string>dBrief heeft toegang tot je agenda nodig om vergaderingen te koppelen.</string>
+	<key>dBrief won't ask for %@ calls. Turn it back on in Settings → Meetings.</key>
+	<string>dBrief vraagt niet meer bij gesprekken in %@. Zet het weer aan in Instellingen → Vergaderingen.</string>
 	<key>dBrief, %lld queued</key>
 	<string>dBrief, %lld in wachtrij</string>
 	<key>dBrief, paused</key>

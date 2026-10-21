@@ -14,6 +14,8 @@ final class CallDetectionService {
         let brandIcon: FABrandIcon?
         /// SF Symbol fallback when no brand icon is available.
         let sfSymbol: String
+        /// Second line under the name in Apps to watch (e.g. "Web calls" for a browser).
+        var caption: String? = nil
     }
 
     static let knownCallApps: [CallApp] = [
@@ -36,6 +38,35 @@ final class CallDetectionService {
         ("org.mozilla.firefox", "Firefox"),
         ("com.brave.Browser", "Brave"),
     ]
+
+    /// What "Don't ask for this app" turns off: the id stored in `disabledCallApps` and the
+    /// short name its button shows.
+    struct MuteTarget: Equatable {
+        let bundleId: String
+        let name: String
+    }
+
+    /// The mute target for a prompt's bundle id, or nil for an unknown app. A web call mutes
+    /// its whole browser (detection can't tell one site from another); the Meet app keeps its own id.
+    static func muteTarget(forBundleId bundleId: String?) -> MuteTarget? {
+        guard let bundleId else { return nil }
+        if let app = knownCallApps.first(where: { $0.bundleId == bundleId }) {
+            return MuteTarget(bundleId: bundleId, name: app.name)
+        }
+        if let browser = knownBrowsers.first(where: { $0.bundleId == bundleId }) {
+            return MuteTarget(bundleId: bundleId, name: browser.name)
+        }
+        return nil
+    }
+
+    /// The apps Settings → Apps to watch lists: every call app, then the browsers that host
+    /// web calls. A browser shows when installed, or when turned off so it can be turned back on.
+    static func watchableApps(isInstalled: (String) -> Bool, disabled: Set<String>) -> [CallApp] {
+        knownCallApps + knownBrowsers
+            .filter { isInstalled($0.bundleId) || disabled.contains($0.bundleId) }
+            .map { CallApp(bundleId: $0.bundleId, name: $0.name, brandIcon: nil, sfSymbol: "globe",
+                           caption: String(localized: "Web calls")) }
+    }
 
     private var workspaceObservers: [NSObjectProtocol] = []
     private weak var appState: AppState?
