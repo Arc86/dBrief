@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>dBrief steuert Notizen, um deine Meeting-Notizen zu sichern, wenn die Apple Notes-Integration aktiv ist.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>dBrief nutzt deinen Kalender, um beim Aufnehmen Titel, Teilnehmer und Agenda des Meetings vorauszufüllen.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>dBrief benötigt Zugriff auf dein Mikrofon, um bei Anrufen und Sprachaufnahmen deine Stimme aufzunehmen.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>dBrief nutzt den vollen Zugriff auf Erinnerungen, um erkannte Aufgaben zu sichern.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>dBrief nutzt Erinnerungen, um erkannte Aufgaben zu sichern.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>dBrief benötigt die Berechtigung zur Bildschirmaufnahme, um bei Anrufen den Systemton aufzunehmen.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>dBrief nutzt die Spracherkennung, um deine Aufnahmen direkt auf diesem Mac zu transkribieren.</string>
+</dict>
+</plist>

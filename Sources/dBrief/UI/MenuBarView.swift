@@ -249,7 +249,8 @@ struct MenuBarView: View {
             Text("or drop audio on the menu bar icon")
                 .uiFont(.system(size: 11))
                 .foregroundStyle(palette.secondary.color)
-                .lineLimit(1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .minimumScaleFactor(0.9)
         }
     }
