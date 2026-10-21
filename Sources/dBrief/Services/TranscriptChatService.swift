@@ -623,10 +623,7 @@ final class TranscriptChatService {
     /// Warms the on-device model when the chat panel opens so the first answer streams
     /// sooner. No-op unless Apple Intelligence is the active (or fallback) chat engine.
     func prewarm() {
-        let engine = appSettings.effectiveAIEngine == .localCLI
-            ? appSettings.chatFallbackEngine
-            : appSettings.effectiveAIEngine
-        guard engine == .appleIntelligence else { return }
+        guard appSettings.chatEngine == .appleIntelligence else { return }
         #if canImport(FoundationModels)
         if #available(macOS 26, *) {
             LanguageModelSession().prewarm()
@@ -636,19 +633,11 @@ final class TranscriptChatService {
 
     // MARK: - Private
 
-    /// The engine chat actually runs on: Local CLI can't stream, so it maps to the fallback.
-    private var resolvedChatEngine: AppSettings.AIEngine {
-        appSettings.effectiveAIEngine == .localCLI ? appSettings.chatFallbackEngine : appSettings.effectiveAIEngine
-    }
+    private var resolvedChatEngine: AppSettings.AIEngine { appSettings.chatEngine }
 
     private func buildStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {
-        // The Local CLI is one-shot and can't stream chat, so route to the
-        // user-selected fallback engine instead.
-        let engine = appSettings.effectiveAIEngine == .localCLI
-            ? appSettings.chatFallbackEngine
-            : appSettings.effectiveAIEngine
-
-        switch engine {
+        // The Local CLI is one-shot and can't stream chat, so this is the fallback engine then.
+        switch appSettings.chatEngine {
 
         case .localCLI:
             return errorStream(String(localized: "Local CLI does not support chat. Choose a chat fallback engine in Settings → AI analysis."))

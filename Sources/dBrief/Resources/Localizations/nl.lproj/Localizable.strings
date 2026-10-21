@@ -4622,6 +4622,12 @@ Mix: amix normalize=0</string>
 	<string>Deze opname wacht tot je de sprekers bevestigt.</string>
 	<key>This recording is waiting in the queue. Process it or remove it from Queue &amp; Recovery first.</key>
 	<string>Deze opname staat in de wachtrij. Verwerk haar of verwijder haar eerst uit Wachtrij en herstel.</string>
+	<key>This recording · %@</key>
+	<string>Deze opname · %@</string>
+	<key>This recording · Apple Intelligence, on-device</key>
+	<string>Deze opname · Apple Intelligence, op het apparaat</string>
+	<key>This recording · Gemma, on-device</key>
+	<string>Deze opname · Gemma, op het apparaat</string>
 	<key>This recording · On-device</key>
 	<string>Deze opname · Op het apparaat</string>
 	<key>This recording’s saved profile was deleted. Choose a profile and retry from the recording.</key>

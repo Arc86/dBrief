@@ -105,6 +105,11 @@ extension AppSettings {
         activeProfile.overrides.aiEngine ?? aiEngine
     }
 
+    /// The engine Ask dBrief AI runs on: Local CLI can't stream, so it maps to the fallback.
+    var chatEngine: AIEngine {
+        effectiveAIEngine == .localCLI ? chatFallbackEngine : effectiveAIEngine
+    }
+
     var effectiveDefaultAIEndpoint: Endpoint? {
         if let overrideID = activeProfile.overrides.aiEndpointId,
            let endpoint = aiEndpoints.first(where: { $0.id == overrideID })

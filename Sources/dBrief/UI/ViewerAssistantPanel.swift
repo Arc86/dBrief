@@ -3,7 +3,8 @@ import SwiftUI
 /// The finished-recording assistant chrome, shared by the live app and native
 /// whole-workspace checks. Chat state remains with TranscriptChatService.
 struct ViewerAssistantPanel<Content: View>: View {
-    var onDevice: Bool = false
+    /// Under the title: what the chat is about and which engine answers (`ViewerAssistantSubtitle`).
+    var subtitle: String = String(localized: "This recording")
     var onClose: () -> Void
     var onClearChat: (() -> Void)? = nil
     var clearChatDisabled: Bool = false
@@ -25,7 +26,7 @@ struct ViewerAssistantPanel<Content: View>: View {
                         Text("Ask dBrief AI")
                             .uiFont(.system(size: 14, weight: .semibold))
                             .foregroundStyle(palette.heading.color)
-                        Text(onDevice ? "This recording · On-device" : "This recording")
+                        Text(subtitle)
                             .uiFont(.system(size: 11))
                             .foregroundStyle(palette.secondary.color)
                     }
@@ -151,4 +152,27 @@ struct ChatConversationActions {
     var save: () -> Void
     /// Nil when the recording has no Markdown note to add to.
     var addToNote: (() -> Void)?
+}
+
+/// The assistant header's subtitle, e.g. "This recording · Gemma, on-device": the engine
+/// that answers, so a remote or fallback engine is never a surprise.
+enum ViewerAssistantSubtitle {
+    /// A remote endpoint shows its own name (the one set in Settings → AI analysis).
+    static func text(for engine: AppSettings.AIEngine, remoteName: String?) -> String {
+        switch engine {
+        case .appleIntelligence:
+            String(localized: "This recording · Apple Intelligence, on-device")
+        case .qwenLocal:
+            String(localized: "This recording · Gemma, on-device")
+        case .remoteEndpoint:
+            if let name = remoteName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+                String(localized: "This recording · \(name)")
+            } else {
+                String(localized: "This recording")
+            }
+        case .localCLI:
+            // Never the chat engine (it maps to the fallback); kept neutral.
+            String(localized: "This recording")
+        }
+    }
 }
