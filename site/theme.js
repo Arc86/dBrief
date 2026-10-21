@@ -48,19 +48,22 @@
   }
   // The new theme washes in as a circle growing from the control that chose it (View Transitions).
   // No API: instant. Reduced motion: the browser's crossfade, shortened in theme.css.
+  // A second click skips the running wash: every pending update applies the latest choice, and only
+  // the latest wash clears the wash classes.
+  var washes = 0, latest = null;
   function applyWithWash(choice, origin) {
     var doc = document, root = doc.documentElement;
+    latest = choice;
     if (!doc.startViewTransition || root.dataset.theme === resolveTheme(choice, prefersDark())) { apply(choice); return; }
-    var reduce = reducedMotion();
+    var reduce = reducedMotion(), wash = ++washes;
     root.classList.add("theme-washing");
-    var done = function () { root.classList.remove("theme-washing"); };
+    root.classList.toggle("theme-wash", !reduce && !!origin);
+    var done = function () { if (wash === washes) root.classList.remove("theme-washing", "theme-wash"); };
     var vt;
-    try { vt = doc.startViewTransition(function () { apply(choice); }); }
+    try { vt = doc.startViewTransition(function () { apply(latest); }); }
     catch (e) { apply(choice); done(); return; }
     vt.finished.then(done, done);
     if (reduce || !origin) return;
-    root.classList.add("theme-wash");
-    vt.finished.then(function () { root.classList.remove("theme-wash"); }, function () { root.classList.remove("theme-wash"); });
     vt.ready.then(function () {
       var r = washRadius(origin.x, origin.y, window.innerWidth, window.innerHeight);
       var at = " at " + origin.x + "px " + origin.y + "px)";

@@ -32,3 +32,15 @@ test("system dark fallback present", () => {
   assert.ok(css.includes("prefers-color-scheme: dark"));
   assert.ok(css.includes(":root:not([data-theme])"));
 });
+
+// --primary-fill-hover darkens the fill (color-mix with black); white text must stay AA in every theme.
+test("primary fill hover keeps on-primary text at AA", () => {
+  const mix = css.match(/--primary-fill-hover:\s*color-mix\(in srgb, var\(--primary-fill\) (\d+)%, #000\)/);
+  assert.ok(mix, "--primary-fill-hover is the fill mixed with black");
+  const p = Number(mix[1]) / 100;
+  const darken = (hex) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * p).toString(16).padStart(2, "0")).join("");
+  for (const [name, t] of Object.entries(themes)) {
+    const c = contrast(t["on-primary"], darken(t["primary-fill"]));
+    assert.ok(c >= 4.5, `${name} hover fill = ${c.toFixed(2)}`);
+  }
+});

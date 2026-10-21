@@ -202,7 +202,7 @@ Hybrid: tonal layering first (canvas, surface, band, hairline dividers), shadow 
 ### Shadow Vocabulary
 - **Medium** (`--shadow-md`: `0 18px 40px -20px rgba(11,20,48,.25), 0 1px 3px rgba(11,20,48,.06)`): panels and cards that float over a mockup.
 - **Large** (`--shadow-lg`: `0 40px 80px -32px rgba(11,20,48,.28), 0 2px 8px rgba(11,20,48,.06)`): call card and privacy receipt. Dark themes use black at .6-.7 alpha.
-- **Button lift** (`0 8px 20px -12px rgba(11,20,48,.35), 0 1px 2px rgba(11,20,48,.12)`, deeper on hover with a 1 px rise): primary button only.
+- **Button lift** (`0 8px 20px -12px rgba(var(--shadow-ink), .35), 0 1px 2px rgba(var(--shadow-ink), .12)`, deeper on hover with a 1 px rise, flatter while pressed): primary button only. `--shadow-ink` is the theme's shadow colour (navy in Light, warm brown in Paper, black in both dark themes), so the lift never reads as a coloured glow.
 
 ### Named Rules
 **The Flat-At-Rest Rule.** Ordinary content cards are bordered, not shadowed. Shadow means "this floats above something".
@@ -217,15 +217,15 @@ Gently rounded and consistent: 6 px (chips, small controls), 9 px (nav buttons, 
 
 ### Buttons
 - **Shape:** 11 px radius, 12x20 padding, 15 px/600; nav variant 9 px radius, 9x14 padding, 14 px.
-- **Primary:** `primary-fill` background, white text (fill is chosen for 4.5:1), button-lift shadow; hover rises 1 px.
-- **Secondary:** surface background, heading text, divider border; hover darkens border to secondary.
+- **Primary:** `primary-fill` background, white text (fill is chosen for 4.5:1), button-lift shadow; hover rises 1 px. Filled controls that change colour on hover instead (the menu panel's Record meeting, the call prompt's Record call) use `--primary-fill-hover`, the fill darkened with black, which keeps white text at 4.5:1 in every theme (lightening toward the heading tone fails in Dark and Dark Paper).
+- **Secondary:** surface background, heading text, divider border; hover darkens border to secondary; pressed fills with `band`. "Match my Mac" in the theme picker follows the same hover.
 - **Focus:** 2 px accent outline, 3 px offset, on every interactive element.
 
 ### Theme switch
 A pill with an Auto glyph and four 24 px swatches in each theme's canvas colour; pressed state gets a surface gap plus a 3.5 px accent ring. Keyboard reachable; choice persists and recolours the site and the mockups.
 
 ### Navigation
-Logo (five bars + wordmark 18/700), 14 px links in text tone (heading on hover; current docs page in accent text 600), theme switch and a small Download button on the right. Links hide under 980 px. Docs sidebar: search field (34 px, 9 px radius, accent focus ring) and grouped list; active item gets `selected` fill and accent text.
+Logo (five bars + wordmark 18/700), 14 px links in text tone (heading on hover; current docs page in accent text 600), theme switch and a small Download button on the right. Links hide under 980 px. The header is one shared component in theme.css; the landing page shows its divider once scrolled, docs always. The docs filter sits on a solid shelf in the sticky sidebar, so topics never show around it while the list scrolls; Return opens the first match. Docs sidebar: search field (34 px, 9 px radius, accent focus ring) and grouped list; active item gets `selected` fill and accent text.
 
 ### Cards / Containers
 Surface fill, 1 px divider, 14 px radius, 10-16 px padding for mockup cards, no shadow unless floating. Bands are full-width `band` with hairlines.

@@ -45,10 +45,13 @@
 
 <div class="wrap docs-main">
   <aside class="docs-sidebar" id="docs-sidebar" aria-label="Documentation topics">
-    <label class="docs-search">
-      <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
-      <input id="docs-search" type="search" placeholder="Filter topics" aria-label="Filter documentation topics" autocomplete="off" spellcheck="false">
-    </label>
+    <div class="docs-search-bar">
+      <label class="docs-search">
+        <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="docs-search" type="search" placeholder="Filter topics" aria-label="Filter documentation topics" aria-describedby="docs-search-hint" autocomplete="off" spellcheck="false" enterkeyhint="go">
+      </label>
+      <span class="sr-only" id="docs-search-hint">Press Return to open the first match.</span>
+    </div>
     <nav class="docs-nav" id="docs-nav" aria-label="Docs"></nav>
   </aside>
 
@@ -58,7 +61,7 @@
       <nav class="docs-breadcrumb" id="docs-breadcrumb" aria-label="Breadcrumb"></nav>
     </div>
     <article class="docs-prose" id="docs-prose">
-      <div class="docs-loading"><span class="docs-spinner" aria-hidden="true"></span><span>Loading</span></div>
+      <div class="docs-loading" role="status"><span class="docs-spinner" aria-hidden="true"></span><span>Loading…</span></div>
     </article>
     <nav class="docs-pager" id="docs-pager" aria-label="Previous and next page"></nav>
   </main>
