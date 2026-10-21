@@ -161,26 +161,36 @@
 
   // ---- Active link highlighting ----
   function highlight(slug) {
+    let current = null;
     navEl.querySelectorAll("a").forEach((a) => {
       const active = a.dataset.slug === slug;
       a.classList.toggle("is-active", active);
-      if (active) a.setAttribute("aria-current", "page");
+      if (active) { a.setAttribute("aria-current", "page"); current = a; }
       else a.removeAttribute("aria-current");
     });
+    // Keep the current page visible in the sidebar's own scroll area (never scrolls the window).
+    if (current && sidebar.scrollHeight > sidebar.clientHeight) {
+      const y = current.offsetTop;
+      if (y < sidebar.scrollTop || y + current.offsetHeight > sidebar.scrollTop + sidebar.clientHeight) {
+        sidebar.scrollTop = y - sidebar.clientHeight / 3;
+      }
+    }
   }
 
   // ---- Render a doc ----
   let loadVersion = 0;
-  async function load(slug, anchor = "") {
+  let shownSlug = null; // the page currently rendered, so an anchor on it only scrolls
+  async function load(slug, anchor = "", focusTitle = false) {
     const version = ++loadVersion;
     if (!slug) {
       // Default: load the index
       slug = "index";
     }
     const url = `docs/${slug}.md`;
+    shownSlug = null;
     proseEl.innerHTML = `
-      <div class="docs-loading">
-        <div class="docs-spinner" aria-hidden="true"></div>
+      <div class="docs-loading" role="status">
+        <span class="docs-spinner" aria-hidden="true"></span>
         <span>Loading…</span>
       </div>`;
     breadcrumb.innerHTML = "";
@@ -192,15 +202,24 @@
       const md = await res.text();
       if (version !== loadVersion) return;
       render(slug, md, anchor);
+      shownSlug = slug;
     } catch (err) {
       if (version !== loadVersion) return;
       document.title = "Page not found | dBrief Docs";
+      breadcrumb.innerHTML = `<a href="#index">Docs</a><span class="docs-crumb-sep" aria-hidden="true">/</span><span>Page not found</span>`;
+      highlight(null);
       proseEl.innerHTML = `
         <div class="docs-empty">
           <h1>Page not found</h1>
           <p>We couldn&rsquo;t find <code>${escapeHtml(slug)}.md</code>.</p>
           <p>Try the <a href="#index">docs home</a> or use the sidebar to find what you need.</p>
         </div>`;
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+    // Opened from the drawer, which now closes: continue on the new page instead of losing focus.
+    if (focusTitle) {
+      const title = proseEl.querySelector("h1");
+      if (title) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
     }
   }
 
@@ -250,6 +269,7 @@
     if (h1Match) {
       const titleEl = document.createElement("h1");
       titleEl.className = "docs-title";
+      titleEl.tabIndex = -1; // focus target after navigating from the drawer
       titleEl.textContent = h1Match[1].trim();
       proseEl.querySelector(".prose").prepend(titleEl);
     }
@@ -273,8 +293,8 @@
       const prev = idx > 0 ? FLAT[idx - 1] : null;
       const next = idx < FLAT.length - 1 ? FLAT[idx + 1] : null;
       pagerEl.innerHTML = `
-        ${prev ? `<a class="docs-pager-prev" href="#${prev.slug}"><span class="docs-pager-label">Previous</span><span class="docs-pager-title">&larr; ${escapeHtml(prev.title)}</span></a>` : `<span></span>`}
-        ${next ? `<a class="docs-pager-next" href="#${next.slug}"><span class="docs-pager-label">Next</span><span class="docs-pager-title">${escapeHtml(next.title)} &rarr;</span></a>` : `<span></span>`}
+        ${prev ? `<a class="docs-pager-prev" href="#${prev.slug}" rel="prev"><span class="docs-pager-label">Previous</span><span class="docs-pager-title"><svg class="ico" aria-hidden="true"><use href="#i-chev-left"/></svg>${escapeHtml(prev.title)}</span></a>` : `<span></span>`}
+        ${next ? `<a class="docs-pager-next" href="#${next.slug}" rel="next"><span class="docs-pager-label">Next</span><span class="docs-pager-title">${escapeHtml(next.title)}<svg class="ico" aria-hidden="true"><use href="#i-chev-right"/></svg></span></a>` : `<span></span>`}
       `;
     } else {
       pagerEl.innerHTML = "";
@@ -297,10 +317,16 @@
   function onHashChange() {
     const slug = getSlugFromHash();
     const [page, anchor] = slug.split("#");
-    load(page, anchor);
+    const fromDrawer = drawerNav || (sidebar.classList.contains("is-open") && sidebar.contains(document.activeElement));
+    drawerNav = false;
     // Close mobile sidebar after nav
-    sidebar.classList.remove("is-open");
-    menuBtn?.setAttribute("aria-expanded", "false");
+    setDrawer(false);
+    // A section of the page already shown: scroll to it, no reload.
+    if (page === shownSlug && anchor && document.getElementById(anchor)) {
+      document.getElementById(anchor).scrollIntoView({ block: "start" });
+      return;
+    }
+    load(page, anchor, fromDrawer);
   }
   window.addEventListener("hashchange", onHashChange);
 
@@ -309,11 +335,43 @@
     buildSidebar(e.target.value);
     highlight(getSlugFromHash().split("#")[0]);
   });
+  // Return opens the first match.
+  searchEl.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.isComposing) return;
+    const first = navEl.querySelector("a");
+    if (!first) return;
+    e.preventDefault();
+    if (location.hash === first.getAttribute("href")) setDrawer(false);
+    else location.hash = first.getAttribute("href");
+    if (!sidebar.classList.contains("is-open")) first.focus();
+  });
 
   // ---- Mobile menu ----
-  menuBtn.addEventListener("click", () => {
-    const open = sidebar.classList.toggle("is-open");
-    menuBtn.setAttribute("aria-expanded", String(open));
+  // While the drawer is open the dimmed content is inert, so Tab stays inside the drawer and the toggle.
+  function setDrawer(open, restoreFocus) {
+    sidebar.classList.toggle("is-open", open);
+    menuBtn?.setAttribute("aria-expanded", String(open));
+    ["docs-prose", "docs-pager", "docs-breadcrumb"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.inert = open;
+    });
+    if (open) searchEl.focus();
+    else if (restoreFocus) menuBtn?.focus();
+  }
+  menuBtn.addEventListener("click", () => setDrawer(!sidebar.classList.contains("is-open")));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && sidebar.classList.contains("is-open")) setDrawer(false, true);
+  });
+  // A topic picked in the drawer closes it; focus then continues on the page it opens.
+  // Clicking the current page changes no hash, so close explicitly.
+  let drawerNav = false;
+  navEl.addEventListener("click", (e) => {
+    const link = e.target.closest("a");
+    if (!link || !sidebar.classList.contains("is-open")) return;
+    const samePage = link.getAttribute("href") === location.hash;
+    drawerNav = !samePage;
+    setDrawer(false);
+    if (samePage) proseEl.querySelector("h1")?.focus({ preventScroll: true });
   });
 
   // ---- Helpers ----
