@@ -1,74 +1,67 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <script src="theme.js"></script>
   <title>Docs | dBrief</title>
-  <meta name="description" content="Learn how to record, transcribe, review, and export meetings with dBrief." />
-  <meta name="theme-color" content="#060918" />
-
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" />
-  <link rel="stylesheet" href="styles.css?v=20260928-buttons" />
-  <link rel="stylesheet" href="docs.css?v=dbd6a6c" />
-
-  <link rel="icon" type="image/png" href="logo.png?v=dbd6a6c" />
+  <meta name="description" content="How to record, transcribe, review and send your meetings with dBrief: setup, engines, integrations, profiles and shortcuts.">
+  <meta name="theme-color" content="#FBFCFE" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1B2029" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="docs.css">
+  <script src="vendor/marked.min.js" defer></script>
+  <script src="docs.js" defer></script>
 </head>
-<body class="docs-body">
-  <!-- Ambient background (lighter for docs) -->
-  <div class="ambient docs-ambient" aria-hidden="true">
-    <div class="orb orb-violet"></div>
-    <div class="orb orb-cyan"></div>
+<body>
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.4-4.4"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M9 5v14"/></symbol>
+    <symbol id="i-chev-left" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></symbol>
+    <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a class="logo" href="index.html" aria-label="dBrief home"><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>dBrief</a>
+    <nav class="nav-links" aria-label="Site"><a href="index.html#record">How it works</a><a href="index.html#yours">Make it yours</a><a href="index.html#privacy">Privacy</a><a href="docs.html" aria-current="page">Docs</a></nav>
+    <div class="nav-right">
+      <div class="theme-pick" role="group" aria-label="Theme">
+        <button type="button" class="auto" data-theme-choice="auto" aria-pressed="true" aria-label="Match my Mac" title="Match my Mac"><svg class="ico" aria-hidden="true"><use href="#i-auto"/></svg></button>
+        <button type="button" data-theme-choice="light" aria-pressed="false" aria-label="Light" title="Light"></button>
+        <button type="button" data-theme-choice="paper" aria-pressed="false" aria-label="Paper" title="Paper"></button>
+        <button type="button" data-theme-choice="dark" aria-pressed="false" aria-label="Dark" title="Dark"></button>
+        <button type="button" data-theme-choice="darkpaper" aria-pressed="false" aria-label="Dark Paper" title="Dark Paper"></button>
+      </div>
+      <a class="btn btn-primary nav-dl" href="https://github.com/Arc86/dBrief/releases/latest"><svg class="ico" aria-hidden="true"><use href="#i-down"/></svg>Download</a>
+    </div>
   </div>
+</header>
 
-  <!-- Top bar -->
-  <header class="topbar">
-    <a class="brand" href="index.html" aria-label="dBrief home">
-      <img src="logo.png?v=dbd6a6c" alt="dBrief logo" class="brand-mark" />
-      <span class="brand-name">dBrief</span>
-    </a>
-    <nav class="nav">
-      <a href="index.html#how">How it works</a>
-      <a href="index.html#privacy">Privacy</a>
-      <a href="index.html#integrations">Integrations</a>
-      <a class="nav-cta" href="https://github.com/Arc86/dBrief" target="_blank" rel="noopener">GitHub &nearr;</a>
-    </nav>
-  </header>
+<div class="wrap docs-main">
+  <aside class="docs-sidebar" id="docs-sidebar" aria-label="Documentation topics">
+    <label class="docs-search">
+      <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+      <input id="docs-search" type="search" placeholder="Filter topics" aria-label="Filter documentation topics" autocomplete="off" spellcheck="false">
+    </label>
+    <nav class="docs-nav" id="docs-nav" aria-label="Docs"></nav>
+  </aside>
 
-  <main class="docs-main">
-    <!-- Sidebar -->
-    <aside class="docs-sidebar" id="docs-sidebar">
-      <div class="docs-sidebar-inner">
-        <div class="docs-search">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          <input id="docs-search" type="search" placeholder="Filter topics…" aria-label="Filter documentation topics" autocomplete="off" />
-        </div>
-        <nav class="docs-nav" id="docs-nav"><!-- populated by JS --></nav>
-      </div>
-    </aside>
-
-    <!-- Content -->
-    <article class="docs-content">
-      <div class="docs-breadcrumb" id="docs-breadcrumb"></div>
-      <div class="docs-prose" id="docs-prose">
-        <div class="docs-loading">
-          <div class="docs-spinner" aria-hidden="true"></div>
-          <span>Loading…</span>
-        </div>
-      </div>
-      <nav class="docs-pager" id="docs-pager"></nav>
+  <main class="docs-content" id="docs-content">
+    <div class="docs-subbar">
+      <button type="button" class="docs-menu-toggle" id="docs-menu-toggle" aria-label="Toggle docs menu" aria-controls="docs-sidebar" aria-expanded="false"><svg class="ico" aria-hidden="true"><use href="#i-sidebar"/></svg>Topics</button>
+      <nav class="docs-breadcrumb" id="docs-breadcrumb" aria-label="Breadcrumb"></nav>
+    </div>
+    <article class="docs-prose" id="docs-prose">
+      <div class="docs-loading"><span class="docs-spinner" aria-hidden="true"></span><span>Loading</span></div>
     </article>
+    <nav class="docs-pager" id="docs-pager" aria-label="Previous and next page"></nav>
   </main>
-
-  <!-- Mobile sidebar toggle -->
-  <button class="docs-menu-toggle" id="docs-menu-toggle" aria-label="Toggle docs menu" aria-controls="docs-sidebar" aria-expanded="false">
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-    <span>Menu</span>
-  </button>
-
-  <script src="https://cdn.jsdelivr.net/npm/marked@13.0.3/marked.min.js" defer></script>
-  <script src="docs.js?v=6" defer></script>
-  <script src="buttons.js?v=20260928-buttons" defer></script>
+</div>
 </body>
 </html>

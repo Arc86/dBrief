@@ -28,7 +28,6 @@ html { scrollbar-color: var(--divider) transparent; caret-color: var(--primary);
 .nav-links a { color: var(--text); text-decoration: none; }
 .nav-links a:hover { color: var(--heading); }
 .nav-right { margin-left: auto; display: flex; gap: 12px; align-items: center; }
-.nav .theme-pick button { width: 24px; height: 24px; }
 .nav .btn { padding: 9px 14px; font-size: 14px; border-radius: 9px; }
 
 /* ---------- hero ---------- */

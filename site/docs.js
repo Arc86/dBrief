@@ -161,12 +161,20 @@
 
   // ---- Active link highlighting ----
   function highlight(slug) {
+    let current = null;
     navEl.querySelectorAll("a").forEach((a) => {
       const active = a.dataset.slug === slug;
       a.classList.toggle("is-active", active);
-      if (active) a.setAttribute("aria-current", "page");
+      if (active) { a.setAttribute("aria-current", "page"); current = a; }
       else a.removeAttribute("aria-current");
     });
+    // Keep the current page visible in the sidebar's own scroll area (never scrolls the window).
+    if (current && sidebar.scrollHeight > sidebar.clientHeight) {
+      const y = current.offsetTop;
+      if (y < sidebar.scrollTop || y + current.offsetHeight > sidebar.scrollTop + sidebar.clientHeight) {
+        sidebar.scrollTop = y - sidebar.clientHeight / 3;
+      }
+    }
   }
 
   // ---- Render a doc ----
@@ -273,8 +281,8 @@
       const prev = idx > 0 ? FLAT[idx - 1] : null;
       const next = idx < FLAT.length - 1 ? FLAT[idx + 1] : null;
       pagerEl.innerHTML = `
-        ${prev ? `<a class="docs-pager-prev" href="#${prev.slug}"><span class="docs-pager-label">Previous</span><span class="docs-pager-title">&larr; ${escapeHtml(prev.title)}</span></a>` : `<span></span>`}
-        ${next ? `<a class="docs-pager-next" href="#${next.slug}"><span class="docs-pager-label">Next</span><span class="docs-pager-title">${escapeHtml(next.title)} &rarr;</span></a>` : `<span></span>`}
+        ${prev ? `<a class="docs-pager-prev" href="#${prev.slug}" rel="prev"><span class="docs-pager-label">Previous</span><span class="docs-pager-title"><svg class="ico" aria-hidden="true"><use href="#i-chev-left"/></svg>${escapeHtml(prev.title)}</span></a>` : `<span></span>`}
+        ${next ? `<a class="docs-pager-next" href="#${next.slug}" rel="next"><span class="docs-pager-label">Next</span><span class="docs-pager-title">${escapeHtml(next.title)}<svg class="ico" aria-hidden="true"><use href="#i-chev-right"/></svg></span></a>` : `<span></span>`}
       `;
     } else {
       pagerEl.innerHTML = "";

@@ -105,7 +105,7 @@ h1, h2, h3, h4 { color: var(--heading); margin: 0; text-wrap: balance; }
 
 /* Theme switch: Auto + four swatches. Buttons carry data-theme-choice. */
 .theme-pick { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--divider); border-radius: 999px; background: var(--surface); }
-.theme-pick button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--divider); cursor: pointer; padding: 0; position: relative; }
+.theme-pick button { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--divider); cursor: pointer; padding: 0; position: relative; }
 .theme-pick button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--primary); }
 .theme-pick .auto { background: transparent; border: 0; color: var(--secondary); display: grid; place-items: center; font-size: 13px; }
 .theme-pick .auto[aria-pressed="true"] { color: var(--accent-text); box-shadow: none; }
