@@ -24,6 +24,17 @@
   function prefersDark() {
     return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   }
+  // Browser chrome follows the chosen theme, not only the system (the media-scoped metas cover no-JS).
+  function wireThemeColor() {
+    var metas = document.querySelectorAll('meta[name="theme-color"]');
+    var root = document.documentElement;
+    var sync = function () {
+      var canvas = getComputedStyle(root).getPropertyValue("--canvas").trim();
+      if (canvas) for (var i = 0; i < metas.length; i++) metas[i].setAttribute("content", canvas);
+    };
+    if (window.MutationObserver) new MutationObserver(sync).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    sync();
+  }
   function apply(choice) {
     document.documentElement.dataset.theme = resolveTheme(choice, prefersDark());
   }
@@ -55,6 +66,7 @@
       else if (mq.addListener) mq.addListener(onChange);
     }
     sync();
+    wireThemeColor();
   }
 
   if (typeof document !== "undefined" && typeof window !== "undefined") {
@@ -64,6 +76,6 @@
   }
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { STORAGE_KEY: STORAGE_KEY, CHOICES: CHOICES, resolveTheme: resolveTheme, readChoice: readChoice, writeChoice: writeChoice, initThemeSwitch: initThemeSwitch };
+    module.exports = { STORAGE_KEY: STORAGE_KEY, CHOICES: CHOICES, resolveTheme: resolveTheme, readChoice: readChoice, writeChoice: writeChoice, initThemeSwitch: initThemeSwitch, wireThemeColor: wireThemeColor };
   }
 })();

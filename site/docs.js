@@ -307,8 +307,7 @@
     const [page, anchor] = slug.split("#");
     load(page, anchor);
     // Close mobile sidebar after nav
-    sidebar.classList.remove("is-open");
-    menuBtn?.setAttribute("aria-expanded", "false");
+    setDrawer(false);
   }
   window.addEventListener("hashchange", onHashChange);
 
@@ -319,9 +318,24 @@
   });
 
   // ---- Mobile menu ----
-  menuBtn.addEventListener("click", () => {
-    const open = sidebar.classList.toggle("is-open");
-    menuBtn.setAttribute("aria-expanded", String(open));
+  // While the drawer is open the dimmed content is inert, so Tab stays inside the drawer and the toggle.
+  function setDrawer(open, restoreFocus) {
+    sidebar.classList.toggle("is-open", open);
+    menuBtn?.setAttribute("aria-expanded", String(open));
+    ["docs-prose", "docs-pager", "docs-breadcrumb"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.inert = open;
+    });
+    if (open) searchEl.focus();
+    else if (restoreFocus) menuBtn?.focus();
+  }
+  menuBtn.addEventListener("click", () => setDrawer(!sidebar.classList.contains("is-open")));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && sidebar.classList.contains("is-open")) setDrawer(false, true);
+  });
+  // Clicking the current page changes no hash, so close explicitly.
+  document.getElementById("docs-nav").addEventListener("click", (e) => {
+    if (e.target.closest("a") && sidebar.classList.contains("is-open")) setDrawer(false);
   });
 
   // ---- Helpers ----

@@ -24,6 +24,7 @@
         if (i < 0) return;
         turns.forEach(function (t, j) { t.classList.toggle("hit", j === i); });
         turns[i].scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
+        turns[i].focus({ preventScroll: true });
       });
     });
   }
@@ -63,19 +64,7 @@
     update();
   }
 
-  // Browser chrome follows the chosen theme, not only the system (the media-scoped metas cover no-JS).
-  function wireThemeColor() {
-    var metas = document.querySelectorAll('meta[name="theme-color"]');
-    var root = document.documentElement;
-    var sync = function () {
-      var canvas = getComputedStyle(root).getPropertyValue("--canvas").trim();
-      if (canvas) metas.forEach(function (m) { m.setAttribute("content", canvas); });
-    };
-    if (window.MutationObserver) new MutationObserver(sync).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
-    sync();
-  }
-
-  function init() { wireTimestamps(); wireFonts(); wireCopy(); wireNav(); wireThemeColor(); }
+  function init() { wireTimestamps(); wireFonts(); wireCopy(); wireNav(); }
 
   if (typeof document !== "undefined" && typeof window !== "undefined") {
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

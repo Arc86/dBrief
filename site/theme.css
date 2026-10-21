@@ -5,16 +5,7 @@
    --selected       accent mixed 14% into canvas.
    --accent-text    accent shifted until >= 4.5:1 on --surface and --selected. */
 
-/* Without JS or before theme.js runs: follow the system. */
-:root:not([data-theme]) {
-  --canvas: #FBFCFE; --surface: #FFFFFF; --heading: #0B1430; --text: #31405F; --secondary: #65718A;
-  --divider: #E1E7F0; --band: #F3F6FB;
-  --primary: #1268F5; --primary-fill: #1268F5; --on-primary: #FFFFFF; --accent-text: #105CD9; --selected: #DAE7FD;
-  --shadow-lg: 0 40px 80px -32px rgba(11,20,48,.28), 0 2px 8px rgba(11,20,48,.06);
-  --shadow-md: 0 18px 40px -20px rgba(11,20,48,.25), 0 1px 3px rgba(11,20,48,.06);
-  color-scheme: light;
-}
-
+/* No-JS dark follows the system; must equal [data-theme="dark"] below (tests/theme.test.mjs). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     --canvas: #1B2029; --surface: #242C38; --heading: #F0F3FA; --text: #D2DAE8; --secondary: #A3AFC4;
@@ -26,7 +17,8 @@
   }
 }
 
-[data-theme="light"] {
+/* Light is also the no-JS default. */
+:root:not([data-theme]), [data-theme="light"] {
   --canvas: #FBFCFE; --surface: #FFFFFF; --heading: #0B1430; --text: #31405F; --secondary: #65718A;
   --divider: #E1E7F0; --band: #F3F6FB;
   --primary: #1268F5; --primary-fill: #1268F5; --on-primary: #FFFFFF; --accent-text: #105CD9; --selected: #DAE7FD;
@@ -105,8 +97,9 @@ h1, h2, h3, h4 { color: var(--heading); margin: 0; text-wrap: balance; }
 
 /* Theme switch: Auto + four swatches. Buttons carry data-theme-choice. */
 .theme-pick { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--divider); border-radius: 999px; background: var(--surface); }
-.theme-pick button { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--divider); cursor: pointer; padding: 0; position: relative; }
+.theme-pick button { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--secondary); cursor: pointer; padding: 0; position: relative; }
 .theme-pick button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--primary); }
+html:not([data-theme]) .theme-pick { display: none; }  /* no JS: the switch would be inert */
 .theme-pick .auto { background: transparent; border: 0; color: var(--secondary); display: grid; place-items: center; font-size: 13px; }
 .theme-pick .auto[aria-pressed="true"] { color: var(--accent-text); box-shadow: none; }
 .theme-pick [data-theme-choice="light"] { background: #FBFCFE; }

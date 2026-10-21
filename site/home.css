@@ -81,7 +81,7 @@ html { scrollbar-color: var(--divider) transparent; caret-color: var(--primary);
 
 /* Recording viewer, sidebar collapsed */
 .vw { position: relative; background: var(--canvas); border-radius: 16px; box-shadow: var(--window-shadow);
-  overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 186px; gap: 12px; font-size: 10.5px; line-height: 1.5; color: var(--text); min-height: 600px; }
+  overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 196px; gap: 12px; font-size: 10.5px; line-height: 1.5; color: var(--text); min-height: 600px; }
 .vw .doc { min-width: 0; padding: 11px 0 18px 12px; display: flex; flex-direction: column; }
 .vw .chrome { display: flex; flex-direction: column; gap: 12px; }
 .vw .tgl { color: var(--secondary); font-size: 14px; margin-left: 2px; }
@@ -159,7 +159,7 @@ section.feature { padding: 112px 0; }
 .mb-on .bars { height: 14px; }
 .mb-on .bars i:nth-child(1) { height: 6px; } .mb-on .bars i:nth-child(2) { height: 11px; } .mb-on .bars i:nth-child(3) { height: 14px; }
 .mb-on .bars i:nth-child(4) { height: 9px; } .mb-on .bars i:nth-child(5) { height: 5px; }
-.desk-floor { position: relative; height: 516px; }
+.desk-floor { position: relative; height: 500px; }
 
 .panel { position: absolute; right: 0; top: 8px; width: 300px; background: var(--surface); border: 1px solid var(--divider); border-radius: 14px;
   box-shadow: var(--shadow-md); font-size: 12px; color: var(--text); overflow: hidden; }
@@ -186,7 +186,7 @@ section.feature { padding: 112px 0; }
 .p-foot { border-top: 1px solid var(--divider); padding: 10px 14px; display: flex; align-items: center; gap: 9px; color: var(--secondary); font-size: 10.5px; }
 .import { display: inline-flex; gap: 5px; align-items: center; border: 1px solid var(--divider); border-radius: 7px; padding: 5px 9px; color: var(--heading); font-size: 12px; white-space: nowrap; }
 
-.callcard { position: absolute; left: 0; bottom: 64px; width: 272px; border-radius: 20px; padding: 2px; background: var(--brand); box-shadow: var(--shadow-lg); }
+.callcard { position: absolute; left: 0; bottom: 52px; width: 272px; border-radius: 20px; padding: 2px; background: var(--brand); box-shadow: var(--shadow-lg); }
 .cc-in { background: var(--surface); border-radius: 18px; padding: 15px 14px 14px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 0 12px; align-items: start; }
 .callcard .bars { height: 26px; margin-top: 2px; }
 .callcard .bars i { width: 4px; }

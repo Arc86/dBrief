@@ -31,7 +31,7 @@ html { scrollbar-color: var(--divider) transparent; caret-color: var(--primary);
 .docs-sidebar::-webkit-scrollbar { width: 6px; }
 .docs-sidebar::-webkit-scrollbar-thumb { border: 0; }
 
-.docs-search { display: flex; align-items: center; gap: 7px; height: 34px; margin: 0 0 6px 10px; padding: 0 10px;
+.docs-search { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 7px; height: 34px; margin: 0 0 6px 10px; padding: 0 10px;
   background: var(--surface); border: 1px solid var(--divider); border-radius: 9px; color: var(--secondary);
   transition: border-color .15s ease, box-shadow .15s ease; cursor: text; }
 .docs-search .ico { font-size: 15px; }
