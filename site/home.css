@@ -117,7 +117,7 @@ html { scrollbar-color: var(--divider) transparent; caret-color: var(--primary);
 
 /* ---------- sections ---------- */
 section.feature { padding: 112px 0; }
-.band { background: var(--band); }
+.band { background: var(--band); border-block: 1px solid var(--divider); }
 .sec-head { max-width: 560px; }
 .sec-head.wide { max-width: 660px; }
 .sec-head h2 { font-size: 40px; line-height: 1.1; letter-spacing: -.022em; font-weight: 750; }
@@ -265,7 +265,7 @@ section.feature { padding: 112px 0; }
 .fonts-copy > p { font-size: 17px; margin: 14px 0 0; }
 .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--divider); border-radius: 11px; margin-top: 22px; }
 .seg button { border: 0; background: none; font: 550 14px var(--sys); color: var(--text); padding: 7px 12px; border-radius: 8px; cursor: pointer; }
-.seg button:hover { color: var(--heading); background: var(--band); }
+.seg button:hover { color: var(--heading); background: var(--selected); }
 .seg button[aria-pressed="true"] { background: var(--primary-fill); color: var(--on-primary); }
 .inclusive { list-style: none; padding: 0; margin: 22px 0 0; font-size: 15px; display: grid; gap: 9px; }
 .inclusive li { display: flex; gap: 10px; align-items: center; }
@@ -325,7 +325,7 @@ section.feature { padding: 112px 0; }
 .brew-label { font-size: 13.5px; color: var(--secondary); }
 .brew-row { display: flex; align-items: center; gap: 4px; max-width: 100%; background: var(--surface); border: 1px solid var(--divider); border-radius: 11px; padding: 4px 4px 4px 14px; }
 .brew-row code { font-family: var(--mono); font-size: 13.5px; padding: 4px 0; color: var(--heading); white-space: nowrap; overflow-x: auto; user-select: all; min-width: 0; }
-.brew-copy { display: inline-flex; gap: 6px; align-items: center; border: 0; border-radius: 8px; background: var(--band); color: var(--heading); font: 600 13px var(--sys); padding: 7px 11px; cursor: pointer; flex: none; }
+.brew-copy { display: inline-flex; gap: 6px; align-items: center; border: 0; border-radius: 8px; background: var(--selected); color: var(--heading); font: 600 13px var(--sys); padding: 7px 11px; cursor: pointer; flex: none; }
 .brew-copy:hover { background: var(--selected); color: var(--accent-text); }
 .reqs { margin: 22px 0 0; font-size: 13.5px; color: var(--secondary); }
 
