@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -49,4 +49,23 @@ test("fonts.css: every @font-face url() exists", () => {
 
 test("vendor/marked.min.js is marked 13.0.3", () => {
   assert.match(read("vendor/marked.min.js").slice(0, 200), /marked v13\.0\.3/);
+});
+
+test("no unreferenced files under site/ (docs, tests, fonts and vendor are exempt)", () => {
+  const exempt = /^(docs|tests|fonts|vendor)\//;
+  const all = (dir) =>
+    readdirSync(join(siteDir, dir), { withFileTypes: true }).flatMap((e) => {
+      const rel = dir ? `${dir}/${e.name}` : e.name;
+      return e.isDirectory() ? all(rel) : [rel];
+    });
+  const files = all("").filter((f) => !exempt.test(f));
+  const texts = files
+    .filter((f) => /\.(html|css|js)$/.test(f))
+    .map((f) => ({ f, text: read(f) }));
+  const unreferenced = files.filter((f) => {
+    if (f === "index.html" || f === "docs.html") return false;
+    const name = f.split("/").pop();
+    return !texts.some((t) => t.f !== f && t.text.includes(name));
+  });
+  assert.deepEqual(unreferenced, [], `unreferenced: ${unreferenced.join(", ")}`);
 });
