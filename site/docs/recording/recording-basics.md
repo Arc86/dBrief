@@ -4,26 +4,36 @@ How to start, pause, resume, and stop a recording.
 
 ## Starting a recording
 
-Click the dBrief icon in the menu bar, then click **Record meeting**.
+Click the dBrief icon in the menu bar, then click **Record meeting** (or press **⌘R** while the panel is open).
 
 Or press **⌃⌥⌘R** from anywhere on your Mac — you don't need to open dBrief first. (You can change this shortcut in **Settings → Recording → Shortcut**.)
 
+You can also right-click the dBrief menu bar icon and choose **Record meeting**.
+
+## The menu bar panel
+
+The panel shows a status header, the recording controls with the **Profile** for your next recording, your five most recent recordings with a **Show all in library** link, and a queue section when something is queued, paused or failed. The **Recording library** button (**⌘L**) opens every recording. The gear menu has **Settings…** and **Quit dBrief**.
+
+**Import…** transcribes an existing **Audio file…** or a **YouTube or video link…**. You can also drop an audio file on the menu bar icon, or use Finder's **Open With** to open it in dBrief. See [Import & Watched Folders](watched-folders.md).
+
+Right-click the menu bar icon for quick actions: **Record meeting**, **Pause recording** / **Resume recording**, **Stop recording**, **Recording library**, **Import Audio File…**, **Settings…** and **Quit dBrief**.
+
 ## Pausing and resuming
 
-Click **Pause** to pause the recording. The timer stops and audio capture halts. Click **Resume** to continue from where you left off.
+Click **Pause** (or press **⌥⌘P**) to pause the recording. The timer stops and audio capture halts. Click **Resume** (**⌥⌘P** again) to continue from where you left off. These shortcuts work in the panel, the [floating recording window](mini-player.md) and the **Recording** menu.
 
 > **Note:** Pausing does not split the recording. When you stop, you get one file covering the whole session.
 
 ## Stopping a recording
 
-Click **Stop** (or press **⌃⌥⌘R**). The panel shows the recording so you can:
+Click **Stop** (or press **⌥⌘.** or **⌃⌥⌘R**). The panel shows the recording so you can:
 
 - Edit the recording title (pre-filled from your calendar if a matching event is found)
 - Pick the matching calendar event under **Meeting details**, when dBrief finds nearby events
 - Enter participant names (used to label speakers when diarization is on)
 - Open **Processing settings** to choose a profile and what to process (transcribe, summary, action items, tags and sentiment)
 
-Click **Process recording** to start processing. **Queue** saves the recording and processes it later, and **Keep audio only** keeps the audio without processing it. The delete (trash) button removes the recording after you confirm.
+Click **Process recording** (or press **Return**) to start processing. **Queue** saves the recording and processes it later, and **Keep audio only** keeps the audio without processing it. The delete (trash) button removes the recording after you confirm.
 
 ## Naming your recording
 
@@ -48,6 +58,8 @@ If you type your own title, dBrief keeps it — the AI won't replace it with a g
 ## Recording back-to-back meetings
 
 You don't have to wait for a recording to finish processing before starting the next one. The **Record meeting** button and the **⌃⌥⌘R** shortcut stay available while dBrief is still transcribing and analysing a previous recording, so you can capture back-to-back meetings without missing the start of one.
+
+If you start a new recording while the review form of the previous one is still open (for example with the shortcut, or because call detection started it), that recording isn't lost: dBrief queues it with the choices you'd made.
 
 Only one recording is processed at a time. If a new recording finishes while an earlier one is still being processed, it's queued automatically and drains one at a time once the current job completes, unless you have paused the queue. Manually deferred recordings wait for **Process queue**. See [Queue & Recovery](../history/queue-recovery.md) to reorder, pause, resume, or remove jobs. Both the recording in progress and the one being processed appear in the **Recording library**.
 

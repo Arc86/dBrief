@@ -38,8 +38,16 @@ Without this permission, dBrief still records normally; it just can't pull in ca
 
 **Required for:** The Apple Reminders integration.
 
-**To grant:** Open **System Settings → Privacy & Security → Reminders** and enable dBrief.
+**To grant:** Use the **Request** button in **Settings → Permissions**, or click **Test connection** on the Apple Reminders integration page. If you denied it earlier, open **System Settings → Privacy & Security → Reminders** and enable dBrief. The integration tells you when it needs access.
+
+## Automation (Notes)
+
+**Required for:** The [Apple Notes](../integrations/apple-notes.md) integration.
+
+The first time dBrief creates a note, macOS asks whether dBrief may control Notes. Click **Allow**; you're asked only once.
+
+**To grant later:** Open **System Settings → Privacy & Security → Automation**, find dBrief, and turn on **Notes**.
 
 ---
 
-> **Tip:** **Settings → Permissions** shows the live status of Microphone, Screen recording, Speech recognition, and Calendar, each with a button to request access or open the right System Settings pane. Reminders access is requested the first time you use the Apple Reminders integration.
+> **Tip:** **Settings → Permissions** shows the live status of Microphone, Screen recording, Speech recognition, Calendar, and Reminders, each with a button to request access or open the right System Settings pane. A badge on **Permissions** in the Settings sidebar shows when something needs attention.

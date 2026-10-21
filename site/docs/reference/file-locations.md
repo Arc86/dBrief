@@ -17,7 +17,7 @@ Recordings are saved as **M4A / AAC**. You can change the folder in **Settings �
 
 ## Markdown exports
 
-Markdown files are saved in your **Transcripts** folder (**Settings → Storage → Folders**), unless you've configured an Obsidian vault folder — in which case they go there instead. Small JSON sidecars are written next to the Markdown file: `.richtranscript.json` (speaker names and word timing for the [transcript viewer](../history/transcript-viewer.md)), `.insights.json` (the AI summary, action items, and tags), and `.chat.json` (your [Transcript Chat](../ai-analysis/transcript-chat.md) conversation). They travel with the recording and are removed when it's deleted.
+Markdown files are saved in your **Transcripts** folder (**Settings → Storage → Folders**), unless you've configured an Obsidian vault folder — in which case they go there instead. Small JSON sidecars are written next to the Markdown file: `.richtranscript.json` (speaker names and word timing for the [transcript viewer](../history/transcript-viewer.md)), `.insights.json` (the AI summary, action items, and tags), `.chat.json` (your [Transcript Chat](../ai-analysis/transcript-chat.md) conversation), and for long recordings `.chatindex.json` (the search index Ask dBrief AI uses to find relevant passages). They travel with the recording and are removed when it's deleted.
 
 ## AI and transcription models
 

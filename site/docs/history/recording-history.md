@@ -16,18 +16,22 @@ Each row shows the date, duration, and processing status, with a play button on 
 
 | Chip | What it does |
 |---|---|
-| **Copy summary** / **Copy transcript** | Copy the summary to the clipboard, or the transcript when there's no summary yet |
+| **Copy Notes** / **Copy Transcript** | Copy the summary and action items, or the transcript when there's no summary yet |
 | **Show in Finder** | Reveal the recording and Markdown files on disk |
 | **Reprocess** | Open the reprocessing menu (see below) |
-| **Transcript** | Open the [transcript viewer](transcript-viewer.md) — transcript, speakers, audio sync, and chat |
-| **Integrations** | Review delivery status and retry an individual integration |
-| **Delete** | Remove the recording and its files |
+| **Open** | Open the recording in the [transcript viewer](transcript-viewer.md) — summary, transcript, speakers, audio, and chat |
+| **Integrations** | Review delivery status and retry integrations |
+| **Delete** | Remove the recording and its files, after you confirm |
+
+Right-click a recording for the same actions: **Open**, **Copy Notes**, **Show in Finder**, **Reprocess**, **Integrations…** and **Delete Recording…**. The library sidebar has the same menu, so the actions work the same everywhere.
+
+Each row also shows a status, such as **Not processed**, **Queued**, **Processing**, **Transcribed**, **Analyzed** or **Needs attention**.
 
 Use the play button on the row to play the recording in the inline mini player.
 
 ## Re-running transcription or AI analysis
 
-Open **Reprocess** to choose **Retranscribe…**, **Re-run AI analysis…**, or **Detect speakers again…**. See [Reprocessing a Recording](reprocessing.md) for options, restoring previous results, and how exports are handled.
+Open **Reprocess** to choose **Retranscribe…**, **Re-run AI Analysis…**, or **Detect Speakers Again…**. See [Reprocessing a Recording](reprocessing.md) for options, restoring previous results, and how exports are handled.
 
 ## Older recordings
 

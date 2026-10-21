@@ -4,7 +4,7 @@ Connect dBrief to your own AI server for analysis.
 
 ## What it is
 
-dBrief can send transcripts to any OpenAI-compatible `/v1/chat/completions` endpoint, or natively to Anthropic's Messages API. Built-in presets cover OpenAI, Anthropic (Claude), Google Gemini, Groq, and a local Ollama instance.
+dBrief can send transcripts to any OpenAI-compatible `/v1/chat/completions` endpoint, or natively to Anthropic's Messages API. Built-in presets cover OpenAI, Anthropic (Claude), Google Gemini, Groq, OpenRouter, and a local Ollama instance.
 
 ## Setting up an endpoint
 
@@ -24,6 +24,7 @@ dBrief can send transcripts to any OpenAI-compatible `/v1/chat/completions` endp
 | Google Gemini | OpenAI-compatible endpoint |
 | OpenAI | OpenAI-compatible |
 | Groq | OpenAI-compatible (fast inference) |
+| OpenRouter | OpenAI-compatible; hundreds of models behind one API key |
 | Ollama (local) | OpenAI-compatible, no API key |
 
 ## Output token limit

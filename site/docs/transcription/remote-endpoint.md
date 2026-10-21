@@ -4,7 +4,7 @@ Connect dBrief to your own transcription server for maximum accuracy and control
 
 ## What it is
 
-dBrief can send audio to any OpenAI-compatible `/v1/audio/transcriptions` endpoint, to a [whisper-asr-webservice](https://github.com/ahmetoner/whisper-asr-webservice) instance, or to a built-in cloud provider (Groq Whisper, Deepgram, ElevenLabs Scribe). This lets you use larger Whisper models or fast cloud-hosted transcription services.
+dBrief can send audio to any OpenAI-compatible `/v1/audio/transcriptions` endpoint, to a [whisper-asr-webservice](https://github.com/ahmetoner/whisper-asr-webservice) instance, or to a built-in cloud provider (Groq Whisper, OpenRouter, Deepgram, ElevenLabs Scribe). This lets you use larger Whisper models or fast cloud-hosted transcription services.
 
 ## Setting up an endpoint
 
@@ -21,6 +21,7 @@ dBrief can send audio to any OpenAI-compatible `/v1/audio/transcriptions` endpoi
 | Preset | Format | Notes |
 |---|---|---|
 | Groq Whisper | OpenAI-compatible | `whisper-large-v3-turbo` — fast and low-cost |
+| OpenRouter | OpenAI-compatible | `openai/whisper-large-v3`; one API key for many providers |
 | Deepgram | Native `/v1/listen` | `nova-3`; word timestamps and (with diarization on) speaker labels, handled server-side |
 | ElevenLabs Scribe | Native `/v1/speech-to-text` | `scribe_v1`; 90+ languages |
 | OpenAI / Whisper API | OpenAI-compatible | `whisper-1` |

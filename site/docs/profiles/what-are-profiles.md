@@ -13,6 +13,7 @@ A profile can override:
 - **AI prompts** — customise what the AI focuses on
 - **Task defaults** — which tasks are pre-selected after recording
 - **Folders** — save recordings, transcripts, or Obsidian notes to a different location
+- **Integration destinations** — send tasks to a different [Todoist](../integrations/todoist.md) project or [TickTick](../integrations/ticktick.md) list, or meetings to a different [Notion](../integrations/notion.md) page or database
 
 Any setting not overridden in a profile falls back to your global settings.
 

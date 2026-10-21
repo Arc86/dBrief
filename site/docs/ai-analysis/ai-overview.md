@@ -24,7 +24,7 @@ Go to **Settings → AI analysis** and pick your **Engine**. dBrief offers four 
 |---|---|---|
 | **[Apple Intelligence](apple-intelligence.md)** | On your Mac | macOS 26+, Apple Silicon |
 | **[Gemma 4 E4B Local](local-gemma.md)** | On your Mac | Apple Silicon + model download |
-| **[Remote Endpoint](remote-endpoint.md)** | A cloud provider or your server | OpenAI-compatible server, or an Anthropic/OpenAI/Gemini/Groq API key |
+| **[Remote Endpoint](remote-endpoint.md)** | A cloud provider or your server | OpenAI-compatible server, or an Anthropic/OpenAI/Gemini/Groq/OpenRouter API key |
 | **[Local CLI](local-cli.md)** | A command-line tool on your Mac | A CLI such as `claude`, `ollama`, or `llm` installed |
 
 Not sure whether to run AI on your Mac or on a server? See [Local vs Remote AI](local-vs-remote.md) for the privacy, quality, and cost trade-offs.
@@ -32,6 +32,16 @@ Not sure whether to run AI on your Mac or on a server? See [Local vs Remote AI](
 ## Processing order
 
 AI analysis runs after transcription completes. The steps run sequentially: summary → action items → tags/sentiment → title generation → Markdown export → integrations.
+
+## Long recordings
+
+On-device analysis (Gemma and Apple Intelligence) reads the whole meeting, however long. When a transcript is too long for the model in one pass, dBrief works through it in parts, takes notes on each, and combines them, so decisions and action items from the middle of a long meeting aren't missed. While this runs, the processing step shows **Part n of m**. Long recordings take longer to analyse.
+
+Remote endpoints receive the full transcript in one request, so a long meeting needs a model with a large enough context window — see [Remote AI Endpoint](remote-endpoint.md).
+
+## Results language
+
+By default, summaries and action items are written in the language of the transcript. To always get them in one language, set **Write results in** in the **Results language** card of **Settings → AI analysis** (**Same as transcript**, **English**, **Dutch**, or **Custom** with a two-letter language code). This card appears for on-device and Local CLI analysis. It's separate from the language dBrief's menus are shown in — see [Language & Accessibility](../reference/language-and-accessibility.md).
 
 ## Customising prompts
 

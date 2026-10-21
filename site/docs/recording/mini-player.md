@@ -6,7 +6,7 @@ While you're recording, dBrief shows a small floating window with a live audio l
 
 The window shows whether dBrief is **Recording** or **Paused**, the elapsed time, and level bars that move with your audio in real time. This lets you confirm that dBrief is actually capturing sound — even if you've switched to a full-screen app.
 
-It also has **Pause** / **Resume** and **Stop** buttons. When dBrief switches microphones on its own, a short note shows which one it chose.
+It also has **Pause** / **Resume** (**⌥⌘P**) and **Stop** (**⌥⌘.**) buttons. With VoiceOver or Full Keyboard Access on, you can also reach these buttons with the keyboard. When dBrief switches microphones on its own, a short note shows which one it chose.
 
 ## Moving it
 

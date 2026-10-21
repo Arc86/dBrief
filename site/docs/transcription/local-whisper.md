@@ -54,7 +54,7 @@ between pure model speed and the full end-to-end time.
 
 Turn on **Identify speakers** in **Settings → Speakers** to label who said what. dBrief downloads a separate speaker model on first use (stored under `LocalAIPlugin/SpeakerKit/`) and tags each segment with a speaker. See the [transcript viewer](../history/transcript-viewer.md) for renaming speakers.
 
-You can also run speaker detection **after the fact** on an already-transcribed recording from the **Re-process** menu in the [transcript viewer](../history/transcript-viewer.md): choose **Detect speakers again…** — no need to re-transcribe.
+You can also run speaker detection **after the fact** on an already-transcribed recording from the **Reprocess** menu in the [transcript viewer](../history/transcript-viewer.md): choose **Detect Speakers Again…** — no need to re-transcribe.
 
 ## Deleting the model
 
