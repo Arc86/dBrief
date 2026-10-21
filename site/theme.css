@@ -37,7 +37,7 @@
 
 [data-theme="paper"] {
   --canvas: #F5F2EB; --surface: #FFFCF5; --heading: #302D28; --text: #514B42; --secondary: #756D60;
-  --divider: #DBD4C5; --band: #EEE9DE;
+  --divider: #DBD4C5; --band: #F4F1E9;
   --primary: #2E6CD2; --primary-fill: #2E6CD2; --on-primary: #FFFFFF; --accent-text: #295DB4; --selected: #D9DFE8;
   --shadow-lg: 0 40px 80px -32px rgba(48,45,40,.28), 0 2px 8px rgba(48,45,40,.06);
   --shadow-md: 0 18px 40px -20px rgba(48,45,40,.25), 0 1px 3px rgba(48,45,40,.06);

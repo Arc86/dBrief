@@ -20,6 +20,7 @@ for (const name of Object.keys(spec)) {
     const pairs = [
       ["text", "canvas"], ["text", "surface"], ["secondary", "canvas"], ["secondary", "surface"],
       ["accent-text", "surface"], ["accent-text", "selected"], ["on-primary", "primary-fill"],
+      ["text", "band"], ["secondary", "band"], ["accent-text", "band"],
     ];
     for (const [a, b] of pairs) {
       const c = contrast(t[a], t[b]);
