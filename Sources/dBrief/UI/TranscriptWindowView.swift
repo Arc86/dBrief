@@ -1801,6 +1801,8 @@ struct TranscriptDetailView: View, Equatable {
         Task {
             do {
                 try await store.save(transcript, for: recording)
+            } catch TranscriptStoreError.recordingDeleted {
+                // Deleted while an edit was in flight: nothing to save.
             } catch {
                 Logger.recording.error("TranscriptDetailView: failed to save recording files")
             }

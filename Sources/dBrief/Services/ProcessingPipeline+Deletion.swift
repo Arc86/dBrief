@@ -68,9 +68,13 @@ extension ProcessingPipeline {
                 && !stem.dropFirst(prefix.count).isEmpty && stem.dropFirst(prefix.count).allSatisfy(\.isNumber)
         }
         var deletionError: (any Error)?
-        for url in candidates where fm.fileExists(atPath: url.path) {
-            do { try fm.removeItem(at: url) }
-            catch { deletionError = deletionError ?? error }
+        // Under the result-write lock: a transcript save either lands before this (and is
+        // removed here) or sees the audio gone and skips (`TranscriptStore.saveValue`).
+        RecordingResultMutation.withTransaction {
+            for url in candidates where fm.fileExists(atPath: url.path) {
+                do { try fm.removeItem(at: url) }
+                catch { deletionError = deletionError ?? error }
+            }
         }
         do {
             if try !PrivacyReceiptLifecycle.hasSurvivingAudio(for: PrivacyReceiptLifecycle.receiptURL(for: audioURL), fileManager: fm) {

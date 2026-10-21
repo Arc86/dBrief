@@ -120,3 +120,27 @@ struct TranscriptStoreTests {
         }
     }
 }
+
+struct TranscriptStoreDeletedRecordingTests {
+    @Test("saving for a deleted recording writes nothing")
+    @MainActor
+    func saveAfterDeleteIsSkipped() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let audio = dir.appendingPathComponent("meeting.m4a")
+        let recording = Recording(fileURL: audio, duration: 3)
+        recording.finalizedAudioURL = audio
+        let transcript = RichTranscript(segments: [RichSegment(start: 0, end: 1, text: "Hi", originalText: "Hi")])
+        let store = TranscriptStore()
+
+        await #expect(throws: TranscriptStoreError.recordingDeleted) {
+            try await store.save(transcript, for: recording)
+        }
+        #expect(!FileManager.default.fileExists(atPath: recording.transcriptSidecarURL!.path))
+
+        try Data().write(to: audio)
+        try await store.save(transcript, for: recording)
+        #expect(FileManager.default.fileExists(atPath: recording.transcriptSidecarURL!.path))
+    }
+}

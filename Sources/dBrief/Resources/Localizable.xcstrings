@@ -24192,6 +24192,16 @@
         }
       }
     },
+    "The recording was deleted, so the transcript was not saved." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De opname is verwijderd, dus het transcript is niet opgeslagen."
+          }
+        }
+      }
+    },
     "The recording's current results stay. The unfinished reprocess can't be resumed afterwards." : {
       "localizations" : {
         "nl" : {
