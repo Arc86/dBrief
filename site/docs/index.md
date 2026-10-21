@@ -13,7 +13,7 @@ For changes in each version, see the [release notes](https://github.com/Arc86/dB
 | **[Transcription](transcription/transcription-overview.md)** | Choose how your recordings get transcribed |
 | **[AI Analysis](ai-analysis/ai-overview.md)** | Summaries, action items, tags, and transcript chat |
 | **[Local vs Remote AI](ai-analysis/local-vs-remote.md)** | Privacy, quality, and cost trade-offs |
-| **[Integrations](integrations/integrations-overview.md)** | Send your notes to Obsidian, Apple Notes, and more |
+| **[Integrations](integrations/integrations-overview.md)** | Send your notes to Obsidian, Apple Notes, Notion, Todoist, TickTick, and more |
 
 ## Recording
 
@@ -26,9 +26,16 @@ For changes in each version, see the [release notes](https://github.com/Arc86/dB
 ## After recording
 
 - **[Recording history](history/recording-history.md):** find and reprocess past recordings
-- **[Transcript viewer](history/transcript-viewer.md):** read a transcript, follow the audio, and correct speaker names
+- **[Transcript viewer](history/transcript-viewer.md):** read the summary and transcript, edit notes, follow the audio, and correct speaker names
+- **[Focus Reader](history/focus-reader.md):** read your notes full screen
 - **[Queue & Recovery](history/queue-recovery.md):** manage pending work and retry deliveries
 - **[Reprocessing](history/reprocessing.md):** change engines or rerun analysis on a saved recording
 - **[Profiles](profiles/using-profiles.md):** choose settings for different kinds of meetings
 - **[Privacy receipts](reference/privacy-receipts.md):** see which processing and delivery steps ran
-- **[Transcript chat](ai-analysis/transcript-chat.md):** ask follow-up questions about a recording
+- **[Ask dBrief AI](ai-analysis/transcript-chat.md):** ask follow-up questions about a recording
+
+## Make it yours
+
+- **[Language & accessibility](reference/language-and-accessibility.md):** Dutch, VoiceOver, and keyboard access
+- **[Appearance & fonts](reference/appearance.md):** themes, accent colour, and easy-to-read fonts
+- **[Keyboard shortcuts](reference/keyboard-shortcuts.md):** every shortcut in one place

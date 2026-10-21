@@ -54,14 +54,19 @@ dBrief will ask for permissions as you use it. You can also review and grant the
 | **Speech Recognition** | Required if you use the Apple Speech transcription engine or the live transcript preview |
 | **Calendar** | Optional — lets dBrief pre-fill the meeting title and participants from your calendar |
 | **Reminders** | Required if you use the Apple Reminders integration |
+| **Automation (Notes)** | Required if you use the Apple Notes integration. macOS asks once, the first time dBrief creates a note |
 
-**Settings → Permissions** shows the live status of Microphone, Screen recording, Speech recognition, and Calendar, with buttons to request access or open the relevant System Settings pane. Reminders access is requested the first time you use the Apple Reminders integration.
+**Settings → Permissions** shows the live status of Microphone, Screen recording, Speech recognition, Calendar, and Reminders, with buttons to request access or open the relevant System Settings pane. See [Permissions](../reference/permissions.md).
 
 If you accidentally denied a permission, open **System Settings → Privacy & Security**, find the relevant section, and enable dBrief there.
 
 ## Start at login
 
 To have dBrief launch automatically when you log in, turn on **Start at login** in **Settings → General → Startup**. It runs quietly in the menu bar (no Dock icon), ready to record.
+
+## Language
+
+dBrief is available in English and Dutch and follows your Mac's language. To choose a language for dBrief only, see [Language & Accessibility](../reference/language-and-accessibility.md).
 
 ## Uninstalling
 

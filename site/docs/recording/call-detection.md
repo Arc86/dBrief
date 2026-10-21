@@ -34,6 +34,10 @@ In **Settings → Meetings → Call detection**:
 
 dBrief detects a call ending by watching the meeting app's own microphone use, so leaving a Teams/Zoom/Slack/Meet meeting is noticed even if you leave the app open. A brief pause — muting yourself or switching audio devices — won't trigger it; only actually leaving the meeting does. (Detecting a call *ending* needs macOS 14.2 or later; on older versions dBrief only notices when the meeting app fully quits.)
 
+## Answering the prompt
+
+The prompt when a call starts offers **Record call** and **Not now**. The prompt when a call ends offers **Stop** and **Keep recording**. Press **Return** for the main button or **Esc** to dismiss. While VoiceOver is running, prompts stay on screen until you answer, whatever **Dismiss the prompt after** is set to.
+
 ## Choosing which apps to watch
 
 With call detection on, an **Apps to watch** card appears in **Settings → Meetings**. Toggle off any app you don't want dBrief to react to — for example, if you use Slack for messages but never for calls.

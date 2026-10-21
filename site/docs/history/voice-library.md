@@ -20,18 +20,32 @@ This conservative behaviour is deliberate: a neutral, unnamed speaker is better 
 
 ## Teaching the library
 
-You don't enrol voices manually — naming a speaker is what does it. Whenever you give a speaker a real name (in the post-recording sheet, in the **Who's speaking?** review, or by [renaming a speaker](transcript-viewer.md#renaming-speakers) in the transcript viewer), dBrief saves that voiceprint under that person. The more times you confirm someone, the more reliably they're recognized — and dBrief keeps a varied set of samples per person rather than many near-duplicates.
+You don't enrol voices manually — naming a speaker is what does it. Whenever you give a speaker a real name (in the post-recording sheet, in the [**Who's speaking?** review](transcript-viewer.md#confirming-speakers-before-analysis), or by [renaming a speaker](transcript-viewer.md#renaming-speakers) in the transcript viewer), dBrief saves that voiceprint under that person. The more times you confirm someone, the more reliably they're recognized — and dBrief keeps a varied set of samples per person rather than many near-duplicates.
 
 ## Managing it — Settings → Speakers
 
-The **Known people** card on the **Speakers** settings page lists everyone dBrief knows, with their company, how many voiceprints each holds, and when that person was first and last heard. Search by name or company, sort by any column, or turn on **Group by company**. Select a person to see their voiceprints and recognition strength. From here you can:
+The **Voice library** card fills the **Speakers** settings page. It lists everyone dBrief knows, with their company, how many voiceprints each holds, and when that person was first and last heard. Search by name or company, sort by any column, or turn on **Group by company**. Click a company to edit it in place.
+
+Select a person to see their voiceprints and recognition strength. From here you can:
 
 - **Rename…** a person. If the new name already belongs to someone in the library, dBrief offers to **Merge** the two into one person (keeping all their samples).
-- **Merge into…** another person you know is the same — handy if the same person was learned under two spellings. Select several people to merge them at once; dBrief tells you when their voices are probably the same person.
+- **Merge into…** another person you know is the same — handy if the same person was learned under two spellings.
 - **Forget voice** to remove a person entirely, with all their voiceprints.
 - **Forget a single voiceprint** from a person's details — useful if one bad sample is causing mistaken matches.
 
+Select several people (⌘-click, Shift-click, or **⌘A**) to **Merge** or **Forget** them all at once. When the selected voices sound alike, dBrief tells you they're probably the same person. Merging and forgetting always ask first.
+
 Right-click a person for **Rename…**, **Merge into…**, and **Forget voice**.
+
+### Keyboard
+
+| Key | Action |
+|---|---|
+| **↑** / **↓** | Select the previous / next person |
+| **Shift-↑** / **Shift-↓** | Extend the selection |
+| **Return** | Rename the selected person |
+| **⇧⌘M** | Merge the selected people |
+| **Delete** | Forget the selected people |
 
 ## Privacy
 

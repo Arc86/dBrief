@@ -9,7 +9,21 @@ Create a note in Apple Notes for each recording.
 3. Choose which fields to include in the **Send fields** card
 4. Optionally click **Test connection** to check that dBrief can reach Apple Notes
 
-No API key or account setup is needed — dBrief uses AppleScript to create notes in whichever Apple Notes account is active on your Mac.
+No API key or account setup is needed — dBrief asks Notes to create the note in whichever Apple Notes account is active on your Mac.
+
+## Allow dBrief to control Notes
+
+The first time dBrief sends a note (or you click **Test connection**), macOS asks whether dBrief may control Notes. Click **Allow**. You're only asked once.
+
+If you clicked **Don't Allow**, notes can't be created. To fix it, open **System Settings → Privacy & Security → Automation**, find dBrief and turn on **Notes**.
+
+## What the note looks like
+
+Notes look like notes, not Markdown: headings, bold text and lists come through as formatting.
+
+- The note's title is the meeting title, followed by the date, time and duration.
+- Sections follow in this order: **Summary**, **Meeting info**, **Action items**, **Tags**, **Sentiment**, then the full Markdown export (if selected) and the **Transcript** last, so the long part doesn't push your notes out of view.
+- Placeholder action items such as "No action items identified" are left out.
 
 ## What gets sent
 

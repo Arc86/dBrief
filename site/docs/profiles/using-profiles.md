@@ -20,7 +20,7 @@ The **Settings → After recording** page shows the active profile in its **Acti
 
 1. Go to **Settings → Profiles**
 2. Select the profile you want to edit
-3. Turn on only the overrides you need in the **Transcription**, **AI analysis**, **Task defaults** and **Folders** cards. Anything you don't override uses the app default.
+3. Turn on only the overrides you need in the **Transcription**, **AI analysis**, **Task defaults**, **Folders** and **Integrations** cards. Anything you don't override uses the app default.
 
 Selecting a profile to edit doesn't make it the active profile.
 
@@ -33,6 +33,16 @@ Selecting a profile to edit doesn't make it the active profile.
 3. Give it a name and configure your overrides
 
 You can also right-click a profile and choose **Duplicate** to start from a copy.
+
+## Sending to a different project, list or page
+
+The **Integrations** card lets a profile send to its own destination:
+
+- **Todoist project** — tasks go to this project instead of the one on the Todoist page
+- **TickTick list** — tasks go to this list (shown when TickTick is available)
+- **Notion destination** — meetings go to this Notion page or database
+
+Turn on the override and pick the destination. The integration itself still has to be turned on and set up in **Settings → Integrations**. When you retry a delivery later, dBrief uses the profile the meeting was processed with, even if you've switched profiles since.
 
 ## How overrides resolve
 
