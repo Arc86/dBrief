@@ -59,7 +59,7 @@ test("every download link goes to the latest GitHub release", () => {
 
 test("every answer timestamp has a transcript turn to jump to", () => {
   const jumps = [...html.matchAll(/data-jump="([^"]+)"/g)].map((m) => m[1]);
-  const turns = new Set([...html.matchAll(/class="turn"[^>]*data-t="([^"]+)"/g)].map((m) => m[1]));
+  const turns = new Set([...html.matchAll(/class="turn(?: hit)?"[^>]*data-t="([^"]+)"/g)].map((m) => m[1]));
   assert.ok(jumps.length >= 2, "expected clickable timestamps");
   for (const j of jumps) assert.ok(turns.has(j), `no .turn for ${j}`);
 });
