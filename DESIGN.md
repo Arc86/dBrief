@@ -145,7 +145,7 @@ Density is moderate: one 1200 px column, generous 112 px section rhythm, copy in
 - One accent (#1268F5 family), tuned per theme for AA contrast.
 - The six-stop brand gradient is rationed to where the app uses it.
 - Four themes plus Auto (follows system), all driven by custom properties on `:root` / `[data-theme]`.
-- Reduced motion fully respected; one authored entrance only.
+- Motion embodies "the meeting becomes a brief": one authored sequence on load, a theme wash, and small demos that react to the visitor. Reduced motion has its own path for each.
 
 ## Colors
 
@@ -164,6 +164,7 @@ A cool-neutral app palette with a single blue accent, repeated in four tunings (
 - **Selected** (#DAE7FD): accent mixed about 14% into canvas; active nav item, badges, icon wells.
 - **Success Green** (#23793A, per-theme): only for "done" status marks in mockups.
 - **Speaker colours** (#2B7378, #A33F48, #3E7444): avatar fills in mockups only; white initials.
+- **Danger** (`--danger` #B93852, fill #FFF2F5, border #D5B3C1; per theme from the app's MenuPanelPalette): only the record demo's "Recording" status, its red dot and the soft Stop button.
 
 ### Named Rules
 **The Four-Theme Rule.** Every colour comes from a theme variable. A new surface must be checked in all four themes, and hard-coded hex is allowed only for the logo, window traffic lights and speaker avatars.
@@ -239,7 +240,27 @@ Surface pill row with mono command, user-selectable, plus a small `selected` cop
 HTML/CSS rebuilds of the recording viewer, menu panel, call prompt, Ask dBrief AI chat, Focus Reader card and privacy receipt. They carry content the real app produces and are labelled synthetic where invented. Mockup-specific convention, not page typography: text inside them runs 8.5-12 px, tab rows are tight, and the window uses the hairline-plus-shadow recipe, all because they replicate the macOS app's own metrics. Page copy never uses these sizes.
 
 ### Motion
-Colour transitions 0.3 s, small state transitions 0.12-0.15 s, one authored entrance (the hero window and reader card settle in over 1.1 s, `cubic-bezier(.16,1,.3,1)`). Everything stops under `prefers-reduced-motion`.
+**Thesis:** dBrief is quietly listening and taking notes for you. Motion uses the app's own materials (writing lines, streamed answers, the five bars as a level meter, ticked-off actions), never generic reveals.
+
+- **Easing:** `--ease-out` = `cubic-bezier(.16, 1, .3, 1)` for every arrival; `ease-in` only for exits. No bounce, no elastic.
+- **Durations:** feedback 120-180 ms (ticks, hovers, button colour), routine state 200-340 ms (bubbles arriving, call prompt), theme wash 560 ms, focal sequence about 2.5 s in total. Exits are faster than entrances (call prompt leaves in 160 ms, returns in 320 ms).
+- **Content is visible by default.** No CSS rule hides text; `home.js` hides only what it is about to reveal, inside a Web Animation with `fill: backwards`, and only when reduced motion is off. `html.brief-writing` exists only while the hero sequence runs.
+
+**Focal sequence, "the brief writes itself"** (once per load, hero only, skipped when the hero is not in view, waits for a hidden tab): the window and reader card settle in (1.1 s, unchanged); from 350 ms the Summary card is written line by line, each line a clip-path wipe left to right sized to its ink width (40 ms + 90 ms per full line); the question bubble arrives (340 ms, 8 px rise and .96 scale); the answer streams word by word (20 ms apart, each word 220 ms from opacity 0 and 2 px blur); the two timestamps light up in `--selected` for 700 ms.
+
+**Ask section:** the first answer streams the same way the first time the chat scrolls into view (prepared in paused animations just before, so text never flashes and vanishes), then 00:31:12 lights up in the answer and its transcript turn gets the hit highlight, then the follow-up question and answer arrive.
+
+**Theme wash:** the View Transitions API wraps the `data-theme` change; the new theme grows as a circle (`clip-path`) from the centre of the control that chose it, over 560 ms. Other transitions are suspended while it runs (`html.theme-washing`). No API: instant change.
+
+**Record demo:** "Record call" or "Record meeting" swaps the panel to the app's recording controls (timer, pulsing red "Recording" dot, soft Stop), the menu bar item shows the app's red dot and duration, and the header's five bars become a level meter (`scaleY` every 110 ms, 110 ms linear, a wandering speech-like envelope, bounded 30-100 % of the bar box). It halts offscreen or in a hidden tab, stops itself after 60 s, and announces start and stop in a polite live region. "Not now" sends the prompt away and brings it back after 2 s.
+
+**Actions:** ticking an action fills the ring with the accent (scale, 180 ms), draws the check (stroke-dashoffset, 160 ms), strikes the text through and mutes it, and updates the "N unfinished · M completed" line and the tab badge. Owner counts stay the total, as in the app.
+
+**Reading fonts:** the specimen comes into focus in the new face (opacity .35 and 3 px blur to sharp, 240 ms).
+
+**Reduced motion:** theme.css stops every CSS transition and animation. The hero and Ask text appear whole (no writing, no streaming), the theme change is a 120 ms crossfade instead of the wash, the level meter stays still while the timer keeps counting, the call prompt and font switch fade in 120 ms without movement, and ticked actions still change colour, fill and strike-through instantly.
+
+**Don't:** scroll reveals on every section, parallax, hover lifts on content cards, bounce, confetti, sound, or new brand-gradient surfaces. Every loop stops when offscreen or hidden.
 
 ## Do's and Don'ts
 

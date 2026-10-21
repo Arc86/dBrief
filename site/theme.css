@@ -110,3 +110,12 @@ html:not([data-theme]) .theme-pick { display: none; }  /* no JS: the switch woul
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+/* Theme wash (theme.js): during the view transition nothing else animates, so the new theme
+   arrives whole inside the growing circle instead of mid-way through the colour transitions. */
+html.theme-washing *, html.theme-washing *::before, html.theme-washing *::after { transition: none !important; }
+html.theme-wash::view-transition-old(root), html.theme-wash::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.theme-wash::view-transition-new(root) { z-index: 1; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation-duration: .12s !important; }
+}

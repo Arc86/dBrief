@@ -39,6 +39,36 @@
     document.documentElement.dataset.theme = resolveTheme(choice, prefersDark());
   }
 
+  // Radius that covers the whole viewport from (x, y): the wash's final circle.
+  function washRadius(x, y, w, h) {
+    return Math.ceil(Math.hypot(Math.max(x, w - x), Math.max(y, h - y)));
+  }
+  function reducedMotion() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+  // The new theme washes in as a circle growing from the control that chose it (View Transitions).
+  // No API: instant. Reduced motion: the browser's crossfade, shortened in theme.css.
+  function applyWithWash(choice, origin) {
+    var doc = document, root = doc.documentElement;
+    if (!doc.startViewTransition || root.dataset.theme === resolveTheme(choice, prefersDark())) { apply(choice); return; }
+    var reduce = reducedMotion();
+    root.classList.add("theme-washing");
+    var done = function () { root.classList.remove("theme-washing"); };
+    var vt;
+    try { vt = doc.startViewTransition(function () { apply(choice); }); }
+    catch (e) { apply(choice); done(); return; }
+    vt.finished.then(done, done);
+    if (reduce || !origin) return;
+    root.classList.add("theme-wash");
+    vt.finished.then(function () { root.classList.remove("theme-wash"); }, function () { root.classList.remove("theme-wash"); });
+    vt.ready.then(function () {
+      var r = washRadius(origin.x, origin.y, window.innerWidth, window.innerHeight);
+      var at = " at " + origin.x + "px " + origin.y + "px)";
+      root.animate({ clipPath: ["circle(0px" + at, "circle(" + r + "px" + at] },
+        { duration: 560, easing: "cubic-bezier(.16, 1, .3, 1)", pseudoElement: "::view-transition-new(root)" });
+    }, function () { /* transition skipped: the theme is already applied */ });
+  }
+
   function initThemeSwitch() {
     var storage = safeStorage();
     var choice = readChoice(storage);
@@ -48,15 +78,16 @@
         buttons[i].setAttribute("aria-pressed", String(buttons[i].getAttribute("data-theme-choice") === choice));
       }
     }
-    function set(next) {
+    function set(next, origin) {
       choice = next;
       writeChoice(storage, choice);
-      apply(choice);
       sync();
+      applyWithWash(choice, origin);
     }
     for (var i = 0; i < buttons.length; i++) {
       buttons[i].addEventListener("click", function (e) {
-        set(e.currentTarget.getAttribute("data-theme-choice"));
+        var r = e.currentTarget.getBoundingClientRect();
+        set(e.currentTarget.getAttribute("data-theme-choice"), { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) });
       });
     }
     if (window.matchMedia) {
@@ -76,6 +107,6 @@
   }
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { STORAGE_KEY: STORAGE_KEY, CHOICES: CHOICES, resolveTheme: resolveTheme, readChoice: readChoice, writeChoice: writeChoice, initThemeSwitch: initThemeSwitch, wireThemeColor: wireThemeColor };
+    module.exports = { STORAGE_KEY: STORAGE_KEY, CHOICES: CHOICES, resolveTheme: resolveTheme, washRadius: washRadius, readChoice: readChoice, writeChoice: writeChoice, initThemeSwitch: initThemeSwitch, wireThemeColor: wireThemeColor };
   }
 })();

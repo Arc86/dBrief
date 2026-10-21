@@ -60,6 +60,7 @@
     <symbol id="i-list" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7 9.5h10M7 12.5h10M7 15.5h6"/></symbol>
     <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></symbol>
     <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></symbol>
   </defs>
 </svg>
 
@@ -151,34 +152,41 @@
       </ul>
     </div>
     <figure class="desk-fig">
-    <div class="desk" role="img" aria-label="The dBrief menu bar panel with the Record meeting button and recent recordings, and a prompt saying a Zoom call was detected, with Not now and Record call buttons.">
-      <div class="menubar"><b>Zoom Workplace</b><span class="mb-menu">Meeting</span><span class="mb-menu">View</span><span class="mb-right"><span class="mb-on"><span class="bars"><i></i><i></i><i></i><i></i><i></i></span></span><span class="mb-clock">Wed 21 Oct 10:58</span></span></div>
+    <div class="desk" role="group" aria-label="Example: the dBrief menu bar panel and a prompt saying a Zoom call was detected. Try Record call.">
+      <div class="menubar" aria-hidden="true"><b>Zoom Workplace</b><span class="mb-menu">Meeting</span><span class="mb-menu">View</span><span class="mb-right"><span class="mb-on"><span class="bars mb-idle"><i></i><i></i><i></i><i></i><i></i></span><span class="mb-rec" hidden><i class="rec-dot"></i><span data-rec-time>00:00</span></span></span><span class="mb-clock">Wed 21 Oct 10:58</span></span></div>
       <div class="desk-floor">
         <div class="panel">
-          <div class="p-top"><b><span class="bars"><i></i><i></i><i></i><i></i><i></i></span>dBrief</b><svg class="ico"><use href="#i-gear"/></svg></div>
-          <div class="p-sec">
-            <div class="rec"><svg class="ico"><use href="#i-mic"/></svg>Record meeting<small>⌃⌥⌘R</small></div>
-            <div class="profile"><span>Profile</span><span class="select">Default<svg class="ico"><use href="#i-chev-down"/></svg></span></div>
+          <div class="p-top" aria-hidden="true"><b><span class="bars meter"><i></i><i></i><i></i><i></i><i></i></span>dBrief</b><svg class="ico"><use href="#i-gear"/></svg></div>
+          <div class="p-sec p-capture">
+            <div class="idle-ui">
+              <button type="button" class="rec" data-rec="start"><svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg>Record meeting<small aria-hidden="true">⌃⌥⌘R</small></button>
+              <div class="profile" aria-hidden="true"><span>Profile</span><span class="select">Default<svg class="ico"><use href="#i-chev-down"/></svg></span></div>
+            </div>
+            <div class="rec-ui" hidden>
+              <div class="rec-status"><span class="rec-time" data-rec-time>00:00</span><span class="rec-state"><i class="rec-dot"></i>Recording</span></div>
+              <button type="button" class="stop" data-rec="stop"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop</button>
+            </div>
           </div>
-          <div class="p-sec"><div class="lib"><svg class="ico"><use href="#i-library"/></svg>Recording library<svg class="ico end"><use href="#i-arrow-ur"/></svg></div></div>
-          <div class="p-sec p-recent">
+          <div class="p-sec" aria-hidden="true"><div class="lib"><svg class="ico"><use href="#i-library"/></svg>Recording library<svg class="ico end"><use href="#i-arrow-ur"/></svg></div></div>
+          <div class="p-sec p-recent" aria-hidden="true">
             <div class="recent-hd"><svg class="ico"><use href="#i-chev-down"/></svg>Recent recordings<svg class="ico end"><use href="#i-redo"/></svg></div>
             <div class="row"><span class="play"><svg class="ico"><use href="#i-play"/></svg></span><div><b>Q3 roadmap sync</b><span class="meta">Yesterday 11:00 · 42:08 <span class="ok"><svg class="ico"><use href="#i-check-circle"/></svg>Analyzed</span></span></div><svg class="ico chev"><use href="#i-chev-down"/></svg></div>
             <div class="row"><span class="play"><svg class="ico"><use href="#i-play"/></svg></span><div><b>Customer interview</b><span class="meta">Yesterday 09:30 · 29:41 <span class="ok"><svg class="ico"><use href="#i-check-circle"/></svg>Analyzed</span></span></div><svg class="ico chev"><use href="#i-chev-down"/></svg></div>
             <div class="row"><span class="play"><svg class="ico"><use href="#i-play"/></svg></span><div><b>Design review</b><span class="meta">Mon 14:00 · 51:12 <span class="ok"><svg class="ico"><use href="#i-check-circle"/></svg>Analyzed</span></span></div><svg class="ico chev"><use href="#i-chev-down"/></svg></div>
             <div class="show-all">Show all in library<svg class="ico"><use href="#i-arrow-ur"/></svg></div>
           </div>
-          <div class="p-foot"><span class="import"><svg class="ico"><use href="#i-import"/></svg>Import…</span><span>or drop audio on the menu bar icon</span></div>
+          <div class="p-foot" aria-hidden="true"><span class="import"><svg class="ico"><use href="#i-import"/></svg>Import…</span><span>or drop audio on the menu bar icon</span></div>
         </div>
         <div class="callcard"><div class="cc-in">
-          <span class="bars"><i></i><i></i><i></i><i></i><i></i></span>
+          <span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
           <div class="cc-text"><b>Zoom call detected</b><span>Record this call and create a meeting brief.</span></div>
-          <svg class="ico cc-x"><use href="#i-x"/></svg>
-          <div class="cc-row"><span class="mini-btn">Not now</span><span class="mini-btn fill"><svg class="ico"><use href="#i-mic"/></svg>Record call</span></div>
+          <svg class="ico cc-x" aria-hidden="true"><use href="#i-x"/></svg>
+          <div class="cc-row"><button type="button" class="mini-btn" data-call="dismiss">Not now</button><button type="button" class="mini-btn fill" data-call="record"><svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg>Record call</button></div>
         </div></div>
       </div>
     </div>
-    <figcaption class="synthetic">Example recordings. Titles are made up.</figcaption>
+    <p class="sr-only" id="rec-live" aria-live="polite"></p>
+    <figcaption class="synthetic">Example recordings. Titles are made up. Nothing is recorded.</figcaption>
     </figure>
   </div>
 </section>
@@ -197,18 +205,18 @@
       <p class="aside">Retries never double up, so a flaky connection won't leave you with the same task three times.</p>
     </div>
     <figure class="actions-fig">
-      <div class="actions-mock" role="img" aria-label="The Actions tab of the example meeting: five unfinished action items grouped under Priya Shah, Tom Bakker and Jesse Meijer.">
-        <div class="tabrow"><div class="tabs"><span>Summary</span><span>Transcript</span><span class="on">Actions<span class="badge">5</span></span><span>Meeting Insights</span></div></div>
-        <div class="cmds"><span class="cmd"><svg class="ico"><use href="#i-copy"/></svg>Copy</span><span class="cmd"><svg class="ico"><use href="#i-pen"/></svg>Edit</span><span class="cmd"><svg class="ico"><use href="#i-redo"/></svg>Reprocess</span><span class="cmd grad-outline"><svg class="ico spark"><use href="#i-spark"/></svg>Ask dBrief AI</span></div>
-        <div class="am-title">Action items</div><div class="am-sub">5 unfinished · 0 completed</div>
-        <div class="owner"><div class="nm"><span class="av av-ps">PS</span>Priya Shah<span class="cnt">2</span></div>
-          <div class="todo"><svg class="ico"><use href="#i-circle"/></svg>Update the pricing page before the beta opens</div>
-          <div class="todo"><svg class="ico"><use href="#i-circle"/></svg>Share the beta feedback summary with design</div></div>
-        <div class="owner"><div class="nm"><span class="av av-tb">TB</span>Tom Bakker<span class="cnt">2</span></div>
-          <div class="todo"><svg class="ico"><use href="#i-circle"/></svg>Send the beta invite to the waitlist by Friday</div>
-          <div class="todo"><svg class="ico"><use href="#i-circle"/></svg>Check the Notion API limits for long transcripts</div></div>
-        <div class="owner"><div class="nm"><span class="av av-jm">JM</span>Jesse Meijer<span class="cnt">1</span></div>
-          <div class="todo"><svg class="ico"><use href="#i-circle"/></svg>Move offline mode to the Q4 plan</div></div>
+      <div class="actions-mock" role="group" aria-label="Example: the Actions tab of the example meeting, with action items grouped by person. Tick one off.">
+        <div class="tabrow" aria-hidden="true"><div class="tabs"><span>Summary</span><span>Transcript</span><span class="on">Actions<span class="badge" data-unfinished>5</span></span><span>Meeting Insights</span></div></div>
+        <div class="cmds" aria-hidden="true"><span class="cmd"><svg class="ico"><use href="#i-copy"/></svg>Copy</span><span class="cmd"><svg class="ico"><use href="#i-pen"/></svg>Edit</span><span class="cmd"><svg class="ico"><use href="#i-redo"/></svg>Reprocess</span><span class="cmd grad-outline"><svg class="ico spark"><use href="#i-spark"/></svg>Ask dBrief AI</span></div>
+        <div class="am-title">Action items</div><div class="am-sub" data-action-summary aria-live="polite">5 unfinished · 0 completed</div>
+        <div class="owner"><div class="nm"><span class="av av-ps" aria-hidden="true">PS</span>Priya Shah<span class="cnt">2</span></div>
+          <div class="todo"><button type="button" class="todo-tick" aria-pressed="false" aria-labelledby="ai-1" title="Mark complete"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="t-ring" cx="12" cy="12" r="8.6"/><circle class="t-fill" cx="12" cy="12" r="9.4"/><path class="t-chk" pathLength="1" d="M8.4 12.3l2.5 2.5 4.8-5.2"/></svg></button><span class="todo-text" id="ai-1">Update the pricing page before the beta opens</span></div>
+          <div class="todo"><button type="button" class="todo-tick" aria-pressed="false" aria-labelledby="ai-2" title="Mark complete"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="t-ring" cx="12" cy="12" r="8.6"/><circle class="t-fill" cx="12" cy="12" r="9.4"/><path class="t-chk" pathLength="1" d="M8.4 12.3l2.5 2.5 4.8-5.2"/></svg></button><span class="todo-text" id="ai-2">Share the beta feedback summary with design</span></div></div>
+        <div class="owner"><div class="nm"><span class="av av-tb" aria-hidden="true">TB</span>Tom Bakker<span class="cnt">2</span></div>
+          <div class="todo"><button type="button" class="todo-tick" aria-pressed="false" aria-labelledby="ai-3" title="Mark complete"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="t-ring" cx="12" cy="12" r="8.6"/><circle class="t-fill" cx="12" cy="12" r="9.4"/><path class="t-chk" pathLength="1" d="M8.4 12.3l2.5 2.5 4.8-5.2"/></svg></button><span class="todo-text" id="ai-3">Send the beta invite to the waitlist by Friday</span></div>
+          <div class="todo"><button type="button" class="todo-tick" aria-pressed="false" aria-labelledby="ai-4" title="Mark complete"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="t-ring" cx="12" cy="12" r="8.6"/><circle class="t-fill" cx="12" cy="12" r="9.4"/><path class="t-chk" pathLength="1" d="M8.4 12.3l2.5 2.5 4.8-5.2"/></svg></button><span class="todo-text" id="ai-4">Check the Notion API limits for long transcripts</span></div></div>
+        <div class="owner"><div class="nm"><span class="av av-jm" aria-hidden="true">JM</span>Jesse Meijer<span class="cnt">1</span></div>
+          <div class="todo"><button type="button" class="todo-tick" aria-pressed="false" aria-labelledby="ai-5" title="Mark complete"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="t-ring" cx="12" cy="12" r="8.6"/><circle class="t-fill" cx="12" cy="12" r="9.4"/><path class="t-chk" pathLength="1" d="M8.4 12.3l2.5 2.5 4.8-5.2"/></svg></button><span class="todo-text" id="ai-5">Move offline mode to the Q4 plan</span></div></div>
       </div>
       <figcaption class="synthetic">Example meeting. Names are made up.</figcaption>
     </figure>

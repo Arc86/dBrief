@@ -6,6 +6,12 @@
 [data-theme="dark"] { --ok: #5BC27A; }
 [data-theme="darkpaper"] { --ok: #7CC48C; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme]) { --ok: #5BC27A; } }
+/* The app's danger tones (MenuPanelPalette): recording status and the soft Stop button. */
+:root, [data-theme="light"] { --danger: #B93852; --danger-fill: #FFF2F5; --danger-border: #D5B3C1; }
+[data-theme="paper"] { --danger: #A63A3A; --danger-fill: #F8EAE3; --danger-border: #D9B2A8; }
+[data-theme="dark"] { --danger: #FF91A6; --danger-fill: #382935; --danger-border: #755C6F; }
+[data-theme="darkpaper"] { --danger: #F2A08F; --danger-fill: #3D2C27; --danger-border: #7A564C; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) { --danger: #FF91A6; --danger-fill: #382935; --danger-border: #755C6F; } }
 /* App window elevation: a hairline ring plus a large, soft, offset drop shadow, declared once as the shadow. */
 :root, [data-theme="light"] {
   --window-shadow: 0 0 0 .5px rgba(11,20,48,.16), 0 22px 44px -14px rgba(11,20,48,.20), 0 64px 120px -36px rgba(11,20,48,.30);
@@ -30,6 +36,7 @@
 kbd { font: inherit; font-weight: 650; color: var(--heading); white-space: nowrap; }
 figure { margin: 0; }
 .synthetic { font-size: 12px; color: var(--secondary); margin-top: 10px; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--divider); border-radius: 10px; border: 2px solid var(--canvas); }
 html { scrollbar-color: var(--divider) transparent; caret-color: var(--primary); scroll-padding-top: 80px; }
@@ -134,6 +141,9 @@ html { scrollbar-color: var(--divider) transparent; caret-color: var(--primary);
 @keyframes settle-card { from { transform: translate(-10px, 16px); box-shadow: none; } }
 .vw { animation: settle-window 1.1s var(--ease-out) both; }
 .reader-card { animation: settle-card 1.1s var(--ease-out) .28s both; }
+/* "The brief writes itself": home.js reveals the summary line by line and streams the answer
+   (Web Animations, content visible by default). The class only exists while that runs. */
+html.brief-writing .vw .sum > *, html.brief-writing .vw .chat > * { will-change: clip-path, opacity; }
 
 /* ---------- sections ---------- */
 section.feature { padding: 112px 0; }
@@ -166,7 +176,9 @@ section.feature { padding: 112px 0; }
 .p-top { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; color: var(--secondary); font-size: 15px; }
 .p-top b { display: flex; gap: 8px; align-items: center; color: var(--heading); font-size: 15px; }
 .p-sec { border-top: 1px solid var(--divider); padding: 11px 14px; }
-.rec { display: flex; justify-content: center; align-items: center; gap: 7px; background: var(--primary-fill); color: var(--on-primary); border-radius: 9px; padding: 10px; font-weight: 650; font-size: 13.5px; position: relative; }
+.rec { display: flex; justify-content: center; align-items: center; gap: 7px; width: 100%; border: 0; background: var(--primary-fill); color: var(--on-primary); border-radius: 9px; padding: 10px;
+  font: 650 13.5px/1.2 var(--sys); position: relative; cursor: pointer; transition: background-color .15s ease; }
+.rec:hover { background: color-mix(in srgb, var(--primary-fill) 88%, var(--heading)); }
 .rec small { position: absolute; right: 11px; color: var(--on-primary); font-weight: 500; font-size: 10.5px; letter-spacing: .04em; }
 .profile { display: flex; align-items: center; gap: 10px; margin-top: 9px; color: var(--secondary); }
 .select { flex: 1; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--divider); border-radius: 7px; padding: 5px 9px; color: var(--heading); background: var(--canvas); }
@@ -196,9 +208,31 @@ section.feature { padding: 112px 0; }
 .cc-text span { display: block; margin-top: 3px; font-size: 12.5px; line-height: 1.4; color: var(--secondary); }
 .cc-x { color: var(--secondary); font-size: 15px; margin-top: 2px; }
 .cc-row { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 13px; }
-.mini-btn { display: inline-flex; gap: 6px; align-items: center; border-radius: 10px; padding: 7px 12px; font-weight: 650; font-size: 12.5px; border: 1px solid var(--divider);
+.mini-btn { display: inline-flex; gap: 6px; align-items: center; border-radius: 11px; padding: 7px 12px; font-weight: 650; font-size: 12.5px; border: 1px solid var(--divider);
   color: var(--heading); background: color-mix(in srgb, var(--surface) 80%, var(--canvas)); white-space: nowrap; }
 .mini-btn.fill { background: var(--primary-fill); border-color: var(--primary-fill); color: var(--on-primary); }
+button.mini-btn { font-family: var(--sys); line-height: 1.2; cursor: pointer; transition: border-color .15s ease, background-color .15s ease; }
+button.mini-btn:hover { border-color: var(--secondary); }
+button.mini-btn.fill:hover { background: color-mix(in srgb, var(--primary-fill) 88%, var(--heading)); border-color: transparent; }
+
+/* "Hit record" demo (home.js): the panel swaps to the app's recording controls, a timer and Stop;
+   the header logo bars become a level meter; the menu bar item shows the app's red dot and duration. */
+[hidden] { display: none !important; }
+.p-capture { min-height: 98px; }
+.rec-ui { display: grid; gap: 10px; }
+.rec-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rec-time { font-size: 23px; line-height: 30px; font-weight: 650; color: var(--heading); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.rec-state { display: inline-flex; gap: 5px; align-items: center; color: var(--danger); font-size: 11px; font-weight: 550; }
+.rec-dot { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
+.is-rec .rec-state .rec-dot { animation: rec-pulse 1.6s ease-in-out infinite; }
+.is-rec.is-held .rec-state .rec-dot { animation-play-state: paused; }
+@keyframes rec-pulse { 50% { opacity: .35; } }
+.stop { display: flex; justify-content: center; align-items: center; gap: 6px; width: 100%; height: 34px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--danger-border); background: var(--danger-fill); color: var(--danger); font: 650 13px var(--sys); transition: border-color .15s ease; }
+.stop:hover { border-color: var(--danger); }
+.mb-rec { display: inline-flex; gap: 5px; align-items: center; font-size: 11.5px; line-height: 14px; color: var(--heading); font-variant-numeric: tabular-nums; }
+.mb-rec .rec-dot { width: 9px; height: 9px; }
+.meter i { transform-origin: center; transition: transform .11s linear; }
 
 /* Actions tab */
 .actions-mock { background: var(--canvas); border: 1px solid var(--divider); border-radius: 16px; box-shadow: var(--shadow-lg); padding: 14px 22px 18px; font-size: 13px; color: var(--text); }
@@ -210,8 +244,18 @@ section.feature { padding: 112px 0; }
 .owner:last-child { margin-bottom: 0; }
 .owner .nm { display: flex; align-items: center; gap: 9px; font-weight: 650; color: var(--heading); padding-bottom: 8px; border-bottom: 1px solid var(--divider); margin-bottom: 3px; }
 .owner .cnt { margin-left: auto; font-size: 10.5px; border: 1px solid var(--divider); border-radius: 6px; padding: 0 6px; color: var(--secondary); font-weight: 550; }
-.todo { display: flex; gap: 11px; align-items: flex-start; padding: 5px 0; }
-.todo .ico { color: var(--secondary); margin-top: 2px; font-size: 15px; }
+.todo { display: flex; gap: 6px; align-items: flex-start; padding: 5px 0; }
+/* Completing an action, as in the app: the ring fills with the accent, a check draws in, the text is struck through. */
+.todo-tick { flex: none; display: grid; place-items: center; width: 24px; height: 24px; margin: -2px 0 -2px -4px; padding: 0; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; }
+.todo-tick svg { width: 16px; height: 16px; overflow: visible; }
+.t-ring { fill: none; stroke: color-mix(in srgb, var(--secondary) 80%, transparent); stroke-width: 1.7; transition: stroke .18s ease; }
+.t-fill { fill: var(--primary); transform-box: fill-box; transform-origin: center; transform: scale(0); transition: transform .18s var(--ease-out); }
+.t-chk { fill: none; stroke: var(--on-primary); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .16s var(--ease-out) .05s; }
+.todo-tick:hover .t-ring, .todo-tick[aria-pressed="true"] .t-ring { stroke: var(--primary); }
+.todo-tick[aria-pressed="true"] .t-fill { transform: scale(1); }
+.todo-tick[aria-pressed="true"] .t-chk { stroke-dashoffset: 0; }
+.todo-text { text-decoration: line-through; text-decoration-color: transparent; transition: color .18s ease, text-decoration-color .18s ease; }
+.todo.done .todo-text { color: var(--secondary); text-decoration-color: currentColor; }
 .dest { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; margin: 28px 0 0; }
 .dest li { display: inline-flex; gap: 7px; align-items: center; padding: 7px 12px; border-radius: 10px; border: 1px solid var(--divider); background: var(--surface); font-size: 13.5px; color: var(--heading); font-weight: 550; }
 .dest i { width: 9px; height: 9px; border-radius: 3px; display: block; }
@@ -425,4 +469,11 @@ section.feature { padding: 112px 0; }
 }
 @media (max-width: 380px) {
   .nav .btn { display: none; }
+}
+
+/* Reduced motion: theme.css stops every CSS transition and animation; home.js skips the writing,
+   the word streams and the level meter (the demo timer still counts). State changes stay visible. */
+@media (prefers-reduced-motion: reduce) {
+  .meter i { transform: none !important; }
+  .is-rec .rec-state .rec-dot { animation: none; }
 }
