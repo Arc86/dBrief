@@ -1059,11 +1059,10 @@ struct TranscriptDetailView: View, Equatable {
 
     // MARK: - Assistant panel (finished recording)
 
-    private var isOnDeviceAI: Bool {
-        switch context.appSettings.aiEngine {
-        case .appleIntelligence, .qwenLocal: return true
-        default: return false
-        }
+    private var assistantSubtitle: String {
+        let settings = context.appSettings
+        return ViewerAssistantSubtitle.text(for: settings.chatEngine,
+                                            remoteName: settings.effectiveDefaultAIEndpoint?.name)
     }
 
     /// The assistant slot beside the document. It stays mounted and animates its
@@ -1088,7 +1087,7 @@ struct TranscriptDetailView: View, Equatable {
 
     private func assistantPanel(mountsChat: Bool, onClose: @escaping () -> Void) -> some View {
         ViewerAssistantPanel(
-            onDevice: isOnDeviceAI,
+            subtitle: assistantSubtitle,
             onClose: onClose,
             onClearChat: { chatService?.clearMessages() },
             clearChatDisabled: isReprocessing || chatService?.isStreaming != false || chatService?.messages.isEmpty != false,

@@ -553,7 +553,7 @@ private struct ViewerWorkspaceFixture: View {
                         EmptyView()
                     } assistant: {
                         if model.assistantOpen {
-                            ViewerAssistantPanel(onDevice: false, onClose: { model.assistantOpen = false }) {
+                            ViewerAssistantPanel(onClose: { model.assistantOpen = false }) {
                                 TranscriptChatView(chatService: chatService)
                                     .trackWorkspaceBounds("chat")
                             }

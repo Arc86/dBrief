@@ -68703,7 +68703,38 @@
         }
       }
     },
+    "This recording · %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deze opname · %@"
+          }
+        }
+      }
+    },
+    "This recording · Apple Intelligence, on-device" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deze opname · Apple Intelligence, op het apparaat"
+          }
+        }
+      }
+    },
+    "This recording · Gemma, on-device" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deze opname · Gemma, op het apparaat"
+          }
+        }
+      }
+    },
     "This recording · On-device" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
