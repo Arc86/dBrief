@@ -1760,6 +1760,14 @@ Se conservaron los resultados actuales. Resuelve el error y elige Reanudar en Co
 	<string>Error al verificar la salida finalizada; se conservó la captura sin procesar.</string>
 	<key>Finalizing audio</key>
 	<string>Finalizando el audio</string>
+	<key>Find</key>
+	<string>Buscar</string>
+	<key>Find Next</key>
+	<string>Buscar siguiente</string>
+	<key>Find Previous</key>
+	<string>Buscar anterior</string>
+	<key>Find…</key>
+	<string>Buscar…</string>
 	<key>Finish or discard the pending reprocessing attempt to use chat.</key>
 	<string>Termina o descarta el intento de nuevo procesamiento pendiente para usar el chat.</string>
 	<key>Finish reviewing integration deliveries first.</key>
@@ -2994,6 +3002,8 @@ Mezcla: amix normalize=0</string>
 	<string>Personas que conocí este mes</string>
 	<key>People this month</key>
 	<string>Personas este mes</string>
+	<key>People to merge into</key>
+	<string>Personas con las que combinar</string>
 	<key>Performance</key>
 	<string>Rendimiento</string>
 	<key>Permissions</key>

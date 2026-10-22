@@ -1760,6 +1760,14 @@ De huidige resultaten zijn bewaard. Los de fout op en kies daarna Hervat in Wach
 	<string>Controle van de afgeronde uitvoer mislukt; de onbewerkte opname is bewaard.</string>
 	<key>Finalizing audio</key>
 	<string>Audio afronden</string>
+	<key>Find</key>
+	<string>Zoek</string>
+	<key>Find Next</key>
+	<string>Zoek volgende</string>
+	<key>Find Previous</key>
+	<string>Zoek vorige</string>
+	<key>Find…</key>
+	<string>Zoek…</string>
 	<key>Finish or discard the pending reprocessing attempt to use chat.</key>
 	<string>Rond de nieuwe verwerking af of gooi deze weg om chat te gebruiken.</string>
 	<key>Finish reviewing integration deliveries first.</key>
@@ -2994,6 +3002,8 @@ Mix: amix normalize=0</string>
 	<string>Mensen deze maand</string>
 	<key>People this month</key>
 	<string>Mensen deze maand</string>
+	<key>People to merge into</key>
+	<string>Personen om mee samen te voegen</string>
 	<key>Performance</key>
 	<string>Prestaties</string>
 	<key>Permissions</key>
