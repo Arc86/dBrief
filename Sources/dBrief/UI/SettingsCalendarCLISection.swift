@@ -41,6 +41,7 @@ struct SettingsCalendarCLISection: View {
                     set: { settings.calendarCLIConfig = config.updating(mailboxEmail: $0) }
                 ), prompt: Text("name@company.com"))
                 .settingsTextField()
+                .accessibilityLabel("Mailbox")
                 .frame(width: 240)
                 .focused($focusedField, equals: .mailbox)
                 .onSubmit { configurationChanged() }
@@ -51,6 +52,7 @@ struct SettingsCalendarCLISection: View {
                     set: { settings.calendarCLIConfig = config.updating(calendarName: $0.isEmpty ? nil : $0) }
                 ), prompt: Text("Default calendar"))
                 .settingsTextField()
+                .accessibilityLabel("Calendar name")
                 .frame(width: 240)
                 .focused($focusedField, equals: .calendarName)
                 .onSubmit { configurationChanged() }

@@ -168,6 +168,7 @@ struct SettingsVoiceLibraryTab: View {
         HStack(spacing: 10) {
             TextField("Search name or company", text: $query)
                 .settingsTextField()
+                .accessibilityLabel("Search voice library")
                 .frame(minWidth: 140, maxWidth: 220)
 
             Menu {

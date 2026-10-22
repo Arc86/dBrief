@@ -39069,6 +39069,34 @@
         }
       }
     },
+    "New suggested question" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neue vorgeschlagene Frage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nueva pregunta sugerida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nouvelle question suggérée"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nieuwe voorgestelde vraag"
+          }
+        }
+      }
+    },
     "New term" : {
       "localizations" : {
         "de" : {
@@ -57393,6 +57421,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Zoek in transcript"
+          }
+        }
+      }
+    },
+    "Search voice library" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stimmbibliothek durchsuchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Buscar en la biblioteca de voces"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rechercher dans la bibliothèque vocale"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoek in stembibliotheek"
           }
         }
       }

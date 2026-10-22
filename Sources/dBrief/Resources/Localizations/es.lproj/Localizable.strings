@@ -2536,6 +2536,8 @@ Mezcla: amix normalize=0</string>
 	<string>Nombre nuevo</string>
 	<key>New profile</key>
 	<string>Perfil nuevo</string>
+	<key>New suggested question</key>
+	<string>Nueva pregunta sugerida</string>
 	<key>New term</key>
 	<string>Término nuevo</string>
 	<key>Next match (⌘G)</key>
@@ -3824,6 +3826,8 @@ Mezcla: amix normalize=0</string>
 	<string>Buscar en ajustes</string>
 	<key>Search transcript</key>
 	<string>Buscar en la transcripción</string>
+	<key>Search voice library</key>
+	<string>Buscar en la biblioteca de voces</string>
 	<key>Seasoned male voice with a low, mellow timbre · Chinese</key>
 	<string>Voz masculina experimentada con un timbre grave y suave · Chino</string>
 	<key>Section ID</key>

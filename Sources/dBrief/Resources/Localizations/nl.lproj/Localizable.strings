@@ -2536,6 +2536,8 @@ Mix: amix normalize=0</string>
 	<string>Nieuwe naam</string>
 	<key>New profile</key>
 	<string>Nieuw profiel</string>
+	<key>New suggested question</key>
+	<string>Nieuwe voorgestelde vraag</string>
 	<key>New term</key>
 	<string>Nieuwe term</string>
 	<key>Next match (⌘G)</key>
@@ -3824,6 +3826,8 @@ Mix: amix normalize=0</string>
 	<string>Zoek in instellingen</string>
 	<key>Search transcript</key>
 	<string>Zoek in transcript</string>
+	<key>Search voice library</key>
+	<string>Zoek in stembibliotheek</string>
 	<key>Seasoned male voice with a low, mellow timbre · Chinese</key>
 	<string>Ervaren mannenstem met een lage, zachte klank · Chinees</string>
 	<key>Section ID</key>
