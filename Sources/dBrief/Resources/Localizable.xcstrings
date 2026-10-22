@@ -23754,6 +23754,16 @@
         }
       }
     },
+    "Don't ask for %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Niet meer vragen voor %@"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "de" : {
@@ -61921,6 +61931,16 @@
         }
       }
     },
+    "Stop call prompts for this app. Turn it back on in Settings → Meetings." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geen gespreksmeldingen meer voor deze app. Zet ze weer aan in Instellingen → Vergaderingen."
+          }
+        }
+      }
+    },
     "Stop generating" : {
       "localizations" : {
         "de" : {
@@ -74407,6 +74427,16 @@
         }
       }
     },
+    "Web calls" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Webgesprekken"
+          }
+        }
+      }
+    },
     "Webhook" : {
       "localizations" : {
         "de" : {
@@ -76960,6 +76990,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "dBrief heeft toegang tot je agenda nodig om vergaderingen te koppelen."
+          }
+        }
+      }
+    },
+    "dBrief won't ask for %@ calls. Turn it back on in Settings → Meetings." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief vraagt niet meer bij gesprekken in %@. Zet het weer aan in Instellingen → Vergaderingen."
           }
         }
       }

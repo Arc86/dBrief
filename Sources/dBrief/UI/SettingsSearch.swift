@@ -47,7 +47,7 @@ enum SettingsSearch {
         .init("setup", "Setup guide", "welcome onboarding first run", section: .setupGuide),
         .init("shortcut", "Recording shortcut", "hotkey keyboard start stop", section: .recordingShortcut),
         .init("detection", "Call detection", "auto start dismiss meeting ends microphone", section: .callDetection),
-        .init("platforms", "Meeting platforms", "call platforms zoom teams slack webex facetime google meet", section: .callPlatforms),
+        .init("platforms", "Meeting platforms", "call platforms apps to watch zoom teams slack webex facetime google meet web call browser chrome safari arc edge firefox brave", section: .callPlatforms),
         .init("input", "Audio input device", "microphone system default refresh", section: .audioInput),
         .init("echo", "Reduce microphone echo", "echo cancellation speakers headphones", section: .echoCancellation),
         .init("indicators", "Recording indicators", "floating window status duration menu bar", section: .recordingIndicators),
