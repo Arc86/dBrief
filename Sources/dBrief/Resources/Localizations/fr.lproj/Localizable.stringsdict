@@ -1,0 +1,641 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>%@ kept unnamed. Now %@, ^[%lld voice](inflect: true) left.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ reste sans nom. Au tour de %2$@ ; %3$#@n@.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%3$lld voix restante</string>
+			<key>other</key>
+			<string>%3$lld voix restantes</string>
+		</dict>
+	</dict>
+	<key>%@ named %@. Now %@, ^[%lld voice](inflect: true) left.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ s’appelle désormais %2$@. Au tour de %3$@ ; %4$#@n@.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%4$lld voix restante</string>
+			<key>other</key>
+			<string>%4$lld voix restantes</string>
+		</dict>
+	</dict>
+	<key>%@ profile · %lld tasks selected</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Profil %1$@ · %2$#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld étape sélectionnée</string>
+			<key>other</key>
+			<string>%2$lld étapes sélectionnées</string>
+		</dict>
+	</dict>
+	<key>%@ · %lld attendees</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld participant</string>
+			<key>other</key>
+			<string>%2$lld participants</string>
+		</dict>
+	</dict>
+	<key>%@ · %lld fields</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld champ</string>
+			<key>other</key>
+			<string>%2$lld champs</string>
+		</dict>
+	</dict>
+	<key>%@: %@ and ^[%lld more step](inflect: true) didn't finish. Open it to retry.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ : %2$@ et %3$#@n@ n’ont pas abouti. Ouvrez-le pour réessayer.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%3$lld autre étape</string>
+			<key>other</key>
+			<string>%3$lld autres étapes</string>
+		</dict>
+	</dict>
+	<key>%lld attendees loaded</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld participant chargé</string>
+			<key>other</key>
+			<string>%lld participants chargés</string>
+		</dict>
+	</dict>
+	<key>%lld calendars</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld calendrier</string>
+			<key>other</key>
+			<string>%lld calendriers</string>
+		</dict>
+	</dict>
+	<key>%lld days</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld jour</string>
+			<key>other</key>
+			<string>%lld jours</string>
+		</dict>
+	</dict>
+	<key>%lld meeting participants</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld participant à la réunion</string>
+			<key>other</key>
+			<string>%lld participants à la réunion</string>
+		</dict>
+	</dict>
+	<key>%lld minutes</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld minute</string>
+			<key>other</key>
+			<string>%lld minutes</string>
+		</dict>
+	</dict>
+	<key>%lld models · nothing downloads until first use</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld modèle · aucun téléchargement avant la première utilisation</string>
+			<key>other</key>
+			<string>%lld modèles · aucun téléchargement avant la première utilisation</string>
+		</dict>
+	</dict>
+	<key>%lld need attention</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld requiert votre attention</string>
+			<key>other</key>
+			<string>%lld requièrent votre attention</string>
+		</dict>
+	</dict>
+	<key>%lld participants</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld participant</string>
+			<key>other</key>
+			<string>%lld participants</string>
+		</dict>
+	</dict>
+	<key>%lld permissions need attention.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld autorisation requiert votre attention.</string>
+			<key>other</key>
+			<string>%lld autorisations requièrent votre attention.</string>
+		</dict>
+	</dict>
+	<key>%lld recordings found</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld enregistrement trouvé</string>
+			<key>other</key>
+			<string>%lld enregistrements trouvés</string>
+		</dict>
+	</dict>
+	<key>%lld seconds</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld seconde</string>
+			<key>other</key>
+			<string>%lld secondes</string>
+		</dict>
+	</dict>
+	<key>%lld selected calendars are unavailable and won’t provide meetings.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld calendrier sélectionné est indisponible et ne fournira pas de réunions.</string>
+			<key>other</key>
+			<string>%lld calendriers sélectionnés sont indisponibles et ne fourniront pas de réunions.</string>
+		</dict>
+	</dict>
+	<key>%lld sessions</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld session</string>
+			<key>other</key>
+			<string>%lld sessions</string>
+		</dict>
+	</dict>
+	<key>%lld tasks weren't added to Todoist: %@</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@n@ à Todoist : %2$@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%1$lld tâche n’a pas été ajoutée</string>
+			<key>other</key>
+			<string>%1$lld tâches n’ont pas été ajoutées</string>
+		</dict>
+	</dict>
+	<key>%lld words</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld mot</string>
+			<key>other</key>
+			<string>%lld mots</string>
+		</dict>
+	</dict>
+	<key>**%@** overrides %lld settings on this page.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>**%1$@** remplace %2$#@n@ sur cette page.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld réglage</string>
+			<key>other</key>
+			<string>%2$lld réglages</string>
+		</dict>
+	</dict>
+	<key>Add %lld Items</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Ajouter %lld élément</string>
+			<key>other</key>
+			<string>Ajouter %lld éléments</string>
+		</dict>
+	</dict>
+	<key>Added %lld action items.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld action à mener ajoutée.</string>
+			<key>other</key>
+			<string>%lld actions à mener ajoutées.</string>
+		</dict>
+	</dict>
+	<key>Connected — the connector answered the test window (%lld events).</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Connecté — le connecteur a répondu pour la période de test (%lld événement).</string>
+			<key>other</key>
+			<string>Connecté — le connecteur a répondu pour la période de test (%lld événements).</string>
+		</dict>
+	</dict>
+	<key>Connected, %lld events</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Connecté, %lld événement</string>
+			<key>other</key>
+			<string>Connecté, %lld événements</string>
+		</dict>
+	</dict>
+	<key>Connected, %lld models found</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Connecté, %lld modèle trouvé</string>
+			<key>other</key>
+			<string>Connecté, %lld modèles trouvés</string>
+		</dict>
+	</dict>
+	<key>Deleted %lld files (%@).</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@n@ (%2$@).</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%1$lld fichier supprimé</string>
+			<key>other</key>
+			<string>%1$lld fichiers supprimés</string>
+		</dict>
+	</dict>
+	<key>Deleted %lld files. Some privacy evidence could not be removed; retry cleanup when storage is available.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld fichier supprimé. Certaines preuves de confidentialité n’ont pas pu être supprimées ; relancez le nettoyage lorsque le stockage sera disponible.</string>
+			<key>other</key>
+			<string>%lld fichiers supprimés. Certaines preuves de confidentialité n’ont pas pu être supprimées ; relancez le nettoyage lorsque le stockage sera disponible.</string>
+		</dict>
+	</dict>
+	<key>Imported %lld profiles.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld profil importé.</string>
+			<key>other</key>
+			<string>%lld profils importés.</string>
+		</dict>
+	</dict>
+	<key>Loaded %lld models from the server.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld modèle chargé depuis le serveur.</string>
+			<key>other</key>
+			<string>%lld modèles chargés depuis le serveur.</string>
+		</dict>
+	</dict>
+	<key>Name the %lld voices before the analysis continues.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Nommez la voix avant que l’analyse se poursuive.</string>
+			<key>other</key>
+			<string>Nommez les %lld voix avant que l’analyse se poursuive.</string>
+		</dict>
+	</dict>
+	<key>Processing finished, ^[%lld step](inflect: true) failed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Traitement terminé, %lld étape a échoué</string>
+			<key>other</key>
+			<string>Traitement terminé, %lld étapes ont échoué</string>
+		</dict>
+	</dict>
+	<key>Processing in %lld seconds</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Traitement dans %lld seconde</string>
+			<key>other</key>
+			<string>Traitement dans %lld secondes</string>
+		</dict>
+	</dict>
+	<key>Queueing in %lld seconds</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Mise en file d’attente dans %lld seconde</string>
+			<key>other</key>
+			<string>Mise en file d’attente dans %lld secondes</string>
+		</dict>
+	</dict>
+	<key>The Local CLI command timed out after %lld seconds. Allow more time or try a shorter request.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>La commande CLI locale n’a pas répondu en %lld seconde. Accordez-lui plus de temps ou essayez une requête plus courte.</string>
+			<key>other</key>
+			<string>La commande CLI locale n’a pas répondu en %lld secondes. Accordez-lui plus de temps ou essayez une requête plus courte.</string>
+		</dict>
+	</dict>
+	<key>You have %lld recordings queued for processing. You're now on AC power.</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Vous avez %lld enregistrement en attente de traitement. Votre Mac est maintenant branché sur secteur.</string>
+			<key>other</key>
+			<string>Vous avez %lld enregistrements en attente de traitement. Votre Mac est maintenant branché sur secteur.</string>
+		</dict>
+	</dict>
+	<key>^[%lld person](inflect: true) · ^[%lld voiceprint](inflect: true)</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@p@ · %2$#@v@</string>
+		<key>p</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%1$lld personne</string>
+			<key>other</key>
+			<string>%1$lld personnes</string>
+		</dict>
+		<key>v</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%2$lld empreinte vocale</string>
+			<key>other</key>
+			<string>%2$lld empreintes vocales</string>
+		</dict>
+	</dict>
+	<key>^[%lld voiceprint](inflect: true)</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@value@</string>
+		<key>value</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld empreinte vocale</string>
+			<key>other</key>
+			<string>%lld empreintes vocales</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

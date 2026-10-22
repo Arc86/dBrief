@@ -5,10 +5,28 @@
       "comment" : "Permission prompt shown by macOS. Keep in step with Info.plist.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief steuert Notizen, um deine Meeting-Notizen zu sichern, wenn die Apple Notes-Integration aktiv ist."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief controls Notes to save your meeting notes when the Apple Notes integration is on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief controla Notas para guardar tus notas de reuniones cuando la integración con Apple Notes está activada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief contrôle Notes pour enregistrer vos notes de réunion lorsque l’intégration Apple Notes est activée."
           }
         },
         "nl" : {
@@ -23,10 +41,28 @@
       "comment" : "Permission prompt shown by macOS. Keep in step with Info.plist.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief nutzt deinen Kalender, um beim Aufnehmen Titel, Teilnehmer und Agenda des Meetings vorauszufüllen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief accesses your calendar to pre-fill meeting title, participants, and agenda context at recording time."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief accede a tu calendario para rellenar el título, los participantes y la agenda de la reunión al grabar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief accède à votre calendrier pour préremplir le titre, les participants et l’ordre du jour de la réunion pendant l’enregistrement."
           }
         },
         "nl" : {
@@ -41,10 +77,28 @@
       "comment" : "Permission prompt shown by macOS. Keep in step with Info.plist.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief benötigt Zugriff auf dein Mikrofon, um bei Anrufen und Sprachaufnahmen deine Stimme aufzunehmen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief needs microphone access to record audio from your microphone during calls and voice recordings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief necesita acceder a tu micrófono para grabar tu voz durante llamadas y grabaciones de voz."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief a besoin d’accéder à votre micro pour enregistrer votre voix pendant les appels et les enregistrements vocaux."
           }
         },
         "nl" : {
@@ -59,10 +113,28 @@
       "comment" : "Permission prompt shown by macOS. Keep in step with Info.plist.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief nutzt den vollen Zugriff auf Erinnerungen, um erkannte Aufgaben zu sichern."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief uses full Reminders access to save extracted action items."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief usa el acceso completo a Recordatorios para guardar las tareas detectadas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief utilise l’accès complet à Rappels pour enregistrer les actions à mener détectées."
           }
         },
         "nl" : {
@@ -77,10 +149,28 @@
       "comment" : "Permission prompt shown by macOS. Keep in step with Info.plist.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief nutzt Erinnerungen, um erkannte Aufgaben zu sichern."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief uses Reminders access to save extracted action items."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief usa Recordatorios para guardar las tareas detectadas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief utilise Rappels pour enregistrer les actions à mener détectées."
           }
         },
         "nl" : {
@@ -95,10 +185,28 @@
       "comment" : "Permission prompt shown by macOS. Keep in step with Info.plist.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief benötigt die Berechtigung zur Bildschirmaufnahme, um bei Anrufen den Systemton aufzunehmen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief needs screen recording permission to capture system audio during calls."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief necesita permiso de grabación de pantalla para capturar el audio del sistema durante las llamadas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief a besoin de l’autorisation d’enregistrement de l’écran pour capturer l’audio du système pendant les appels."
           }
         },
         "nl" : {
@@ -113,10 +221,28 @@
       "comment" : "Permission prompt shown by macOS. Keep in step with Info.plist.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief nutzt die Spracherkennung, um deine Aufnahmen direkt auf diesem Mac zu transkribieren."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "dBrief uses speech recognition to transcribe your recordings on-device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief usa el reconocimiento de voz para transcribir tus grabaciones en este Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief utilise la reconnaissance vocale pour transcrire vos enregistrements directement sur ce Mac."
           }
         },
         "nl" : {
