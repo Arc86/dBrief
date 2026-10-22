@@ -9,7 +9,8 @@ enum GemmaEval {
         guard let i = args.firstIndex(of: "--eval-insights"), i + 1 < args.count else { return 2 }
         let language: OutputLanguage = {
             guard let l = args.firstIndex(of: "--language"), l + 1 < args.count else { return .matchInput }
-            switch args[l + 1] { case "en": return .english; case "nl": return .dutch; default: return .matchInput }
+            switch args[l + 1] { case "en": return .english; case "nl": return .dutch; case "de": return .german
+            case "fr": return .french; case "es": return .spanish; default: return .matchInput }
         }()
         EvalNotesDump.evalModeEnabled = true
         do {

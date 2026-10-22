@@ -236,12 +236,18 @@ private struct ReprocessingEditor: View {
             case .matchInput: "match"
             case .english: "en"
             case .dutch: "nl"
+            case .german: "de"
+            case .french: "fr"
+            case .spanish: "es"
             case .custom: "custom"
             }
         }, set: { value in
             switch value {
             case "en": options.outputLanguage = .english
             case "nl": options.outputLanguage = .dutch
+            case "de": options.outputLanguage = .german
+            case "fr": options.outputLanguage = .french
+            case "es": options.outputLanguage = .spanish
             case "custom": options.outputLanguage = .custom("")
             default: options.outputLanguage = .matchInput
             }
@@ -276,6 +282,9 @@ private struct ReprocessingEditor: View {
                     Text("Match transcript").tag("match")
                     Text("English").tag("en")
                     Text("Dutch").tag("nl")
+                    Text("German").tag("de")
+                    Text("French").tag("fr")
+                    Text("Spanish").tag("es")
                     Text("Custom language code").tag("custom")
                 }
                 .labelsHidden().fixedSize()

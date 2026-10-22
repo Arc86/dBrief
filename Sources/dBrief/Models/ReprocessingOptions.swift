@@ -189,12 +189,7 @@ struct ReprocessingOptions: Codable, Sendable {
             // Remote analysis has separate prompts and does not use the unified
             // outputLanguage parameter. Apply this attempt's selection to every
             // requested field, retaining the saved user guidance verbatim.
-            let instruction: String = switch outputLanguage {
-            case .english: "OUTPUT LANGUAGE: ENGLISH (Must translate if transcript is different)."
-            case .dutch: "OUTPUT LANGUAGE: DUTCH (Must translate if transcript is different)."
-            case .custom(let code): "OUTPUT LANGUAGE: ISO Code \(code.uppercased())."
-            case .matchInput: "OUTPUT LANGUAGE: Match the language of the transcript exactly."
-            }
+            let instruction = outputLanguage.promptInstruction
             guidance = .init(summary: summaryPrompt + "\n\n" + instruction,
                 actionItems: actionItemsPrompt + "\n\n" + instruction,
                 tags: tagsPrompt + "\n\n" + instruction)

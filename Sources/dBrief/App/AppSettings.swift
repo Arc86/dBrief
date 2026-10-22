@@ -1048,6 +1048,12 @@ final class AppSettings {
             self.outputLanguage = .english
         case "dutch":
             self.outputLanguage = .dutch
+        case "german":
+            self.outputLanguage = .german
+        case "french":
+            self.outputLanguage = .french
+        case "spanish":
+            self.outputLanguage = .spanish
         case "custom":
             let code = (defaults.string(forKey: Keys.outputLanguageCustomCode) ?? "EN")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1229,6 +1235,9 @@ extension OutputLanguage {
         case .matchInput: "matchInput"
         case .english: "english"
         case .dutch: "dutch"
+        case .german: "german"
+        case .french: "french"
+        case .spanish: "spanish"
         case .custom: "custom"
         }
     }
