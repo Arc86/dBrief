@@ -49,10 +49,24 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Show build environment
+        id: env
         run: |
           swift --version
           uname -a
           test "$(uname -m)" = "arm64"
+          echo "swift=$(swift --version 2>&1 | head -1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      # Dependencies (MLX, WhisperKit, FluidAudio…) dominate a cold build. The cache is
+      # saved only from main, after the tests and before the beta build, so it holds the
+      # debug build alone; pull requests restore main's copy.
+      - name: Restore build cache
+        id: build-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.env.outputs.swift }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.env.outputs.swift }}-
 
       - name: Check summary editor bundle
         working-directory: web/markdown-editor
@@ -69,10 +83,21 @@ jobs:
           python3 scripts/test_ticktick_credentials.py
           swift test
 
+      - name: Save build cache
+        if: github.event_name == 'push' && steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .build
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
+
+      # The beta package is built and uploaded from main (and manual runs), not on
+      # every pull request push.
       - name: Assemble beta app
+        if: github.event_name != 'pull_request'
         run: make beta CODESIGN_IDENTITY=-
 
       - name: Verify beta bundle
+        if: github.event_name != 'pull_request'
         run: |
           test -d dBrief-Beta.app
           test ! -e dBrief.app
@@ -85,9 +110,11 @@ jobs:
           codesign --verify --deep --strict --verbose=2 dBrief-Beta.app
 
       - name: Archive beta bundle
+        if: github.event_name != 'pull_request'
         run: ditto -c -k --sequesterRsrc --keepParent dBrief-Beta.app dBrief-Beta.zip
 
       - name: Upload beta bundle
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: dBrief-Beta-${{ github.sha }}
