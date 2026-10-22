@@ -88,16 +88,7 @@ public enum UnifiedInsightsPrompt {
     }
 
     private static func languageInstruction(_ outputLanguage: OutputLanguage) -> String {
-        switch outputLanguage {
-        case .english:
-            return "OUTPUT LANGUAGE: ENGLISH (Must translate if transcript is different)."
-        case .dutch:
-            return "OUTPUT LANGUAGE: DUTCH (Must translate if transcript is different)."
-        case .custom(let code):
-            return "OUTPUT LANGUAGE: ISO Code \(code.uppercased())."
-        case .matchInput:
-            return "OUTPUT LANGUAGE: Match the language of the transcript exactly."
-        }
+        outputLanguage.promptInstruction
     }
 
     /// Shared analysis rules + output-language instruction, WITHOUT any output-format

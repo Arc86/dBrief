@@ -252,7 +252,7 @@ struct ReprocessingOptionsTests {
         options.actionItemsPrompt = "Include owners."
         options.tagsPrompt = "Use concise topics."
         let cases: [(OutputLanguage, String)] = [
-            (.english, "ENGLISH"), (.dutch, "DUTCH"),
+            (.english, "ENGLISH"), (.dutch, "DUTCH"), (.german, "GERMAN"), (.french, "FRENCH"), (.spanish, "SPANISH"),
             (.custom("fr"), "ISO Code FR"), (.matchInput, "Match the language of the transcript")
         ]
         for (language, expected) in cases {

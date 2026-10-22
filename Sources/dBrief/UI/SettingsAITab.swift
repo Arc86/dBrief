@@ -59,6 +59,9 @@ struct SettingsAITab: View {
                             Text("Same as transcript").tag("matchInput")
                             Text("English").tag("english")
                             Text("Dutch").tag("dutch")
+                            Text("German").tag("german")
+                            Text("French").tag("french")
+                            Text("Spanish").tag("spanish")
                             Text("Custom").tag("custom")
                         }
                         .pickerStyle(.menu)
@@ -140,12 +143,7 @@ struct SettingsAITab: View {
     private var outputLanguageSelectionBinding: Binding<String> {
         return Binding<String>(
             get: {
-                switch appSettings.outputLanguage {
-                case .matchInput: "matchInput"
-                case .english: "english"
-                case .dutch: "dutch"
-                case .custom: "custom"
-                }
+                appSettings.outputLanguage.modeStorageValue
             },
             set: { value in
                 switch value {
@@ -153,6 +151,12 @@ struct SettingsAITab: View {
                     appSettings.outputLanguage = .english
                 case "dutch":
                     appSettings.outputLanguage = .dutch
+                case "german":
+                    appSettings.outputLanguage = .german
+                case "french":
+                    appSettings.outputLanguage = .french
+                case "spanish":
+                    appSettings.outputLanguage = .spanish
                 case "custom":
                     let currentCode: String = {
                         if case .custom(let code) = appSettings.outputLanguage {

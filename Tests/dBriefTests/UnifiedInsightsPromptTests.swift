@@ -27,6 +27,9 @@ struct UnifiedInsightsPromptTests {
     func languageInstructionVaries() {
         #expect(UnifiedInsightsPrompt.systemPrompt(outputLanguage: .english).contains("ENGLISH"))
         #expect(UnifiedInsightsPrompt.systemPrompt(outputLanguage: .dutch).contains("DUTCH"))
+        #expect(UnifiedInsightsPrompt.systemPrompt(outputLanguage: .german).contains("GERMAN"))
+        #expect(UnifiedInsightsPrompt.systemPrompt(outputLanguage: .french).contains("FRENCH"))
+        #expect(UnifiedInsightsPrompt.systemPrompt(outputLanguage: .spanish).contains("SPANISH"))
         #expect(UnifiedInsightsPrompt.systemPrompt(outputLanguage: .custom("fr")).contains("ISO Code FR"))
         #expect(UnifiedInsightsPrompt.systemPrompt(outputLanguage: .matchInput).contains("Match the language"))
     }
