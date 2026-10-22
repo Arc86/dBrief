@@ -1760,6 +1760,14 @@ Les résultats actuels ont été conservés. Corrigez l’erreur, puis choisisse
 	<string>La vérification de la sortie finalisée a échoué ; la capture brute a été conservée.</string>
 	<key>Finalizing audio</key>
 	<string>Finalisation de l’audio</string>
+	<key>Find</key>
+	<string>Rechercher</string>
+	<key>Find Next</key>
+	<string>Rechercher le suivant</string>
+	<key>Find Previous</key>
+	<string>Rechercher le précédent</string>
+	<key>Find…</key>
+	<string>Rechercher…</string>
 	<key>Finish or discard the pending reprocessing attempt to use chat.</key>
 	<string>Terminez ou ignorez la tentative de retraitement en attente pour utiliser le chat.</string>
 	<key>Finish reviewing integration deliveries first.</key>
@@ -2528,6 +2536,8 @@ Mixage : amix normalize=0</string>
 	<string>Nouveau nom</string>
 	<key>New profile</key>
 	<string>Nouveau profil</string>
+	<key>New suggested question</key>
+	<string>Nouvelle question suggérée</string>
 	<key>New term</key>
 	<string>Nouveau terme</string>
 	<key>Next match (⌘G)</key>
@@ -2994,6 +3004,8 @@ Mixage : amix normalize=0</string>
 	<string>Personnes rencontrées ce mois-ci</string>
 	<key>People this month</key>
 	<string>Personnes ce mois-ci</string>
+	<key>People to merge into</key>
+	<string>Personnes avec qui fusionner</string>
 	<key>Performance</key>
 	<string>Performances</string>
 	<key>Permissions</key>
@@ -3814,6 +3826,8 @@ Mixage : amix normalize=0</string>
 	<string>Rechercher dans les réglages</string>
 	<key>Search transcript</key>
 	<string>Rechercher dans la transcription</string>
+	<key>Search voice library</key>
+	<string>Rechercher dans la bibliothèque vocale</string>
 	<key>Seasoned male voice with a low, mellow timbre · Chinese</key>
 	<string>Voix masculine expérimentée au timbre grave et doux · chinois</string>
 	<key>Section ID</key>

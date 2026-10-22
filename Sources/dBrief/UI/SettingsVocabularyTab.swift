@@ -23,6 +23,7 @@ struct SettingsVocabularyTab: View {
                             TextField("New term", text: $newTermText, prompt: Text("Add a name, acronym or product…"))
                                 .labelsHidden()
                                 .settingsTextField()
+                                .accessibilityLabel("New term")
                                 .frame(maxWidth: .infinity)
                                 .onSubmit { addTerm() }
                             Button("Add") { addTerm() }

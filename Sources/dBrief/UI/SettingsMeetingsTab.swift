@@ -96,6 +96,7 @@ struct SettingsMeetingsTab: View {
             appIcon(app)
                 .frame(width: 22, height: 22)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .accessibilityHidden(true) // the toggle carries the app's name
             VStack(alignment: .leading, spacing: 1) {
                 Text(app.name)
                     .uiFont(.system(size: 12.5, weight: .medium))

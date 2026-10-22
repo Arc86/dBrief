@@ -168,6 +168,7 @@ struct SettingsVoiceLibraryTab: View {
         HStack(spacing: 10) {
             TextField("Search name or company", text: $query)
                 .settingsTextField()
+                .accessibilityLabel("Search voice library")
                 .frame(minWidth: 140, maxWidth: 220)
 
             Menu {
@@ -498,42 +499,16 @@ struct SettingsVoiceLibraryTab: View {
 
     @ViewBuilder
     private func mergeSheet(_ source: KnownPerson) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Merge \u{201C}\(source.name)\u{201D} into\u{2026}").uiFont(.headline).foregroundStyle(palette.heading.color)
-            Text("All of \(source.name)\u{2019}s voiceprints move into the person you pick, and \u{201C}\(source.name)\u{201D} is removed.")
-                .uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color).fixedSize(horizontal: false, vertical: true)
-            ScrollView {
-                VStack(spacing: 6) {
-                    ForEach(VoiceLibraryDisplay.sortedByLastSeen(library.people.filter { $0.id != source.id })) { target in
-                        Button {
-                            Task {
-                                await context.voiceLibraryStore.merge(sourceId: source.id, into: target.id)
-                                mergeSource = nil
-                                selection = [target.id]
-                                await reload()
-                            }
-                        } label: {
-                            HStack {
-                                Text(target.name)
-                                Spacer()
-                                Text(VoiceLibraryDisplay.sampleSummary(target)).foregroundStyle(palette.secondary.color)
-                            }
-                        }
-                        .buttonStyle(.settingsSecondary)
-                    }
-                }
-            }
-            .frame(maxHeight: 360)
-            HStack {
-                Spacer()
-                Button("Cancel") { mergeSource = nil }
-                    .buttonStyle(.settingsSecondary)
-                    .keyboardShortcut(.cancelAction)
+        VoiceMergeSheet(source: source,
+                        targets: VoiceLibraryDisplay.sortedByLastSeen(library.people.filter { $0.id != source.id }),
+                        onCancel: { mergeSource = nil }) { target in
+            Task {
+                await context.voiceLibraryStore.merge(sourceId: source.id, into: target.id)
+                mergeSource = nil
+                selection = [target.id]
+                await reload()
             }
         }
-        .padding(20)
-        .frame(minWidth: 320)
-        .background(palette.canvas.color)
     }
 
     // MARK: - Mutations
@@ -679,5 +654,59 @@ private struct VoiceLibraryTableRow<MenuItems: View>: View {
         .onHover { hovered = $0 }
         .contextMenu { menuItems() }
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// "Merge into…": a native list, so ↑/↓ choose the person, Return or a double-click
+/// merges, and VoiceOver reads it as a list. The newest person starts selected.
+private struct VoiceMergeSheet: View {
+    let source: KnownPerson
+    let targets: [KnownPerson]
+    let onCancel: () -> Void
+    let onMerge: (KnownPerson) -> Void
+    @Environment(\.viewerPalette) private var palette
+    @State private var targetID: KnownPerson.ID?
+    @FocusState private var listFocused: Bool
+
+    private var target: KnownPerson? { targets.first { $0.id == targetID } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Merge \u{201C}\(source.name)\u{201D} into\u{2026}").uiFont(.headline).foregroundStyle(palette.heading.color)
+            Text("All of \(source.name)\u{2019}s voiceprints move into the person you pick, and \u{201C}\(source.name)\u{201D} is removed.")
+                .uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color).fixedSize(horizontal: false, vertical: true)
+            List(targets, selection: $targetID) { person in
+                HStack {
+                    Text(person.name)
+                    Spacer()
+                    Text(VoiceLibraryDisplay.sampleSummary(person)).foregroundStyle(palette.secondary.color)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            .listStyle(.bordered)
+            .frame(minHeight: 160, maxHeight: 360)
+            .focused($listFocused)
+            .accessibilityLabel("People to merge into")
+            .contextMenu(forSelectionType: KnownPerson.ID.self, menu: { _ in }) { ids in
+                if let id = ids.first, let person = targets.first(where: { $0.id == id }) { onMerge(person) }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.settingsSecondary)
+                    .keyboardShortcut(.cancelAction)
+                Button("Merge") { if let target { onMerge(target) } }
+                    .buttonStyle(.settingsPrimary)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(target == nil)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 320)
+        .background(palette.canvas.color)
+        .onAppear {
+            targetID = targets.first?.id
+            listFocused = true
+        }
     }
 }

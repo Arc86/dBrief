@@ -27944,6 +27944,118 @@
         }
       }
     },
+    "Find" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Buscar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rechercher"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoek"
+          }
+        }
+      }
+    },
+    "Find Next" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Weitersuchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Buscar siguiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rechercher le suivant"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoek volgende"
+          }
+        }
+      }
+    },
+    "Find Previous" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rückwärts suchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Buscar anterior"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rechercher le précédent"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoek vorige"
+          }
+        }
+      }
+    },
+    "Find…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suchen …"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Buscar…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rechercher…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoek…"
+          }
+        }
+      }
+    },
     "Finish or discard the pending reprocessing attempt to use chat." : {
       "localizations" : {
         "de" : {
@@ -38957,6 +39069,34 @@
         }
       }
     },
+    "New suggested question" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neue vorgeschlagene Frage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nueva pregunta sugerida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nouvelle question suggérée"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nieuwe voorgestelde vraag"
+          }
+        }
+      }
+    },
     "New term" : {
       "localizations" : {
         "de" : {
@@ -45484,6 +45624,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Mensen deze maand"
+          }
+        }
+      }
+    },
+    "People to merge into" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Personen zum Zusammenführen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Personas con las que combinar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Personnes avec qui fusionner"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Personen om mee samen te voegen"
           }
         }
       }
@@ -57253,6 +57421,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Zoek in transcript"
+          }
+        }
+      }
+    },
+    "Search voice library" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stimmbibliothek durchsuchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Buscar en la biblioteca de voces"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rechercher dans la bibliothèque vocale"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoek in stembibliotheek"
           }
         }
       }

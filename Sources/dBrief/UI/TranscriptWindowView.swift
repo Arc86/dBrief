@@ -352,7 +352,6 @@ struct TranscriptDetailView: View, Equatable {
             invalidateDerivedWork()
             Task { await reloadReprocessedResults() }
         }
-        .background { if !isLive { findShortcuts } }
         .onChange(of: searchQuery) { _, _ in scheduleSearchRecompute() }
         .onChange(of: transcriptSearchFocused) { _, focused in
             if focused { isSearchPresented = true }
@@ -493,7 +492,10 @@ struct TranscriptDetailView: View, Equatable {
             renameCurrentSpeaker: canEditSpeakers ? currentSpeakerTurn.map { turn in { renameFromKeyboard(turn) } } : nil,
             toggleCurrentSpeakerIsMe: canEditSpeakers ? currentSpeakerTurn.map { turn in {
                 setMeSpeaker(turn.speakerId == meSpeakerId ? nil : turn.speakerId)
-            } } : nil
+            } } : nil,
+            find: hasTranscript ? { mode = .transcript; isSearchPresented = true; transcriptSearchFocused = true } : nil,
+            findNext: searchResult.matches.isEmpty ? nil : { gotoNextMatch() },
+            findPrevious: searchResult.matches.isEmpty ? nil : { gotoPrevMatch() }
         )
     }
 
@@ -788,6 +790,9 @@ struct TranscriptDetailView: View, Equatable {
             }
             .buttonStyle(.plain)
             .padding(16)
+            // Hidden tab: the header's search field and buttons leave the Tab order. Cheap,
+            // unlike disabling the whole tab (`.disabled` reaches every row's environment).
+            .disabled(mode != .transcript)
             Divider().overlay(palette.divider.color)
             transcriptList
         }
@@ -1774,20 +1779,6 @@ struct TranscriptDetailView: View, Equatable {
     /// Zero-size buttons that register Find keyboard shortcuts without adding any
     /// visible UI (the card header owns the visible search field):
     /// ⌘F focuses search, ⌘G / ⌘⇧G step next/previous match.
-    private var findShortcuts: some View {
-        Group {
-            Button("") { if !isLive { mode = .transcript; isSearchPresented = true; transcriptSearchFocused = true } }
-                .keyboardShortcut("f", modifiers: .command)
-            Button("") { gotoNextMatch() }
-                .keyboardShortcut("g", modifiers: .command)
-            Button("") { gotoPrevMatch() }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-        }
-        .opacity(0)
-        .frame(width: 0, height: 0)
-        .accessibilityHidden(true)
-    }
-
     /// Builds the row text with search highlights. Returns plain (un-highlighted)
     /// text when there is no active query or no matches in this turn.
     // MARK: - Persistence

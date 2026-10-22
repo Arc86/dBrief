@@ -43,6 +43,7 @@ struct SettingsSavedChatPrompts: View {
             HStack {
                 TextField("Add a question you ask often", text: $newPrompt)
                     .settingsTextField()
+                    .accessibilityLabel("New suggested question")
                     .onSubmit(add)
                 Button("Add", action: add)
                     .buttonStyle(.settingsSecondary)

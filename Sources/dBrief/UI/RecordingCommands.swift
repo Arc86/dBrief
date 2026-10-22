@@ -30,6 +30,10 @@ struct RecordingViewerActions {
     var currentSpeakerIsMe: Bool = false
     var renameCurrentSpeaker: (() -> Void)? = nil
     var toggleCurrentSpeakerIsMe: (() -> Void)? = nil
+    /// Edit ▸ Find: search the transcript; next/previous are nil without matches.
+    var find: (() -> Void)? = nil
+    var findNext: (() -> Void)? = nil
+    var findPrevious: (() -> Void)? = nil
 }
 
 enum TextInputFocus {
@@ -73,6 +77,21 @@ struct RecordingCommands: Commands {
     @FocusedValue(\.recordingViewer) private var viewer
 
     var body: some Commands {
+        CommandGroup(after: .pasteboard) {
+            Divider()
+            Menu("Find") {
+                Button("Find…") { viewer?.find?() }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .disabled(viewer?.find == nil)
+                Button("Find Next") { viewer?.findNext?() }
+                    .keyboardShortcut("g", modifiers: .command)
+                    .disabled(viewer?.findNext == nil)
+                Button("Find Previous") { viewer?.findPrevious?() }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .disabled(viewer?.findPrevious == nil)
+            }
+        }
+
         CommandGroup(before: .toolbar) {
             ForEach(Array(ViewerDocumentMode.allCases.enumerated()), id: \.element) { index, mode in
                 Button(mode.displayName) { viewer?.selectMode(mode) }

@@ -1760,6 +1760,14 @@ Die aktuellen Ergebnisse wurden beibehalten. Behebe den Fehler und wähle dann u
 	<string>Prüfung der fertigen Ausgabe fehlgeschlagen; die Rohaufnahme wurde beibehalten.</string>
 	<key>Finalizing audio</key>
 	<string>Audio wird fertiggestellt</string>
+	<key>Find</key>
+	<string>Suchen</string>
+	<key>Find Next</key>
+	<string>Weitersuchen</string>
+	<key>Find Previous</key>
+	<string>Rückwärts suchen</string>
+	<key>Find…</key>
+	<string>Suchen …</string>
 	<key>Finish or discard the pending reprocessing attempt to use chat.</key>
 	<string>Schließe die ausstehende erneute Verarbeitung ab oder verwirf sie, um den Chat zu verwenden.</string>
 	<key>Finish reviewing integration deliveries first.</key>
@@ -2528,6 +2536,8 @@ Mix: amix normalize=0</string>
 	<string>Neuer Name</string>
 	<key>New profile</key>
 	<string>Neues Profil</string>
+	<key>New suggested question</key>
+	<string>Neue vorgeschlagene Frage</string>
 	<key>New term</key>
 	<string>Neuer Begriff</string>
 	<key>Next match (⌘G)</key>
@@ -2994,6 +3004,8 @@ Mix: amix normalize=0</string>
 	<string>Personen diesen Monat</string>
 	<key>People this month</key>
 	<string>Personen diesen Monat</string>
+	<key>People to merge into</key>
+	<string>Personen zum Zusammenführen</string>
 	<key>Performance</key>
 	<string>Leistung</string>
 	<key>Permissions</key>
@@ -3814,6 +3826,8 @@ Mix: amix normalize=0</string>
 	<string>Einstellungen durchsuchen</string>
 	<key>Search transcript</key>
 	<string>Transkript durchsuchen</string>
+	<key>Search voice library</key>
+	<string>Stimmbibliothek durchsuchen</string>
 	<key>Seasoned male voice with a low, mellow timbre · Chinese</key>
 	<string>Erfahrene Männerstimme mit tiefem, weichem Timbre · Chinesisch</string>
 	<key>Section ID</key>
