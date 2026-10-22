@@ -20,14 +20,14 @@ struct PromptAsyncSessionTests {
             store: PromptPreferencesStore(settings: settings), improver: backend)
         session.engineSelection = .localModel
         let first = Task { await session.improve() }
-        while await backend.count < 1 { await Task.yield() }
+        try await waitFor { await backend.count >= 1 }
         #expect(await backend.hasProgressSink(0))
         #expect(session.improvementProgress == .preparingModel)
         await backend.emit(.downloading(progress: 0.42, stage: .llmModel), at: 0)
         try await waitUntil { session.improvementProgress == .downloadingModel(0.42) }
         session.edit("New draft")
         let second = Task { await session.improve() }
-        while await backend.count < 2 { await Task.yield() }
+        try await waitFor { await backend.count >= 2 }
         await backend.emit(.downloading(progress: nil, stage: .llmModelLoading), at: 1)
         try await waitUntil { session.improvementProgress == .loadingModel }
         await backend.emit(.downloading(progress: 0.9, stage: .llmModel), at: 0)
@@ -60,13 +60,16 @@ struct PromptAsyncSessionTests {
         let backend = DelayedPromptImprover()
         let session = try PromptEditorSession(identity: .init(kind: .summary, scope: .appDefaults),
             store: PromptPreferencesStore(settings: settings), improver: backend)
+        // An explicit engine: `.configured` reads the shared defaults, which other suites
+        // briefly set to an engine `improve()` can't resolve (it then never calls the backend).
+        session.engineSelection = .appleIntelligence
         let task = Task { await session.improve() }
-        while await backend.count < 1 { await Task.yield() }
+        try await waitFor { await backend.count >= 1 }
         await backend.finish(0, text: "Suggestion")
         await task.value
         #expect(session.canApplySuggestion)
         session.engineSelection = .localModel
-        session.engineSelection = .configured
+        session.engineSelection = .appleIntelligence
         #expect(session.suggestion == nil)
         #expect(!session.canApplySuggestion)
     }
@@ -91,7 +94,7 @@ struct PromptAsyncSessionTests {
             sample: .example, configuration: .appleIntelligence, outputLanguage: .matchInput,
             vocabulary: "", summaryGuidance: "", actionItemsGuidance: "", tagsGuidance: "")
         let task = Task { await session.run(request, using: backend) }
-        while !(await backend.started) { await Task.yield() }
+        try await waitFor { await backend.started }
         #expect(await backend.hasProgressSink)
         await backend.emit(.downloading(progress: 0.5, stage: .llmModel))
         try await waitUntil { session.progress == .downloadingModel(0.5) }
@@ -112,9 +115,9 @@ struct PromptAsyncSessionTests {
         first.engineSelection = .localModel
         second.engineSelection = .appleIntelligence
         let one = Task { await first.improve() }
-        while await backend.count < 1 { await Task.yield() }
+        try await waitFor { await backend.count >= 1 }
         let two = Task { await second.improve() }
-        while await backend.count < 2 { await Task.yield() }
+        try await waitFor { await backend.count >= 2 }
         #expect(second.improvementProgress == .generating)
         await backend.emit(.downloading(progress: 0.2, stage: .llmModel), at: 0)
         try await waitUntil { first.improvementProgress == .downloadingModel(0.2) }
@@ -138,7 +141,7 @@ struct PromptAsyncSessionTests {
             sample: .example, configuration: .localModel, outputLanguage: .matchInput,
             vocabulary: "", summaryGuidance: "", actionItemsGuidance: "", tagsGuidance: "")
         let task = Task { await session.run(request, using: backend) }
-        while !(await backend.started) { await Task.yield() }
+        try await waitFor { await backend.started }
         #expect(session.progress == .preparingModel)
         await backend.emit(.downloading(progress: nil, stage: .llmModel))
         try await waitUntil { session.progress == .downloadingModel(nil) }
@@ -157,6 +160,13 @@ struct PromptAsyncSessionTests {
         await backend.emit(.downloading(progress: 1, stage: .llmModel))
         for _ in 0..<20 { await Task.yield() }
         #expect(session.progress == nil)
+    }
+
+    /// Waits for the backend side, failing instead of spinning forever when it never happens.
+    private func waitFor(_ condition: () async -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
+        while !(await condition()) && ContinuousClock.now < deadline { await Task.yield() }
+        try #require(await condition())
     }
 
     private func waitUntil(_ condition: () -> Bool) async throws {

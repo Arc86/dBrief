@@ -53,10 +53,12 @@ struct FFmpegProcessRunnerTests {
             }
         }
 
+        // Unmonitored: with a 0.2 s stall timeout, a loaded machine can take longer than
+        // that just to start `echo`, which the watchdog would (correctly) call a stall.
         let result = try await runner.run(
             executable: "/bin/echo",
             arguments: ["next-job"],
-            monitorProgress: true
+            monitorProgress: false
         )
         #expect(result.exitStatus == 0)
         #expect(result.stdout == "next-job\n")
