@@ -110,6 +110,8 @@
 	<string>%@, helles Design</string>
 	<key>%@, unavailable</key>
 	<string>%@, nicht verfügbar</string>
+	<key>%@. %@</key>
+	<string>%1$@. %2$@</string>
 	<key>%@: %@ didn't finish. Open it to retry.</key>
 	<string>%@: %@ wurde nicht abgeschlossen. Zum Wiederholen öffnen.</string>
 	<key>%@: %@ failed. Open it to retry.</key>
@@ -1460,6 +1462,8 @@ Die aktuellen Ergebnisse wurden beibehalten. Behebe den Fehler und wähle dann u
 	<string>Nichts tun</string>
 	<key>Documentation</key>
 	<string>Dokumentation</string>
+	<key>Don't ask for %@</key>
+	<string>Nicht mehr für %@ fragen</string>
 	<key>Done</key>
 	<string>Fertig</string>
 	<key>Done with a warning</key>
@@ -4146,6 +4150,8 @@ Mix: amix normalize=0</string>
 	<string>Aufnahme stoppen</string>
 	<key>Stop automatically</key>
 	<string>Automatisch stoppen</string>
+	<key>Stop call prompts for this app. Turn it back on in Settings → Meetings.</key>
+	<string>Keine Anrufhinweise mehr für diese App. Du kannst sie unter Einstellungen → Meetings wieder aktivieren.</string>
 	<key>Stop generating</key>
 	<string>Erstellen stoppen</string>
 	<key>Stop generating (Esc)</key>
@@ -4460,6 +4466,8 @@ Mix: amix normalize=0</string>
 	<string>Die Metadaten der Aufnahme konnten nicht gelesen werden. Ihr Wiederherstellungsprotokoll wurde beibehalten.</string>
 	<key>The recording metadata could not be verified.</key>
 	<string>Die Metadaten der Aufnahme konnten nicht überprüft werden.</string>
+	<key>The recording was deleted, so the transcript was not saved.</key>
+	<string>Die Aufnahme wurde gelöscht, daher wurde das Transkript nicht gesichert.</string>
 	<key>The recording's current results stay. The unfinished reprocess can't be resumed afterwards.</key>
 	<string>Die aktuellen Ergebnisse der Aufnahme bleiben erhalten. Die unvollständige erneute Verarbeitung kann danach nicht mehr fortgesetzt werden.</string>
 	<key>The recordings folder could not be fully read. The previous search results have been kept.</key>
@@ -4620,6 +4628,12 @@ Mix: amix normalize=0</string>
 	<string>Diese Aufnahme wartet darauf, dass du ihre Sprecher bestätigst.</string>
 	<key>This recording is waiting in the queue. Process it or remove it from Queue &amp; Recovery first.</key>
 	<string>Diese Aufnahme wartet in der Warteschlange. Verarbeite sie oder entferne sie zuerst aus „Warteschlange &amp; Wiederherstellung“.</string>
+	<key>This recording · %@</key>
+	<string>Diese Aufnahme · %@</string>
+	<key>This recording · Apple Intelligence, on-device</key>
+	<string>Diese Aufnahme · Apple Intelligence, auf dem Gerät</string>
+	<key>This recording · Gemma, on-device</key>
+	<string>Diese Aufnahme · Gemma, auf dem Gerät</string>
 	<key>This recording · On-device</key>
 	<string>Diese Aufnahme · Auf dem Gerät</string>
 	<key>This recording’s saved profile was deleted. Choose a profile and retry from the recording.</key>
@@ -5028,6 +5042,8 @@ Stimmung: %2$@</string>
 	<string>Überwachter Ordner: %1$@ konnte nicht gelesen werden. %2$@</string>
 	<key>Weak</key>
 	<string>Schwach</string>
+	<key>Web calls</key>
+	<string>Webanrufe</string>
 	<key>Webhook</key>
 	<string>Webhook</string>
 	<key>Webhook fields: %@</key>
@@ -5184,6 +5200,8 @@ Stimmung: %2$@</string>
 	<string>dBrief erkennt %@ weiterhin an den übrigen Stimmabdrücken.</string>
 	<key>dBrief needs calendar access to match meetings.</key>
 	<string>dBrief benötigt Zugriff auf deinen Kalender, um Meetings zuzuordnen.</string>
+	<key>dBrief won't ask for %@ calls. Turn it back on in Settings → Meetings.</key>
+	<string>dBrief fragt bei Anrufen in %@ nicht mehr nach. Du kannst es unter Einstellungen → Meetings wieder aktivieren.</string>
 	<key>dBrief, %lld queued</key>
 	<string>dBrief, %lld eingereiht</string>
 	<key>dBrief, paused</key>

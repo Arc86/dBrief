@@ -2338,9 +2338,27 @@
     },
     "%@. %@" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@. %2$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
+            "value" : "%1$@. %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@. %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
             "value" : "%1$@. %2$@"
           }
         },
@@ -23756,6 +23774,24 @@
     },
     "Don't ask for %@" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nicht mehr für %@ fragen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No volver a preguntar por %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ne plus demander pour %@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -61933,6 +61969,24 @@
     },
     "Stop call prompts for this app. Turn it back on in Settings → Meetings." : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine Anrufhinweise mehr für diese App. Du kannst sie unter Einstellungen → Meetings wieder aktivieren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deja de mostrar avisos de llamada para esta app. Vuelve a activarlos en Ajustes → Reuniones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ne plus afficher d’alertes d’appel pour cette app. Réactivez-les dans Réglages → Réunions."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -66442,6 +66496,24 @@
     },
     "The recording was deleted, so the transcript was not saved." : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Aufnahme wurde gelöscht, daher wurde das Transkript nicht gesichert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La grabación se eliminó, así que la transcripción no se guardó."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’enregistrement a été supprimé, la transcription n’a donc pas été enregistrée."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -68705,6 +68777,24 @@
     },
     "This recording · %@" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diese Aufnahme · %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta grabación · %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cet enregistrement · %@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -68715,6 +68805,24 @@
     },
     "This recording · Apple Intelligence, on-device" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diese Aufnahme · Apple Intelligence, auf dem Gerät"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta grabación · Apple Intelligence, en el dispositivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cet enregistrement · Apple Intelligence, sur l’appareil"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -68725,6 +68833,24 @@
     },
     "This recording · Gemma, on-device" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diese Aufnahme · Gemma, auf dem Gerät"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta grabación · Gemma, en el dispositivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cet enregistrement · Gemma, sur l’appareil"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -74470,6 +74596,24 @@
     },
     "Web calls" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Webanrufe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Llamadas web"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Appels web"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -77037,6 +77181,24 @@
     },
     "dBrief won't ask for %@ calls. Turn it back on in Settings → Meetings." : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief fragt bei Anrufen in %@ nicht mehr nach. Du kannst es unter Einstellungen → Meetings wieder aktivieren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief ya no preguntará por las llamadas de %@. Vuelve a activarlo en Ajustes → Reuniones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dBrief ne vous demandera plus rien pour les appels %@. Réactivez-le dans Réglages → Réunions."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
