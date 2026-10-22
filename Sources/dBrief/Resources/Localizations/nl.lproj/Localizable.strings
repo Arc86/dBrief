@@ -4466,6 +4466,8 @@ Mix: amix normalize=0</string>
 	<string>De metadata van de opname konden niet worden gelezen. Het herstellogboek is bewaard.</string>
 	<key>The recording metadata could not be verified.</key>
 	<string>De metadata van de opname konden niet worden gecontroleerd.</string>
+	<key>The recording was deleted, so the transcript was not saved.</key>
+	<string>De opname is verwijderd, dus het transcript is niet opgeslagen.</string>
 	<key>The recording's current results stay. The unfinished reprocess can't be resumed afterwards.</key>
 	<string>De huidige resultaten van de opname blijven staan. Het onvoltooide opnieuw verwerken kan daarna niet meer worden hervat.</string>
 	<key>The recordings folder could not be fully read. The previous search results have been kept.</key>
